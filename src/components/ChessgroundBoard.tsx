@@ -4,7 +4,8 @@ import type { Api } from '@lichess-org/chessground/api';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Key } from '@lichess-org/chessground/types';
 import { Chess, type Square } from 'chess.js';
-import { CLASSIFICATION_META, type MoveClassification, type PlayerColor } from '../types/chess';
+import { BOARD_THEMES, boardBackgroundDataUri } from '../chess/boardThemes';
+import { CLASSIFICATION_META, type BoardThemeId, type MoveClassification, type PlayerColor } from '../types/chess';
 import { uciToSquares } from '../utils/chessMath';
 
 interface Props {
@@ -21,6 +22,9 @@ interface Props {
   showThreatArrow?: boolean;
   badgeSquare?: string;
   badgeClassification?: MoveClassification;
+  theme?: BoardThemeId;
+  coordinates?: boolean;
+  mini?: boolean;
   onUserMove?: (orig: Square, dest: Square) => void;
   onSwipePrev?: () => void;
   onSwipeNext?: () => void;
@@ -33,7 +37,7 @@ function squareToPct(sq: string, orientation: PlayerColor): { left: string; top:
   if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
   const col = orientation === 'w' ? file : 7 - file;
   const row = orientation === 'w' ? 7 - rank : rank;
-  return { left: `${(col + 1) * 12.5}%`, top: `${row * 12.5}%` };
+  return { left: `${(col + 0.5) * 12.5}%`, top: `${row * 12.5}%` };
 }
 
 export const ChessgroundBoard: React.FC<Props> = ({
@@ -50,6 +54,9 @@ export const ChessgroundBoard: React.FC<Props> = ({
   showThreatArrow = false,
   badgeSquare,
   badgeClassification,
+  theme = 'slate',
+  coordinates = true,
+  mini = false,
   onUserMove,
   onSwipePrev,
   onSwipeNext,
@@ -59,6 +66,8 @@ export const ChessgroundBoard: React.FC<Props> = ({
   const onUserMoveRef = useRef(onUserMove);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   onUserMoveRef.current = onUserMove;
+
+  const boardTheme = BOARD_THEMES[theme];
 
   const legalDests = useMemo(() => {
     const map = new Map<Key, Key[]>();
@@ -108,8 +117,8 @@ export const ChessgroundBoard: React.FC<Props> = ({
       fen,
       orientation: orientation === 'w' ? 'white' : 'black',
       viewOnly: !interactive,
-      coordinates: true,
-      animation: { enabled: true, duration: 165 },
+      coordinates,
+      animation: { enabled: !mini, duration: 165 },
       highlight: { lastMove: true, check: true },
       drawable: { enabled: true, visible: true, autoShapes: shapes },
       movable: {
@@ -125,6 +134,8 @@ export const ChessgroundBoard: React.FC<Props> = ({
     const ro = new ResizeObserver(() => api.redrawAll());
     ro.observe(containerRef.current);
     return () => { ro.disconnect(); api.destroy(); cgRef.current = null; };
+    // Intentionally init once: live prop updates are handled by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -135,6 +146,7 @@ export const ChessgroundBoard: React.FC<Props> = ({
       viewOnly: !interactive,
       turnColor: turnColor ? (turnColor === 'w' ? 'white' : 'black') : undefined,
       check: checkColor,
+      coordinates,
       lastMove: lastMove ? ([lastMove[0] as Key, lastMove[1] as Key] as [Key, Key]) : undefined,
       drawable: { enabled: true, visible: true, autoShapes: shapes },
       movable: {
@@ -145,14 +157,29 @@ export const ChessgroundBoard: React.FC<Props> = ({
       },
       draggable: { enabled: interactive, showGhost: true },
     });
-  }, [fen, orientation, interactive, turnColor, checkColor, lastMove, shapes, legalDests]);
+  }, [fen, orientation, interactive, turnColor, checkColor, lastMove, shapes, legalDests, coordinates]);
+
+  useEffect(() => {
+    const boardEl = containerRef.current?.querySelector('cg-board') as HTMLElement | null;
+    if (boardEl) boardEl.style.backgroundImage = boardBackgroundDataUri(boardTheme);
+  }, [boardTheme]);
 
   const badgeCoords = badgeSquare && badgeClassification ? squareToPct(badgeSquare, orientation) : null;
   const badgeMeta = badgeClassification ? CLASSIFICATION_META[badgeClassification] : null;
+  const cssVars = {
+    '--bd-lastmove': boardTheme.lastMove,
+    '--bd-selected': boardTheme.selected,
+    '--bd-dest': boardTheme.moveDest,
+    '--bd-check': boardTheme.check,
+    '--bd-coord': boardTheme.coordColor,
+    '--bd-piece-filter': boardTheme.pieceFilter ?? 'none',
+    '--bd-shadow': boardTheme.shadow,
+  } as React.CSSProperties;
 
   return (
     <div
-      className={`relative w-full aspect-square rounded-xl overflow-hidden shadow-2xl border border-slate-700/80 ${interactive ? 'touch-none' : 'touch-pan-y'}`}
+      className={`relative w-full aspect-square overflow-hidden border border-white/10 brillyder-board theme-${theme} ${interactive ? 'touch-none' : 'touch-pan-y'} ${mini ? 'rounded-lg' : 'rounded-xl sm:rounded-2xl'}`}
+      style={{ ...cssVars, boxShadow: boardTheme.shadow }}
       onTouchStart={(e) => { if (!interactive) touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
       onTouchEnd={(e) => {
         if (interactive || !touchStartRef.current) return;
@@ -167,8 +194,8 @@ export const ChessgroundBoard: React.FC<Props> = ({
       <div ref={containerRef} className="w-full h-full brillyder-board" />
       {badgeCoords && badgeMeta && (
         <div
-          className="pointer-events-none absolute z-30 -translate-x-[82%] translate-y-[6%] flex items-center justify-center rounded-full shadow-lg border border-slate-950 font-extrabold text-[10px] sm:text-[11px] text-white w-5 h-5 sm:w-6 sm:h-6"
-          style={{ left: badgeCoords.left, top: badgeCoords.top, backgroundColor: badgeMeta.badgeBg }}
+          className={`pointer-events-none absolute z-30 flex items-center justify-center rounded-full shadow-lg border border-slate-950 font-extrabold text-white ${mini ? 'text-[8px] w-4 h-4' : 'text-[10px] sm:text-[11px] w-5 h-5 sm:w-6 sm:h-6'}`}
+          style={{ left: badgeCoords.left, top: badgeCoords.top, transform: 'translate(-50%, -50%)', backgroundColor: badgeMeta.badgeBg }}
         >
           {badgeMeta.symbol}
         </div>

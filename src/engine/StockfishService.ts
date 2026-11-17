@@ -104,14 +104,17 @@ class StockfishEngineService {
   }
 
   async cancelCurrent(): Promise<void> {
-    if (this.activeJob && this.worker) {
-      this.activeJob.cancelled = true;
+    const job = this.activeJob;
+    if (job && this.worker) {
+      job.cancelled = true;
       this.worker.postMessage('stop');
       await new Promise<void>((resolve) => {
         const start = Date.now();
         const poll = () => {
-          if (!this.activeJob || Date.now() - start > 1400) {
-            if (this.activeJob) this.dispose();
+          // Only dispose the worker if this exact job is still active; a new
+          // search may have replaced it while we were waiting for "bestmove".
+          if (this.activeJob !== job || Date.now() - start > 1400) {
+            if (this.activeJob === job) this.dispose();
             resolve();
             return;
           }

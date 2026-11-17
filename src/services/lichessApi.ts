@@ -66,11 +66,11 @@ function mapRawGame(raw: LichessRawGame, username?: string): LichessGameRecord |
   };
 }
 
-export async function fetchLichessGames(username: string, onGame?: (g: LichessGameRecord) => void): Promise<LichessGameRecord[]> {
+export async function fetchLichessGames(username: string, onGame?: (g: LichessGameRecord) => void, maxGames = 15): Promise<LichessGameRecord[]> {
   const cleaned = username.trim();
   if (!cleaned) throw new Error('Enter a Lichess username.');
   const res = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(cleaned)}?max=15&pgnInJson=true&opening=true&clocks=true`,
+    `https://lichess.org/api/games/user/${encodeURIComponent(cleaned)}?max=${maxGames}&pgnInJson=true&opening=true&clocks=true`,
     { headers: { Accept: 'application/x-ndjson' } }
   );
   if (res.status === 404) throw new Error(`Lichess user "${cleaned}" not found.`);

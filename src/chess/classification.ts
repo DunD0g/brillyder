@@ -14,6 +14,7 @@ import {
   countNonPawnMaterial,
   estimateGameElo,
   extractClockFromComment,
+  extractClockSeconds,
   getMoverWinPercent,
   uciLineToSan,
 } from '../utils/chessMath';
@@ -33,7 +34,7 @@ function sideMaterial(fen: string, color: PlayerColor): number {
   return total;
 }
 
-function isSacrificeMove(
+export function isSacrificeMove(
   beforeFen: string,
   afterFen: string,
   mover: PlayerColor,
@@ -242,6 +243,7 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       beforeFen: mv.before,
       afterFen: mv.after,
       clockText: extractClockFromComment(commentsMap.get(mv.after)),
+      clockSeconds: extractClockSeconds(commentsMap.get(mv.after)),
       bestMoveUci,
       bestMoveSan,
       bestPvSan,

@@ -40,7 +40,7 @@ export interface LichessPlayerInfo {
 
 export interface LichessGameRecord {
   id: string;
-  source: 'lichess' | 'pgn' | 'sample';
+  source: 'lichess' | 'chesscom' | 'pgn' | 'sample';
   rated: boolean;
   variant: string;
   speed: string;
@@ -103,6 +103,7 @@ export interface AnalyzedPly {
   beforeFen: string;
   afterFen: string;
   clockText?: string;
+  clockSeconds?: number;
   bestMoveUci: string;
   bestMoveSan: string;
   bestPvSan: string[];
@@ -146,12 +147,28 @@ export interface PlayBotConfig {
   startFen: string;
 }
 
+export interface BotSession extends PlayBotConfig {
+  fen: string;
+  lastMove?: [string, string];
+  thinking: boolean;
+  historyFens: string[];
+  statusText: string;
+}
+
+export interface RetrySession {
+  active: boolean;
+  fen: string;
+  status: 'prompt' | 'evaluating' | 'solved' | 'try_again' | 'revealed';
+  feedback: string;
+}
+
 export interface SkillProfile {
   openings: number;
   tactics: number;
   endgames: number;
   conversion: number;
   resilience: number;
+  timeManagement: number;
 }
 
 export interface OpeningStat {
@@ -175,6 +192,24 @@ export interface PhaseBlunderStats {
   accuracy: number;
 }
 
+export interface ClockBucketStats {
+  label: string;
+  clockLimit: number;
+  moves: number;
+  mistakes: number;
+  blunders: number;
+  errorsPer10Moves: number;
+  accuracy: number;
+}
+
+export interface AccuracyTrendPoint {
+  date: number;
+  accuracy: number;
+  result: 'W' | 'D' | 'L';
+  opening: string;
+  opponent: string;
+}
+
 export interface MultiGameInsights {
   gamesCount: number;
   avgAccuracy: number;
@@ -183,5 +218,92 @@ export interface MultiGameInsights {
   skillProfile: SkillProfile;
   openings: OpeningStat[];
   phaseStats: PhaseBlunderStats[];
+  timeTrouble: ClockBucketStats[];
+  trend: AccuracyTrendPoint[];
+  ratingBand: string;
+  brilliantCount: number;
   recommendation: string;
+}
+
+export type GamePlatform = 'lichess' | 'chesscom';
+
+export interface ScoutState {
+  username: string;
+  platform: GamePlatform;
+  status: 'loading' | 'ready' | 'error';
+  games: AnalyzedGame[];
+  progress: { done: number; total: number } | null;
+  error: string | null;
+}
+
+export type BoardThemeId = 'slate' | 'emerald' | 'walnut' | 'neon';
+
+export interface BrillyVaultEntry {
+  id: string;
+  gameId: string;
+  ply: number;
+  moveNumber: number;
+  san: string;
+  uci: string;
+  from: string;
+  to: string;
+  beforeFen: string;
+  afterFen: string;
+  color: PlayerColor;
+  playerName: string;
+  opponentName: string;
+  isUserMove: boolean;
+  openingName: string;
+  openingEco: string;
+  playedAt: number;
+  analyzedAt: number;
+  captured?: string;
+}
+
+export interface BrillyVaultStats {
+  total: number;
+  userMoves: number;
+  opponentMoves: number;
+  thisMonth: number;
+  topOpenings: Array<{ name: string; count: number }>;
+  topPlayers: Array<{ name: string; count: number }>;
+  topMonths: Array<{ key: string; label: string; count: number }>;
+}
+
+export type MistakeClassification = 'inaccuracy' | 'mistake' | 'blunder';
+
+export interface MistakePuzzle {
+  id: string;
+  gameId: string;
+  ply: number;
+  moveNumber: number;
+  color: PlayerColor;
+  beforeFen: string;
+  afterFen: string;
+  san: string;
+  bestMoveSan: string;
+  bestMoveUci: string;
+  classification: MistakeClassification;
+  tacticalTag: string;
+  headline: string;
+  openingName: string;
+  openingEco: string;
+  playerName: string;
+  opponentName: string;
+  playedAt: number;
+  evalBefore: EngineScore;
+  evalAfter: EngineScore;
+  winLoss: number;
+}
+
+export interface MistakeProgressRecord {
+  solved: boolean;
+  attempts: number;
+  lastAt: number;
+}
+
+export interface DrillStreak {
+  current: number;
+  best: number;
+  lastSolvedAt: number;
 }

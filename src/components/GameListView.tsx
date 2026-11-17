@@ -1,35 +1,73 @@
-import React, { useState } from 'react';
-import { CheckCircle2, ExternalLink, FileText, RefreshCw, Search, Sparkles, Swords, Zap } from 'lucide-react';
-import type { LichessGameRecord } from '../types/chess';
+import React, { useMemo, useState } from 'react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Layers,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Swords,
+  X,
+  Zap,
+} from 'lucide-react';
+import type { AnalyzedGame, GamePlatform, LichessGameRecord } from '../types/chess';
 import { formatTimeAgo } from '../utils/chessMath';
+import { resolveUserColor } from '../utils/player';
+import { PLATFORM_META, platformLabel } from '../services/gameSource';
+
+export interface BatchState {
+  active: boolean;
+  paused: boolean;
+  total: number;
+  done: number;
+  currentLabel: string;
+}
 
 interface Props {
   username: string;
-  onUsernameChange: (name: string) => void;
+  platform: GamePlatform;
   games: LichessGameRecord[];
-  analyzedIds: Set<string>;
+  analyzedMap: Map<string, AnalyzedGame>;
   loading: boolean;
   error: string | null;
-  onSyncLichess: (usernameOverride?: string) => void;
+  batch: BatchState | null;
+  onPlatformChange: (platform: GamePlatform) => void;
+  onUsernameChange: (name: string) => void;
+  onSync: (usernameOverride?: string) => void;
   onSelectGame: (game: LichessGameRecord, autoAnalyze: boolean) => void;
   onImportInput: (input: string) => Promise<void>;
+  onBatchAnalyze: () => void;
+  onBatchPauseToggle: () => void;
+  onBatchCancel: () => void;
 }
 
 export const GameListView: React.FC<Props> = ({
   username,
-  onUsernameChange,
+  platform,
   games,
-  analyzedIds,
+  analyzedMap,
   loading,
   error,
-  onSyncLichess,
+  batch,
+  onPlatformChange,
+  onUsernameChange,
+  onSync,
   onSelectGame,
   onImportInput,
+  onBatchAnalyze,
+  onBatchPauseToggle,
+  onBatchCancel,
 }) => {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const unanalyzed = useMemo(() => games.filter((g) => !analyzedMap.has(g.id) && g.variant === 'standard').length, [games, analyzedMap]);
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,137 +86,226 @@ export const GameListView: React.FC<Props> = ({
 
   return (
     <div className="space-y-4 pb-24">
-      <section className="rounded-2xl bg-slate-900/90 border border-slate-800 p-3.5 shadow-xl">
-        <form onSubmit={(e) => { e.preventDefault(); onSyncLichess(username); }} className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="lichess-user" className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Lichess Auto-Sync
-            </label>
-            <button
-              type="button"
-              onClick={() => setShowImport((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-300 px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              {showImport ? 'Close' : 'Paste PGN / URL'}
-            </button>
+      <section className="glass-card p-3.5 shadow-xl">
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-xl border border-slate-800 bg-slate-950/60 p-0.5">
+            {(['lichess', 'chesscom'] as GamePlatform[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onPlatformChange(p)}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition ${
+                  platform === p ? 'bg-cyan-500/20 text-cyan-200 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {PLATFORM_META[p].label}
+              </button>
+            ))}
           </div>
+          <button
+            type="button"
+            onClick={() => setShowImport((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-2 py-1.5 text-xs font-semibold text-cyan-300"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            {showImport ? 'Close' : 'Paste PGN'}
+          </button>
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); onSync(username); }} className="mt-2.5 space-y-2.5">
+          <label htmlFor="sync-user" className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+            <span>{platformLabel(platform)} auto-sync</span>
+            <span className="font-mono text-[9px] normal-case tracking-normal text-slate-500">on-device analysis</span>
+          </label>
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                id="lichess-user"
+                id="sync-user"
                 type="text"
                 value={username}
                 onChange={(e) => onUsernameChange(e.target.value)}
-                placeholder="Lichess username..."
+                placeholder={`${platformLabel(platform)} username…`}
                 autoCapitalize="none"
                 autoCorrect="off"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                spellCheck={false}
+                className="w-full rounded-xl border border-slate-700/80 bg-slate-950 py-2.5 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 font-bold text-sm shadow active:scale-[0.98] disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2.5 text-sm font-bold text-slate-950 shadow active:scale-[0.98] disabled:opacity-60"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               <span>{loading ? 'Syncing' : 'Sync'}</span>
             </button>
           </div>
         </form>
 
         {showImport && (
-          <form onSubmit={handleImport} className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+          <form onSubmit={handleImport} className="mt-3 space-y-2 border-t border-slate-800 pt-3">
             <textarea
               rows={4}
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder="Paste raw PGN or Lichess game URL (e.g. https://lichess.org/AbCdEfGh)..."
-              className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-2.5 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+              placeholder="Paste raw PGN from Chess.com, Lichess, a tournament — or a Lichess game URL…"
+              className="w-full rounded-xl border border-slate-700/80 bg-slate-950 p-2.5 font-mono text-xs text-slate-100 placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
             />
             {importError && <p className="text-xs text-red-400">{importError}</p>}
             <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={importing || !importText.trim()}
-                className="px-3.5 py-2 rounded-xl bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 text-xs font-bold disabled:opacity-50"
+                className="rounded-xl border border-cyan-500/40 bg-cyan-500/20 px-3.5 py-2 text-xs font-bold text-cyan-200 disabled:opacity-50"
               >
-                {importing ? 'Loading...' : 'Load Game'}
+                {importing ? 'Loading…' : 'Load game'}
               </button>
             </div>
           </form>
         )}
 
-        {error && <div className="mt-3 rounded-xl bg-red-500/10 border border-red-500/30 px-3 py-2 text-xs text-red-300">{error}</div>}
+        {error && <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+      </section>
+
+      <section className="glass-card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3">
+          <div>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+              <Layers className="h-4 w-4 text-cyan-400" /> Batch analyze
+              <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-400">{unanalyzed} queued</span>
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-400">Next 5 unanalyzed games, back-to-back with pause and cancel.</p>
+          </div>
+          {!batch?.active ? (
+            <button
+              type="button"
+              onClick={onBatchAnalyze}
+              disabled={unanalyzed === 0 || loading}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-[11px] font-bold text-emerald-200 disabled:opacity-40"
+            >
+              <Play className="h-3.5 w-3.5" /> Batch next 5
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onBatchPauseToggle}
+                className="inline-flex items-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/15 px-2.5 py-2 text-[11px] font-bold text-amber-200"
+              >
+                {batch.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} {batch.paused ? 'Resume' : 'Pause'}
+              </button>
+              <button
+                type="button"
+                onClick={onBatchCancel}
+                className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 bg-red-500/15 px-2.5 py-2 text-[11px] font-bold text-red-300"
+              >
+                <X className="h-3.5 w-3.5" /> Cancel
+              </button>
+            </div>
+          )}
+        </div>
+        {batch?.active && (
+          <div className="border-t border-slate-800 px-3 py-2.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-200">
+                <Sparkles className="h-3.5 w-3.5" /> {batch.paused ? 'Paused' : batch.currentLabel || 'Preparing…'}
+              </span>
+              <span className="font-mono text-slate-400">{batch.done}/{batch.total}</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800">
+              <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300" style={{ width: `${Math.round((batch.done / Math.max(1, batch.total)) * 100)}%` }} />
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="space-y-2.5">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent Games ({games.length})</h2>
-          <span className="text-[11px] text-slate-500">On-device Stockfish WASM</span>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent games ({games.length})</h2>
+          <span className="text-[10px] text-slate-500">{platformLabel(platform)} · Stockfish WASM</span>
         </div>
 
-        {games.map((g) => {
-          const isWhite = g.userColor !== 'b';
-          const me = isWhite ? g.white : g.black;
-          const opp = isWhite ? g.black : g.white;
-          const res =
-            g.resultString === '1/2-1/2' ? 'DRAW' : (isWhite && g.resultString === '1-0') || (!isWhite && g.resultString === '0-1') ? 'WIN' : g.resultString === '*' ? 'GAME' : 'LOSS';
-          const badgeCls =
-            res === 'WIN' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : res === 'LOSS' ? 'bg-red-500/15 text-red-300 border-red-500/30' : 'bg-slate-700/40 text-slate-300 border-slate-600/40';
-          const isCached = analyzedIds.has(g.id);
-          const isVariant = g.variant !== 'standard';
+        {games.length === 0 && !loading && (
+          <div className="glass-card p-6 text-center">
+            <Swords className="mx-auto h-7 w-7 text-slate-600" />
+            <h3 className="mt-2 text-sm font-bold text-slate-200">No {platformLabel(platform)} games loaded</h3>
+            <p className="mt-1 text-xs text-slate-400">Enter a username above and hit Sync. Chess.com uses the public archives API; nothing leaves your device after download.</p>
+          </div>
+        )}
 
-          return (
-            <div key={g.id} className="rounded-2xl bg-slate-900/90 border border-slate-800 p-3.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${badgeCls}`}>{res}</span>
-                <span className="inline-flex items-center gap-1 text-xs font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                  <Zap className="w-3 h-3 text-amber-400" />
-                  {g.timeControlLabel}
-                </span>
-                <span className="text-[11px] text-slate-400 capitalize">{g.speed}</span>
-                {isCached && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300">
-                    <CheckCircle2 className="w-3 h-3" /> Analyzed
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-3">
+          {games.map((g) => {
+            const isWhite = resolveUserColor(g, username) === 'w';
+            const me = isWhite ? g.white : g.black;
+            const opp = isWhite ? g.black : g.white;
+            const res =
+              g.resultString === '1/2-1/2' ? 'DRAW' : (isWhite && g.resultString === '1-0') || (!isWhite && g.resultString === '0-1') ? 'WIN' : g.resultString === '*' ? 'GAME' : 'LOSS';
+            const badgeCls =
+              res === 'WIN' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : res === 'LOSS' ? 'border-red-500/30 bg-red-500/15 text-red-300' : 'border-slate-600/40 bg-slate-700/40 text-slate-300';
+            const analyzed = analyzedMap.get(g.id);
+            const isVariant = g.variant !== 'standard';
+
+            return (
+              <div key={g.id} className="glass-card glass-card-hover flex flex-col p-3.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold ${badgeCls}`}>{res}</span>
+                  <span className="inline-flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 font-mono text-[11px] text-slate-300">
+                    <Zap className="h-3 w-3 text-amber-400" /> {g.timeControlLabel}
                   </span>
-                )}
-              </div>
+                  <span className="text-[10px] capitalize text-slate-400">{g.speed}</span>
+                  {analyzed && (
+                    <span className="inline-flex items-center gap-1 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-300">
+                      <CheckCircle2 className="h-3 w-3" /> {(isWhite ? analyzed.whiteSummary.accuracy : analyzed.blackSummary.accuracy).toFixed(1)}%
+                    </span>
+                  )}
+                  {analyzed && (isWhite ? analyzed.whiteSummary.counts.brilliant : analyzed.blackSummary.counts.brilliant) > 0 && (
+                    <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-black text-cyan-200">
+                      !! {(isWhite ? analyzed.whiteSummary.counts.brilliant : analyzed.blackSummary.counts.brilliant)}
+                    </span>
+                  )}
+                </div>
 
-              <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-100">
-                <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${isWhite ? 'bg-white border-slate-300' : 'bg-slate-950 border-slate-500'}`} />
-                <span className="truncate">{me.name}</span>
-                {me.rating && <span className="text-xs font-mono text-slate-400">({me.rating})</span>}
-                <Swords className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="truncate">{opp.name}</span>
-                {opp.rating && <span className="text-xs font-mono text-slate-400">({opp.rating})</span>}
-              </div>
+                <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-100">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full border ${isWhite ? 'border-slate-300 bg-white' : 'border-slate-500 bg-slate-950'}`} />
+                  <span className="truncate">{me.name}</span>
+                  {me.rating && <span className="font-mono text-xs text-slate-400">({me.rating})</span>}
+                  <Swords className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  <span className="truncate">{opp.name}</span>
+                  {opp.rating && <span className="font-mono text-xs text-slate-400">({opp.rating})</span>}
+                </div>
 
-              <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-                <span className="truncate">{g.openingEco ? `${g.openingEco} · ` : ''}{g.openingName}</span>
-                <span className="shrink-0 text-[11px] text-slate-500">{formatTimeAgo(g.createdAt)}</span>
-              </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-400">
+                  <span className="truncate">{g.openingEco ? `${g.openingEco} · ` : ''}{g.openingName}</span>
+                  <span className="shrink-0 text-[10px] text-slate-500">{formatTimeAgo(g.createdAt)}</span>
+                </div>
 
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={isVariant}
-                  onClick={() => onSelectGame(g, !isCached)}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-200 text-xs font-bold active:scale-[0.98] disabled:opacity-40"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {isVariant ? `Unsupported (${g.variant})` : isCached ? 'Open Review' : 'Analyze Game'}
-                </button>
-                {g.url && (
-                  <a href={g.url} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-800 text-slate-300 border border-slate-700" aria-label="Open on Lichess">
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                )}
+                <div className="mt-auto flex items-center gap-2 pt-3">
+                  <button
+                    type="button"
+                    disabled={isVariant}
+                    onClick={() => onSelectGame(g, !analyzed)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/15 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25 active:scale-[0.98] disabled:opacity-40"
+                  >
+                    {analyzed ? <ChevronRight className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    {isVariant ? `Unsupported (${g.variant})` : analyzed ? 'Open review' : 'Analyze game'}
+                  </button>
+                  {g.url && (
+                    <a
+                      href={g.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300"
+                      aria-label={`Open on ${platformLabel(platform)}`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </section>
     </div>
   );

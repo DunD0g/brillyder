@@ -177,6 +177,26 @@ export function extractClockFromComment(comment: string | undefined): string | u
   return match[1];
 }
 
+export function extractClockSeconds(comment: string | undefined): number | undefined {
+  if (!comment) return undefined;
+  const match = comment.match(/\[%clk\s+(\d+:\d+(?::\d+(?:\.\d+)?)?)\]/);
+  if (!match) return undefined;
+  const parts = match[1].split(':').map((p) => parseFloat(p));
+  if (parts.some((n) => !Number.isFinite(n))) return undefined;
+  if (parts.length === 3) return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
+  if (parts.length === 2) return Math.round(parts[0] * 60 + parts[1]);
+  return undefined;
+}
+
+export function formatClockSeconds(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 export function formatTimeAgo(timestampMs: number): string {
   const mins = Math.floor((Date.now() - timestampMs) / 60000);
   if (mins < 2) return 'Just now';
