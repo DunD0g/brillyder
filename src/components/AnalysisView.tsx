@@ -292,7 +292,7 @@ export const AnalysisView: React.FC<Props> = ({
 
   const celebrateIfSacrifice = (fenAfter: string, mv: { to: string; piece: PieceSymbol; captured?: PieceSymbol }, mover: PlayerColor) => {
     if (!currentPly) return;
-    if (isSacrificeMove(currentPly.beforeFen, fenAfter, mover, mv.to, mv.piece, mv.captured, undefined)) {
+    if (isSacrificeMove(currentPly.beforeFen, fenAfter, mover, mv.to, mv.piece, mv.captured)) {
       triggerCelebration('brilliant', 'Galaxy-brain retry confirmed — that sacrifice bends spacetime. 🛸');
     }
   };

@@ -19,6 +19,7 @@ import type {
   ScoutState,
 } from './types/chess';
 import { getStoredBoardTheme, storeBoardTheme } from './chess/boardThemes';
+import { refreshBrilliantClassifications } from './chess/classification';
 import { analyzeGameToReview, AnalysisCancelledError } from './services/analysisRunner';
 import { fetchGamesForPlatform, platformLabel } from './services/gameSource';
 import { buildBrillyVault } from './services/vault';
@@ -28,7 +29,7 @@ import {
   parseRawPgnToGame,
   SAMPLE_GAMES,
 } from './services/lichessApi';
-import { getAllAnalyzedGames, getPref, setPref } from './storage/gameDb';
+import { getAllAnalyzedGames, getPref, saveAnalyzedGame, setPref } from './storage/gameDb';
 import { stockfishService } from './engine/StockfishService';
 import { soundManager } from './utils/sound';
 import { AnalysisView } from './components/AnalysisView';
@@ -166,8 +167,14 @@ export const App: React.FC = () => {
     getAllAnalyzedGames().then((cached) => {
       if (cached.length === 0) return;
       const map = new Map<string, AnalyzedGame>();
-      for (const ag of cached) map.set(ag.id, ag);
+      const refreshed: AnalyzedGame[] = [];
+      for (const ag of cached) {
+        const next = refreshBrilliantClassifications(ag);
+        if (next !== ag) refreshed.push(next);
+        map.set(next.id, next);
+      }
       setAnalyzedMap(map);
+      for (const ag of refreshed) void saveAnalyzedGame(ag);
     });
     const initialPlatform = getPref<GamePlatform>('brillyder_platform', 'lichess');
     const storedName = initialPlatform === 'chesscom'

@@ -130,6 +130,7 @@ export interface AnalyzedGame {
   id: string;
   analyzedAt: number;
   depth: number;
+  classificationVersion?: number;
   game: LichessGameRecord;
   initialEval: EngineScore;
   plies: AnalyzedPly[];

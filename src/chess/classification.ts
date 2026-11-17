@@ -21,45 +21,59 @@ import {
 import { generateMoveExplanation } from './moveCoach';
 import { isBookPly, lookupOpeningByMoves } from './openingBook';
 
-const PIECE_VAL: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+const SEE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 1000 };
+const SEE_MAX_DEPTH = 8;
+const SACRIFICE_MIN_GAIN = 2;
 
-function sideMaterial(fen: string, color: PlayerColor): number {
-  const c = new Chess(fen);
-  let total = 0;
-  for (const row of c.board()) {
-    for (const cell of row) {
-      if (cell && cell.color === color) total += PIECE_VAL[cell.type];
-    }
-  }
-  return total;
+export const CLASSIFICATION_VERSION = 2;
+
+export function fenPositionKey(fen: string): string {
+  return fen.split(' ').slice(0, 4).join(' ');
 }
 
+/**
+ * Static exchange evaluation for one square. Returns the best net material gain
+ * for the side to move if it starts capturing on `target`. Both sides may stop
+ * at any point, and only legal captures are considered, so a king cannot take a
+ * defended piece and pinned defenders cannot recapture.
+ */
+function bestCaptureGain(chess: Chess, target: Square, depth: number): number {
+  if (depth <= 0) return 0;
+  const captures = chess.moves({ verbose: true }).filter((m) => m.to === target && m.captured);
+  if (captures.length === 0) return 0;
+
+  let best = 0;
+  for (const capture of captures) {
+    if (!capture.captured) continue;
+    const next = new Chess(chess.fen());
+    next.move({ from: capture.from, to: capture.to, promotion: capture.promotion });
+    const replyGain = bestCaptureGain(next, target, depth - 1);
+    const gain = SEE_VALUE[capture.captured] - replyGain;
+    if (gain > best) best = gain;
+  }
+  return best;
+}
+
+/**
+ * A move is a sacrifice only when the opponent has a legal capture that wins at
+ * least a minor piece's worth of material even after the best recapture, and the
+ * mover did not already capture equal value on that square. A merely attacked
+ * piece (e.g. a defended rook giving check) is not a sacrifice.
+ */
 export function isSacrificeMove(
-  beforeFen: string,
+  _beforeFen: string,
   afterFen: string,
   mover: PlayerColor,
   toSquare: string,
   movedPiece: PieceSymbol,
-  capturedPiece: PieceSymbol | undefined,
-  prevToSquare: string | undefined
+  capturedPiece?: PieceSymbol
 ): boolean {
-  if (prevToSquare && toSquare === prevToSquare && capturedPiece) return false;
-  const opp: PlayerColor = mover === 'w' ? 'b' : 'w';
-  const netBefore = sideMaterial(beforeFen, mover) - sideMaterial(beforeFen, opp);
-  const netAfter = sideMaterial(afterFen, mover) - sideMaterial(afterFen, opp);
-  if (netAfter - netBefore <= -2) return true;
-
+  if (movedPiece === 'k') return false;
   const after = new Chess(afterFen);
-  const attackers = after.attackers(toSquare as Square, opp);
-  const defenders = after.attackers(toSquare as Square, mover);
-  if (PIECE_VAL[movedPiece] >= 3 && attackers.length > 0 && PIECE_VAL[movedPiece] > (capturedPiece ? PIECE_VAL[capturedPiece] : 0)) {
-    if (defenders.length === 0) return true;
-    for (const sq of attackers) {
-      const p = after.get(sq);
-      if (p && PIECE_VAL[p.type] < PIECE_VAL[movedPiece]) return true;
-    }
-  }
-  return false;
+  if (after.turn() === mover) return false;
+  const opponentGain = bestCaptureGain(after, toSquare as Square, SEE_MAX_DEPTH);
+  const capturedValue = capturedPiece ? SEE_VALUE[capturedPiece] : 0;
+  return opponentGain - capturedValue >= SACRIFICE_MIN_GAIN;
 }
 
 export function classifyMove(params: {
@@ -74,7 +88,7 @@ export function classifyMove(params: {
   toSquare: string;
   movedPiece: PieceSymbol;
   capturedPiece?: PieceSymbol;
-  prevMoveToSquare?: string;
+  positionRepeated: boolean;
   moverWinBefore: number;
   moverWinAfter: number;
   secondBestGapWin: number;
@@ -92,11 +106,13 @@ export function classifyMove(params: {
 
   const brilliant =
     winLoss <= 2 &&
+    !params.missedMate &&
+    !params.positionRepeated &&
     params.moverWinAfter >= 45 &&
     params.moverWinBefore < 94 &&
     params.hasSecondLine &&
     params.secondBestGapWin >= 6 &&
-    isSacrificeMove(params.beforeFen, params.afterFen, params.moverColor, params.toSquare, params.movedPiece, params.capturedPiece, params.prevMoveToSquare);
+    isSacrificeMove(params.beforeFen, params.afterFen, params.moverColor, params.toSquare, params.movedPiece, params.capturedPiece);
 
   if (brilliant) return 'brilliant';
   if (winLoss <= 2 && params.hasSecondLine && params.secondBestGapWin > 10 && params.moverWinBefore < 95) return 'great';
@@ -162,7 +178,8 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
   const sanList = moves.map((m) => m.san);
   const openingLookup = lookupOpeningByMoves(sanList);
   const plies: AnalyzedPly[] = [];
-  let prevTo: string | undefined;
+  const seenPositions = new Set<string>();
+  if (moves.length > 0) seenPositions.add(fenPositionKey(moves[0].before));
 
   for (let i = 0; i < moves.length; i++) {
     const mv = moves[i];
@@ -189,6 +206,10 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
     const moverHasMate = evalAfter.score.isCheckmate || (evalAfter.score.mateWhite !== null && ((color === 'w' && evalAfter.score.mateWhite > 0) || (color === 'b' && evalAfter.score.mateWhite < 0)));
     const oppHasMate = evalAfter.score.mateWhite !== null && ((color === 'w' && evalAfter.score.mateWhite < 0) || (color === 'b' && evalAfter.score.mateWhite > 0));
 
+    const afterPositionKey = fenPositionKey(mv.after);
+    const positionRepeated = seenPositions.has(afterPositionKey);
+    seenPositions.add(afterPositionKey);
+
     const classification = classifyMove({
       plyIndex: i,
       sanPrefix: sanList.slice(0, i + 1),
@@ -201,7 +222,7 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       toSquare: mv.to,
       movedPiece: mv.piece,
       capturedPiece: mv.captured,
-      prevMoveToSquare: prevTo,
+      positionRepeated,
       moverWinBefore,
       moverWinAfter,
       secondBestGapWin,
@@ -258,18 +279,75 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       phase,
       coaching,
     });
-    prevTo = mv.to;
   }
 
   return {
     id: game.id,
     analyzedAt: Date.now(),
     depth,
+    classificationVersion: CLASSIFICATION_VERSION,
     game,
     initialEval: evals[0].score,
     plies,
     whiteSummary: computePlayerStats(plies, 'w', game.white.rating, game.black.rating, game.resultString),
     blackSummary: computePlayerStats(plies, 'b', game.black.rating, game.white.rating, game.resultString),
     openingLineDetected: openingLookup?.name,
+  };
+}
+
+/**
+ * Re-checks saved brilliant moves against the current sacrifice/repetition
+ * rules. Older reviews were produced by a heuristic that could tag a merely
+ * attacked piece as brilliant, so those classifications are downgraded until
+ * the game is re-analyzed.
+ */
+export function refreshBrilliantClassifications(analyzed: AnalyzedGame): AnalyzedGame {
+  if ((analyzed.classificationVersion ?? 0) >= CLASSIFICATION_VERSION) return analyzed;
+
+  const seenPositions = new Set<string>();
+  if (analyzed.plies.length > 0) seenPositions.add(fenPositionKey(analyzed.plies[0].beforeFen));
+
+  const plies = analyzed.plies.map((ply) => {
+    const positionKey = fenPositionKey(ply.afterFen);
+    const repeated = seenPositions.has(positionKey);
+    seenPositions.add(positionKey);
+    if (ply.classification !== 'brilliant') return ply;
+
+    const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
+    const sacrifice = movedPiece
+      ? isSacrificeMove(ply.beforeFen, ply.afterFen, ply.color, ply.to, movedPiece, ply.captured as PieceSymbol | undefined)
+      : false;
+    if (sacrifice && !repeated) return ply;
+
+    const moverWinBefore = getMoverWinPercent(ply.evalBefore, ply.color);
+    const classification: MoveClassification =
+      ply.winLoss <= 2 && ply.secondBestGapWin > 10 && moverWinBefore < 95
+        ? 'great'
+        : ply.uci === ply.bestMoveUci || ply.winLoss <= 2
+          ? 'best'
+          : 'excellent';
+    const coaching = generateMoveExplanation({
+      beforeFen: ply.beforeFen,
+      afterFen: ply.afterFen,
+      san: ply.san,
+      uci: ply.uci,
+      color: ply.color,
+      bestMoveUci: ply.bestMoveUci,
+      bestMoveSan: ply.bestMoveSan,
+      threatMoveUci: ply.threatMoveUci,
+      evalBefore: ply.evalBefore,
+      evalAfter: ply.evalAfter,
+      classification,
+      openingName: analyzed.openingLineDetected || analyzed.game.openingName,
+    });
+    return { ...ply, classification, coaching };
+  });
+
+  return {
+    ...analyzed,
+    classificationVersion: CLASSIFICATION_VERSION,
+    plies,
+    whiteSummary: computePlayerStats(plies, 'w', analyzed.game.white.rating, analyzed.game.black.rating, analyzed.game.resultString),
+    blackSummary: computePlayerStats(plies, 'b', analyzed.game.black.rating, analyzed.game.white.rating, analyzed.game.resultString),
   };
 }

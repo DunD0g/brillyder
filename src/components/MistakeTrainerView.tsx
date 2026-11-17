@@ -98,7 +98,7 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
     setStatus('solved');
     setFeedback(`${san} — ${detail}`);
     soundManager.playSuccess();
-    if (mover && isSacrificeMove(puzzle.beforeFen, fenAfter, puzzle.color, mover.to, mover.piece, mover.captured, undefined)) {
+    if (mover && isSacrificeMove(puzzle.beforeFen, fenAfter, puzzle.color, mover.to, mover.piece, mover.captured)) {
       setCelebration({ trigger: Date.now(), message: 'Certified Galaxy-Brain — you found the sacrifice under pressure! 🛸' });
     }
   };

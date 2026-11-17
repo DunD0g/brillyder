@@ -1,13 +1,21 @@
 import type { AnalyzedGame, BrillyVaultEntry, BrillyVaultStats } from '../types/chess';
 import { resolveUserColor } from '../utils/player';
 
+function positionKey(fen: string): string {
+  return fen.split(' ').slice(0, 4).join(' ');
+}
+
 export function buildBrillyVault(games: AnalyzedGame[], username = ''): { entries: BrillyVaultEntry[]; stats: BrillyVaultStats } {
   const entries: BrillyVaultEntry[] = [];
 
   for (const analyzed of games) {
     const userColor = resolveUserColor(analyzed.game, username);
+    const seenPositions = new Set<string>();
     for (const ply of analyzed.plies) {
-      if (ply.classification !== 'brilliant') continue;
+      const key = positionKey(ply.afterFen);
+      const repeated = seenPositions.has(key);
+      seenPositions.add(key);
+      if (ply.classification !== 'brilliant' || repeated) continue;
       const isUserMove = ply.color === userColor;
       const playerName = ply.color === 'w' ? analyzed.game.white.name : analyzed.game.black.name;
       const opponentName = ply.color === 'w' ? analyzed.game.black.name : analyzed.game.white.name;
