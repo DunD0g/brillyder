@@ -96,20 +96,3 @@ export function getStoredBoardTheme(): BoardThemeId {
 export function storeBoardTheme(id: BoardThemeId): void {
   setPref(THEME_PREF_KEY, id);
 }
-
-function checkerPath(): string {
-  let path = '';
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      if ((x + y) % 2 === 0) path += `M${x} ${y}h1v1H${x}z`;
-    }
-  }
-  return path;
-}
-
-const CHECKER_PATH = checkerPath();
-
-export function boardBackgroundDataUri(theme: BoardTheme): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="${theme.darkSquare}"/><path d="${CHECKER_PATH}" fill="${theme.lightSquare}"/></svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-}
