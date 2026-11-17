@@ -1,0 +1,8 @@
+node_modules
+dist
+public/stockfish.js
+public/stockfish.wasm
+public/apple-touch-icon.png
+public/icon-192.png
+public/icon-512.png
+.DS_Store

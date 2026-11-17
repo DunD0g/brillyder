@@ -1,0 +1,31 @@
+{
+  "name": "brillyder",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/prepare-assets.mjs",
+    "prepare:assets": "node scripts/prepare-assets.mjs",
+    "dev": "node scripts/prepare-assets.mjs && vite",
+    "build": "node scripts/prepare-assets.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@lichess-org/chessground": "^10.1.1",
+    "chess.js": "^1.4.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "stockfish": "^19.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
