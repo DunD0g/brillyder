@@ -211,6 +211,32 @@ export interface AccuracyTrendPoint {
   opponent: string;
 }
 
+export interface GameHighlight {
+  gameId: string;
+  opponent: string;
+  opponentRating: number;
+  userRating: number;
+  userColor: PlayerColor;
+  result: 'W' | 'D' | 'L';
+  accuracy: number;
+  opening: string;
+  playedAt: number;
+  brilliants: number;
+  blunders: number;
+  score: number;
+  highlightPly: number;
+  reason: string;
+}
+
+export interface ColourSplit {
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  winRate: number;
+  accuracy: number;
+}
+
 export interface MultiGameInsights {
   gamesCount: number;
   avgAccuracy: number;
@@ -224,6 +250,18 @@ export interface MultiGameInsights {
   ratingBand: string;
   brilliantCount: number;
   recommendation: string;
+  bestGames: GameHighlight[];
+  worstGame: GameHighlight | null;
+  bestAccuracy: number;
+  avgOpponentRating: number;
+  giantSlayer: { wins: number; games: number; best: GameHighlight | null };
+  comebacks: number;
+  blownWins: number;
+  blunderFreeGames: number;
+  scoreByColour: { white: ColourSplit; black: ColourSplit };
+  currentStreak: { kind: 'W' | 'D' | 'L' | 'none'; count: number };
+  openingBest: OpeningStat | null;
+  openingWorst: OpeningStat | null;
 }
 
 export type GamePlatform = 'lichess' | 'chesscom';
@@ -267,8 +305,8 @@ export interface BrillyVaultStats {
   opponentMoves: number;
   thisMonth: number;
   topOpenings: Array<{ name: string; count: number }>;
-  topPlayers: Array<{ name: string; count: number }>;
   topMonths: Array<{ key: string; label: string; count: number }>;
+  topUserOpening: { name: string; count: number } | null;
 }
 
 export type MistakeClassification = 'inaccuracy' | 'mistake' | 'blunder';
@@ -285,6 +323,7 @@ export interface MistakePuzzle {
   bestMoveSan: string;
   bestMoveUci: string;
   classification: MistakeClassification;
+  phase: 'opening' | 'middlegame' | 'endgame';
   tacticalTag: string;
   headline: string;
   openingName: string;

@@ -23,7 +23,7 @@ export const VariationExplorer: React.FC<Props> = ({ active, baseLabel, fen, eva
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
             <FlaskConical className="w-3.5 h-3.5 text-fuchsia-300" /> What If? Sandbox
           </div>
-          <p className="mt-0.5 text-[11px] text-slate-400">Drag pieces to explore alternate lines with live MultiPV 3.</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">Tap a piece, then tap a highlighted square to explore with live MultiPV 3.</p>
         </div>
         <button
           type="button"
@@ -72,19 +72,19 @@ export const VariationExplorer: React.FC<Props> = ({ active, baseLabel, fen, eva
                   {line.multipv}
                 </span>
                 <span className={`font-mono text-[11px] font-extrabold ${line.multipv === 1 ? 'text-fuchsia-200' : 'text-slate-300'}`}>{line.score.display}</span>
-                <div className="min-w-0 flex flex-wrap gap-x-1 text-[11px] font-mono text-slate-300">
+                <div className="min-w-0 flex flex-wrap gap-x-0.5 gap-y-0.5 text-[11px] font-mono text-slate-300">
                   {sanMoves.map((san, idx) => (
                     <button
                       key={`${line.multipv}-${idx}`}
                       type="button"
                       onClick={() => onPlayLine(line.pv.slice(0, idx + 1))}
-                      className="rounded px-0.5 hover:bg-fuchsia-500/20 hover:text-fuchsia-200"
+                      className="inline-flex min-h-[24px] items-center rounded-md px-1.5 py-0.5 touch-manipulation hover:bg-fuchsia-500/20 hover:text-fuchsia-200 active:bg-fuchsia-500/30"
                       title={`Play ${san}`}
                     >
                       {san}
                     </button>
                   ))}
-                  {sanMoves.length > 0 && <span className="text-slate-600">…</span>}
+                  {sanMoves.length > 0 && <span className="self-center text-slate-600">…</span>}
                 </div>
               </div>
             </div>

@@ -10,6 +10,8 @@ import { resolveUserColor } from '../utils/player';
 
 const PROGRESS_KEY = 'brillyder_mistake_progress';
 const STREAK_KEY = 'brillyder_mistake_streak';
+const RUSH_BEST_KEY = 'brillyder_rush_best';
+const DAILY_DONE_KEY = 'brillyder_daily_done';
 
 const SEVERITY: Record<MistakeClassification, number> = { blunder: 0, mistake: 1, inaccuracy: 2 };
 
@@ -35,6 +37,7 @@ export function buildMistakeDeck(games: AnalyzedGame[], username: string): Mista
         bestMoveSan: ply.bestMoveSan,
         bestMoveUci: ply.bestMoveUci,
         classification: ply.classification,
+        phase: ply.phase,
         tacticalTag: ply.coaching.tacticalTag,
         headline: ply.coaching.headline,
         openingName: analyzed.openingLineDetected || analyzed.game.openingName || 'Unknown Opening',
@@ -104,4 +107,39 @@ export function recordDrillSolve(): DrillStreak {
 
 export function resetMistakeProgress(): void {
   setPref(PROGRESS_KEY, {});
+}
+
+export function dateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function pickDailyPuzzle(deck: MistakePuzzle[], date = new Date()): MistakePuzzle | null {
+  if (deck.length === 0) return null;
+  const key = dateKey(date);
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return deck[Math.abs(hash) % deck.length] ?? null;
+}
+
+export function loadDailyDone(): string {
+  return getPref<string>(DAILY_DONE_KEY, '');
+}
+
+export function markDailyDone(): string {
+  const key = dateKey();
+  setPref(DAILY_DONE_KEY, key);
+  return key;
+}
+
+export function loadRushBest(): number {
+  return getPref<number>(RUSH_BEST_KEY, 0);
+}
+
+export function saveRushBest(score: number): number {
+  const best = Math.max(loadRushBest(), score);
+  setPref(RUSH_BEST_KEY, best);
+  return best;
 }

@@ -46,7 +46,7 @@ export function buildBrillyVault(games: AnalyzedGame[], username = ''): { entrie
   entries.sort((a, b) => b.playedAt - a.playedAt);
 
   const openingCounts = new Map<string, number>();
-  const playerCounts = new Map<string, number>();
+  const userOpeningCounts = new Map<string, number>();
   const monthCounts = new Map<string, { label: string; count: number }>();
   let userMoves = 0;
   let opponentMoves = 0;
@@ -56,25 +56,29 @@ export function buildBrillyVault(games: AnalyzedGame[], username = ''): { entrie
   monthStart.setHours(0, 0, 0, 0);
 
   for (const entry of entries) {
-    if (entry.isUserMove) userMoves++; else opponentMoves++;
-    if (entry.playedAt >= monthStart.getTime()) thisMonth++;
     openingCounts.set(entry.openingName, (openingCounts.get(entry.openingName) ?? 0) + 1);
-    playerCounts.set(entry.playerName, (playerCounts.get(entry.playerName) ?? 0) + 1);
     const d = new Date(entry.playedAt);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     const label = d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
     const prev = monthCounts.get(key);
     monthCounts.set(key, { label, count: (prev?.count ?? 0) + 1 });
+
+    if (entry.isUserMove) {
+      userMoves++;
+      userOpeningCounts.set(entry.openingName, (userOpeningCounts.get(entry.openingName) ?? 0) + 1);
+      if (entry.playedAt >= monthStart.getTime()) thisMonth++;
+    } else {
+      opponentMoves++;
+    }
   }
 
   const topOpenings = Array.from(openingCounts.entries())
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
-  const topPlayers = Array.from(playerCounts.entries())
+  const topUserOpening = Array.from(userOpeningCounts.entries())
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8);
+    .sort((a, b) => b.count - a.count)[0] ?? null;
   const topMonths = Array.from(monthCounts.entries())
     .map(([key, value]) => ({ key, ...value }))
     .sort((a, b) => (a.key < b.key ? 1 : -1))
@@ -82,6 +86,6 @@ export function buildBrillyVault(games: AnalyzedGame[], username = ''): { entrie
 
   return {
     entries,
-    stats: { total: entries.length, userMoves, opponentMoves, thisMonth, topOpenings, topPlayers, topMonths },
+    stats: { total: userMoves, userMoves, opponentMoves, thisMonth, topOpenings, topMonths, topUserOpening },
   };
 }

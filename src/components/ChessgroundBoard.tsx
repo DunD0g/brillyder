@@ -69,6 +69,10 @@ export const ChessgroundBoard: React.FC<Props> = ({
 
   const boardTheme = BOARD_THEMES[theme];
 
+  const fenTurn = useMemo<PlayerColor>(() => (fen.split(' ')[1] === 'b' ? 'b' : 'w'), [fen]);
+  const effectiveTurn = turnColor ?? fenTurn;
+  const movableColor = interactive ? (effectiveTurn === 'w' ? ('white' as const) : ('black' as const)) : undefined;
+
   const legalDests = useMemo(() => {
     const map = new Map<Key, Key[]>();
     if (!interactive) return map;
@@ -117,26 +121,31 @@ export const ChessgroundBoard: React.FC<Props> = ({
       fen,
       orientation: orientation === 'w' ? 'white' : 'black',
       viewOnly: !interactive,
+      disableContextMenu: true,
       coordinates: false,
       animation: { enabled: !mini, duration: 165 },
       highlight: { lastMove: true, check: true },
       drawable: { enabled: true, visible: true, autoShapes: shapes },
       movable: {
         free: false,
-        color: interactive && turnColor ? (turnColor === 'w' ? 'white' : 'black') : undefined,
+        color: movableColor,
         dests: legalDests,
         showDests: true,
         events: { after: (orig, dest) => onUserMoveRef.current?.(orig as Square, dest as Square) },
       },
       draggable: { enabled: interactive, showGhost: true },
+      selectable: { enabled: interactive },
+      premovable: { enabled: false },
+      predroppable: { enabled: false },
     });
     cgRef.current = api;
     const ro = new ResizeObserver(() => api.redrawAll());
     ro.observe(containerRef.current);
     return () => { ro.disconnect(); api.destroy(); cgRef.current = null; };
-    // Intentionally init once: live prop updates are handled by the effect below.
+    // Chessground binds input listeners once at construction, so the board must
+    // be rebuilt whenever interactivity turns on (e.g. entering a sandbox).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [interactive]);
 
   useEffect(() => {
     if (!cgRef.current) return;
@@ -144,20 +153,23 @@ export const ChessgroundBoard: React.FC<Props> = ({
       fen,
       orientation: orientation === 'w' ? 'white' : 'black',
       viewOnly: !interactive,
-      turnColor: turnColor ? (turnColor === 'w' ? 'white' : 'black') : undefined,
+      turnColor: effectiveTurn === 'w' ? 'white' : 'black',
       check: checkColor,
       coordinates: false,
       lastMove: lastMove ? ([lastMove[0] as Key, lastMove[1] as Key] as [Key, Key]) : undefined,
       drawable: { enabled: true, visible: true, autoShapes: shapes },
       movable: {
         free: false,
-        color: interactive && turnColor ? (turnColor === 'w' ? 'white' : 'black') : undefined,
+        color: movableColor,
         dests: legalDests,
         showDests: true,
       },
       draggable: { enabled: interactive, showGhost: true },
+      selectable: { enabled: interactive },
+      premovable: { enabled: false },
+      predroppable: { enabled: false },
     });
-  }, [fen, orientation, interactive, turnColor, checkColor, lastMove, shapes, legalDests, coordinates]);
+  }, [fen, orientation, interactive, effectiveTurn, checkColor, lastMove, shapes, legalDests, coordinates, movableColor]);
 
   const badgeCoords = badgeSquare && badgeClassification ? squareToPct(badgeSquare, orientation) : null;
   const badgeMeta = badgeClassification ? CLASSIFICATION_META[badgeClassification] : null;
@@ -185,6 +197,7 @@ export const ChessgroundBoard: React.FC<Props> = ({
     <div
       className={`relative w-full aspect-square overflow-hidden border border-white/10 brillyder-board theme-${theme} ${interactive ? 'touch-none' : 'touch-pan-y'} ${mini ? 'rounded-lg is-mini' : 'rounded-xl sm:rounded-2xl'}`}
       style={{ ...cssVars, boxShadow: boardTheme.shadow }}
+      onContextMenu={(e) => e.preventDefault()}
       onTouchStart={(e) => { if (!interactive) touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
       onTouchEnd={(e) => {
         if (interactive || !touchStartRef.current) return;

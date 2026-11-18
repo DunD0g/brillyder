@@ -2,22 +2,30 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess, type PieceSymbol, type Square } from 'chess.js';
 import {
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   Flame,
   GraduationCap,
   Lightbulb,
   Loader2,
+  Play,
   RotateCcw,
   Sparkles,
   Target,
   Trophy,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import type { AnalyzedGame, BoardThemeId, DrillStreak, MistakeClassification, MistakeProgressRecord, MistakePuzzle } from '../types/chess';
 import {
   buildMistakeDeck,
+  dateKey,
+  loadDailyDone,
   loadDrillStreak,
   loadMistakeProgress,
+  loadRushBest,
+  markDailyDone,
+  pickDailyPuzzle,
   recordAttempt,
   recordDrillSolve,
 } from '../services/mistakeDeck';
@@ -29,6 +37,7 @@ import { ChessgroundBoard } from './ChessgroundBoard';
 import { ClassificationBadge } from './ClassificationBadge';
 import { ProgressRing } from './ProgressRing';
 import { AlienCelebration } from './AlienCelebration';
+import { PuzzleRush } from './PuzzleRush';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
@@ -40,14 +49,18 @@ interface Props {
 
 type DrillStatus = 'idle' | 'evaluating' | 'wrong' | 'solved' | 'revealed';
 type DeckFilter = 'unsolved' | 'all' | 'mastered';
+type DeckPhaseFilter = 'all' | 'opening' | 'middlegame' | 'endgame';
 
 const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
 export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, boardTheme, onOpenGame, onOpenGames }) => {
   const deck = useMemo(() => buildMistakeDeck(analyzedGames, username), [analyzedGames, username]);
+  const dailyPuzzle = useMemo(() => pickDailyPuzzle(deck), [deck]);
   const [progress, setProgress] = useState<Record<string, MistakeProgressRecord>>(() => loadMistakeProgress());
   const [streak, setStreak] = useState<DrillStreak>(() => loadDrillStreak());
+  const [mode, setMode] = useState<'practice' | 'rush'>('practice');
   const [filter, setFilter] = useState<DeckFilter>('unsolved');
+  const [phaseFilter, setPhaseFilter] = useState<DeckPhaseFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fen, setFen] = useState('');
   const [status, setStatus] = useState<DrillStatus>('idle');
@@ -56,14 +69,20 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
   const [lastMove, setLastMove] = useState<[string, string] | null>(null);
   const [pendingPromo, setPendingPromo] = useState<{ from: Square; to: Square } | null>(null);
   const [celebration, setCelebration] = useState<{ trigger: number; message: string } | null>(null);
+  const [dailyDoneDate, setDailyDoneDate] = useState(() => loadDailyDone());
+  const [rushBest, setRushBest] = useState(() => loadRushBest());
   const resetTimerRef = useRef<number | null>(null);
+  const puzzleRunRef = useRef(0);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   const solvedCount = deck.filter((p) => progress[p.id]?.solved).length;
   const unsolvedCount = deck.length - solvedCount;
   const selected = deck.find((p) => p.id === selectedId) ?? null;
+  const dailyDone = dailyDoneDate === dateKey();
 
-  const selectPuzzle = (puzzle: MistakePuzzle) => {
+  const selectPuzzle = (puzzle: MistakePuzzle, options?: { scroll?: boolean }) => {
     if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+    puzzleRunRef.current += 1;
     setSelectedId(puzzle.id);
     setFen(puzzle.beforeFen);
     setStatus('idle');
@@ -71,6 +90,9 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
     setHintLevel(0);
     setLastMove(null);
     setPendingPromo(null);
+    if (options?.scroll && typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+      window.setTimeout(() => boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+    }
   };
 
   useEffect(() => {
@@ -91,9 +113,9 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
   };
 
   const solve = (puzzle: MistakePuzzle, fenAfter: string, san: string, detail: string, mover?: { to: string; piece: PieceSymbol; captured?: PieceSymbol }) => {
-    const nextProgress = recordAttempt(progress, puzzle.id, true);
-    setProgress(nextProgress);
+    setProgress((prev) => recordAttempt(prev, puzzle.id, true));
     setStreak(recordDrillSolve());
+    if (dailyPuzzle?.id === puzzle.id) setDailyDoneDate(markDailyDone());
     setFen(fenAfter);
     setStatus('solved');
     setFeedback(`${san} — ${detail}`);
@@ -105,6 +127,7 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
 
   const attemptMove = async (from: Square, to: Square, promotion?: PieceSymbol) => {
     if (!selected || status === 'solved' || status === 'revealed' || status === 'evaluating') return;
+    const generation = puzzleRunRef.current;
     const c = new Chess(fen);
     let mv;
     try { mv = c.move({ from, to, promotion }); } catch { return; }
@@ -120,29 +143,34 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
     setStatus('evaluating');
     setFeedback('Checking your idea…');
     try {
-      const res = await stockfishService.analyzePosition(c.fen(), { depth: 10, multiPv: 1, timeoutMs: 8000 });
+      const analysis = stockfishService.analyzePosition(c.fen(), { depth: 10, multiPv: 1, timeoutMs: 8000 });
+      const timeout = new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error('Engine timeout')), 9500);
+      });
+      const res = await Promise.race([analysis, timeout]);
+      if (puzzleRunRef.current !== generation) return;
       const loss = Math.max(0, getMoverWinPercent(selected.evalBefore, selected.color) - getMoverWinPercent(res.score, selected.color));
       if (loss <= 6) {
         solve(selected, c.fen(), mv.san, `A strong alternative that holds (${res.score.display}).`, mv);
       } else {
         soundManager.playError();
-        setProgress(recordAttempt(progress, selected.id, false));
+        setProgress((prev) => recordAttempt(prev, selected.id, false));
         setStatus('wrong');
         setFeedback(`${mv.san} drops ${loss.toFixed(0)}% win equity (${res.score.display}). The position resets — try another idea.`);
         if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
         resetTimerRef.current = window.setTimeout(() => {
-          if (selected) {
-            setFen(selected.beforeFen);
-            setLastMove(null);
-            setStatus('idle');
-          }
+          if (puzzleRunRef.current !== generation) return;
+          setFen(selected.beforeFen);
+          setLastMove(null);
+          setStatus('idle');
         }, 1100);
       }
     } catch {
+      if (puzzleRunRef.current !== generation) return;
       setStatus('idle');
       setFen(selected.beforeFen);
       setLastMove(null);
-      setFeedback('Engine could not evaluate that move. Try again.');
+      setFeedback('Engine timed out. Tap a piece to try again.');
     }
   };
 
@@ -168,7 +196,7 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
     setFen(after);
     setStatus('revealed');
     setFeedback(`Best was ${selected.bestMoveSan}. ${selected.headline}`);
-    setProgress(recordAttempt(progress, selected.id, false));
+    setProgress((prev) => recordAttempt(prev, selected.id, false));
   };
 
   const hintedPiece = useMemo(() => {
@@ -184,10 +212,24 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
   }, [selected]);
 
   const filteredDeck = deck.filter((p) => {
+    if (phaseFilter !== 'all' && p.phase !== phaseFilter) return false;
     if (filter === 'all') return true;
     if (filter === 'mastered') return Boolean(progress[p.id]?.solved);
     return !progress[p.id]?.solved;
   });
+
+  const handleRushSolved = (puzzle: MistakePuzzle) => {
+    setProgress((prev) => recordAttempt(prev, puzzle.id, true));
+    setStreak(recordDrillSolve());
+  };
+
+  const handleRushWrong = (puzzle: MistakePuzzle) => {
+    setProgress((prev) => recordAttempt(prev, puzzle.id, false));
+  };
+
+  const handleRushFinished = () => {
+    setRushBest(loadRushBest());
+  };
 
   const solvedPct = deck.length > 0 ? Math.round((solvedCount / deck.length) * 100) : 0;
   const interactive = Boolean(selected) && status === 'idle';
@@ -211,6 +253,19 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
           </button>
         </section>
       </div>
+    );
+  }
+
+  if (mode === 'rush') {
+    return (
+      <PuzzleRush
+        puzzles={deck}
+        boardTheme={boardTheme}
+        onExit={() => setMode('practice')}
+        onSolved={handleRushSolved}
+        onWrong={handleRushWrong}
+        onFinished={handleRushFinished}
+      />
     );
   }
 
@@ -246,7 +301,57 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
             <div className="text-[9px] text-slate-500">back-to-back</div>
           </div>
         </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setMode('practice')}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-400/35 bg-cyan-500/15 px-2 py-2 text-[11px] font-black text-cyan-100"
+          >
+            <GraduationCap className="h-3.5 w-3.5" /> Practice deck
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('rush')}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-200"
+          >
+            <Zap className="h-3.5 w-3.5" /> Puzzle rush
+            <span className="rounded bg-fuchsia-400/20 px-1 font-mono text-[9px] text-fuchsia-100">best {rushBest}</span>
+          </button>
+        </div>
       </section>
+
+      {dailyPuzzle && (
+        <section className={`glass-card p-3 ${dailyDone ? 'border-emerald-500/25' : 'border-amber-500/25'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className={`flex items-center gap-1.5 text-xs font-bold ${dailyDone ? 'text-emerald-200' : 'text-amber-200'}`}>
+              <CalendarDays className="h-4 w-4" /> Daily puzzle
+            </div>
+            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${
+              dailyDone ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 bg-slate-800/70 text-slate-400'
+            }`}>
+              {dailyDone ? 'Done today' : 'Fresh every day'}
+            </span>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-mono text-[11px] font-bold text-slate-100">
+                {dailyPuzzle.moveNumber}{dailyPuzzle.color === 'w' ? '.' : '…'} {dailyPuzzle.san}
+                <span className="ml-1 text-slate-500">· {dailyPuzzle.openingEco}</span>
+              </div>
+              <div className="truncate text-[10px] text-slate-500">{dailyPuzzle.openingName}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => selectPuzzle(dailyPuzzle, { scroll: true })}
+              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/15 px-3 py-2 text-[11px] font-black text-amber-200"
+            >
+              {dailyDone ? <RotateCcw className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+              {dailyDone ? 'Replay' : 'Solve'}
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]">
         <section className="min-w-0">
@@ -266,7 +371,7 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
                   <div className="relative w-6 shrink-0 overflow-hidden rounded-lg border border-slate-700/80 bg-slate-900">
                     <div className="absolute inset-x-0 bottom-0 bg-slate-100 transition-all duration-300" style={{ height: `${Math.max(3, Math.min(97, selected.evalBefore.winPercentWhite))}%` }} />
                   </div>
-                  <div className="relative min-w-0 flex-1">
+                  <div className="relative min-w-0 flex-1" ref={boardRef}>
                     <ChessgroundBoard
                       fen={fen || selected.beforeFen}
                       orientation={selected.color}
@@ -304,6 +409,49 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
                     )}
                   </div>
                 </div>
+
+                <div className="mt-1.5 grid grid-cols-3 gap-1.5 lg:hidden">
+                  {status !== 'solved' && status !== 'revealed' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setHintLevel((h) => Math.min(2, h + 1))}
+                        className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/85 px-2 py-2.5 text-[11px] font-bold text-slate-200 active:bg-slate-800"
+                      >
+                        <Lightbulb className="h-3.5 w-3.5 text-amber-400" /> Hint {hintLevel > 0 ? `${hintLevel}/2` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={revealSolution}
+                        className="inline-flex items-center justify-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2 py-2.5 text-[11px] font-bold text-rose-200 active:bg-rose-500/20"
+                      >
+                        Solution
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => selectPuzzle(selected)}
+                      className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/85 px-2 py-2.5 text-[11px] font-bold text-slate-200 active:bg-slate-800"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Retry
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={chooseNext}
+                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-cyan-500/35 bg-cyan-500/15 px-2 py-2.5 text-[11px] font-black text-cyan-200 active:bg-cyan-500/25"
+                  >
+                    Next <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {hintLevel > 0 && status !== 'solved' && status !== 'revealed' && (
+                  <div className="mt-1.5 space-y-0.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-[10px] text-amber-100 lg:hidden">
+                    <p><strong>Hint 1:</strong> {selected.tacticalTag} — look for a {hintedPiece ? PIECE_NAMES[hintedPiece] : 'piece'} move.</p>
+                    {hintLevel > 1 && <p><strong>Hint 2:</strong> The move starts on {uciToSquares(selected.bestMoveUci)?.from ?? 'the key square'} and is worth {selected.winLoss.toFixed(0)}% of win equity.</p>}
+                  </div>
+                )}
 
                 <div className="mt-1.5 flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/75 px-2.5 py-1.5">
                   <span className="truncate text-[10px] text-slate-400">{selected.openingEco ? `${selected.openingEco} · ` : ''}{selected.openingName}</span>
@@ -394,6 +542,22 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="flex flex-wrap gap-1 px-2 pb-2">
+              {([['all', 'All phases'], ['opening', 'Opening'], ['middlegame', 'Middlegame'], ['endgame', 'Endgame']] as Array<[DeckPhaseFilter, string]>).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPhaseFilter(key)}
+                  className={`rounded-full border px-2 py-0.5 text-[9px] font-bold transition ${
+                    phaseFilter === key
+                      ? 'border-amber-400/40 bg-amber-500/15 text-amber-200'
+                      : 'border-slate-800 bg-slate-950/50 text-slate-400'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="max-h-72 space-y-1 overflow-y-auto px-2 pb-2 nice-scroll">
               {filteredDeck.length === 0 && <p className="px-2 py-4 text-center text-[11px] text-slate-500">No puzzles in this filter.</p>}

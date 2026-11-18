@@ -3,9 +3,12 @@ import type {
   AnalyzedGame,
   AnalyzedPly,
   ClockBucketStats,
+  ColourSplit,
+  GameHighlight,
   MultiGameInsights,
   OpeningStat,
   PhaseBlunderStats,
+  PlayerColor,
 } from '../types/chess';
 import { clamp } from '../utils/chessMath';
 import { resultForUser, resolveUserColor } from '../utils/player';
@@ -55,6 +58,32 @@ function emptyClockBuckets(): ClockBucketStats[] {
   ];
 }
 
+function emptyColour(): ColourSplit {
+  return { games: 0, wins: 0, draws: 0, losses: 0, winRate: 0, accuracy: 0 };
+}
+
+function finishColour(split: ColourSplit, accuracySum: number): ColourSplit {
+  return {
+    ...split,
+    winRate: split.games > 0 ? Math.round(((split.wins + split.draws * 0.5) / split.games) * 100) : 0,
+    accuracy: split.games > 0 ? Number((accuracySum / split.games).toFixed(1)) : 0,
+  };
+}
+
+function gameHighlightScore(input: {
+  accuracy: number;
+  result: 'W' | 'D' | 'L';
+  userRating: number;
+  opponentRating: number;
+  brilliants: number;
+  blunders: number;
+}): number {
+  const resultBonus = input.result === 'W' ? 18 : input.result === 'D' ? 4 : -14;
+  const ratingGap = input.opponentRating > 0 && input.userRating > 0 ? input.opponentRating - input.userRating : 0;
+  const opponentBonus = clamp(ratingGap / 12, -6, 8);
+  return Number((input.accuracy + resultBonus + opponentBonus + Math.min(6, input.brilliants * 3) - Math.min(8, input.blunders * 2)).toFixed(1));
+}
+
 export function computeMultiGameInsights(games: AnalyzedGame[], username: string): MultiGameInsights {
   if (games.length === 0) {
     return {
@@ -70,6 +99,18 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       ratingBand: 'Unrated',
       brilliantCount: 0,
       recommendation: 'Analyze at least two games to unlock your rating-relative BrillyDer skill radar.',
+      bestGames: [],
+      worstGame: null,
+      bestAccuracy: 0,
+      avgOpponentRating: 0,
+      giantSlayer: { wins: 0, games: 0, best: null },
+      comebacks: 0,
+      blownWins: 0,
+      blunderFreeGames: 0,
+      scoreByColour: { white: emptyColour(), black: emptyColour() },
+      currentStreak: { kind: 'none', count: 0 },
+      openingBest: null,
+      openingWorst: null,
     };
   }
 
@@ -87,6 +128,20 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   let heldDef = 0;
   let sharpTot = 0;
   let sharpOk = 0;
+  let bestAccuracy = 0;
+  let opponentRatingSum = 0;
+  let opponentRatingCount = 0;
+  let comebacks = 0;
+  let blownWins = 0;
+  let blunderFreeGames = 0;
+  let giantWins = 0;
+  let giantGames = 0;
+  let giantBest: GameHighlight | null = null;
+  const highlights: GameHighlight[] = [];
+  const colourAcc: Record<PlayerColor, { split: ColourSplit; accSum: number }> = {
+    w: { split: emptyColour(), accSum: 0 },
+    b: { split: emptyColour(), accSum: 0 },
+  };
 
   const openMap = new Map<string, { name: string; eco: string; games: number; wins: number; draws: number; losses: number; accSum: number }>();
   const phases: Record<'opening' | 'middlegame' | 'endgame', AnalyzedPly[]> = { opening: [], middlegame: [], endgame: [] };
@@ -106,6 +161,14 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     const result = resultForUser(ag.game, uc);
     if (result === 'W') wins++; else if (result === 'D') draws++; else losses++;
 
+    const userRating = (uc === 'w' ? ag.game.white.rating : ag.game.black.rating) ?? 0;
+    const opponentRating = (uc === 'w' ? ag.game.black.rating : ag.game.white.rating) ?? 0;
+    const opponentName = uc === 'w' ? ag.game.black.name : ag.game.white.name;
+    if (opponentRating > 0) {
+      opponentRatingSum += opponentRating;
+      opponentRatingCount++;
+    }
+
     const rawOpen = ag.openingLineDetected || ag.game.openingName || 'Unknown Opening';
     const family = rawOpen.includes(':') ? rawOpen.slice(0, rawOpen.indexOf(':')).trim() : rawOpen.trim();
     const bucket = openMap.get(family) ?? { name: family, eco: ag.game.openingEco || '', games: 0, wins: 0, draws: 0, losses: 0, accSum: 0 };
@@ -114,12 +177,39 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     if (result === 'W') bucket.wins++; else if (result === 'D') bucket.draws++; else bucket.losses++;
     openMap.set(family, bucket);
 
+    const colour = colourAcc[uc];
+    colour.split.games++;
+    colour.accSum += sum.accuracy;
+    if (result === 'W') colour.split.wins++; else if (result === 'D') colour.split.draws++; else colour.split.losses++;
+
     let hadClearAdvantage = false;
+    let userBrilliants = 0;
+    let userBlunders = 0;
+    let userGreats = 0;
+    let firstBrilliantPly = 0;
+    let firstGreatPly = 0;
+    let minWp = uc === 'w' ? ag.initialEval.winPercentWhite : 100 - ag.initialEval.winPercentWhite;
+    let maxWp = minWp;
+
     for (const p of ag.plies) {
+      const wpAll = uc === 'w' ? p.evalBefore.winPercentWhite : 100 - p.evalBefore.winPercentWhite;
+      const wpAfter = uc === 'w' ? p.evalAfter.winPercentWhite : 100 - p.evalAfter.winPercentWhite;
+      minWp = Math.min(minWp, wpAll, wpAfter);
+      maxWp = Math.max(maxWp, wpAll, wpAfter);
+
       if (p.color !== uc) continue;
       phases[p.phase].push(p);
       if (p.clockSeconds !== undefined) clockMoves.push(p);
-      if (p.classification === 'brilliant') brilliantCount++;
+      if (p.classification === 'brilliant') {
+        brilliantCount++;
+        userBrilliants++;
+        if (firstBrilliantPly === 0) firstBrilliantPly = p.ply;
+      }
+      if (p.classification === 'great') {
+        userGreats++;
+        if (firstGreatPly === 0) firstGreatPly = p.ply;
+      }
+      if (p.classification === 'blunder') userBlunders++;
       const wp = uc === 'w' ? p.evalBefore.winPercentWhite : 100 - p.evalBefore.winPercentWhite;
       if (wp >= 68) hadClearAdvantage = true;
       if (wp >= 20 && wp <= 45) {
@@ -134,6 +224,51 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     if (hadClearAdvantage) {
       winPos++;
       if (result === 'W') convWinPos++;
+    }
+
+    if (result === 'W' && minWp <= 20) comebacks++;
+    if (result === 'L' && maxWp >= 80) blownWins++;
+    if (userBlunders === 0) blunderFreeGames++;
+    bestAccuracy = Math.max(bestAccuracy, sum.accuracy);
+
+    const highlightPly = firstBrilliantPly || firstGreatPly || ag.plies.length;
+    const score = gameHighlightScore({
+      accuracy: sum.accuracy,
+      result,
+      userRating,
+      opponentRating,
+      brilliants: userBrilliants,
+      blunders: userBlunders,
+    });
+    const reasonBits = [`${sum.accuracy.toFixed(1)}% accuracy`];
+    if (result === 'W' && opponentRating > 0) reasonBits.push(`beat ${opponentRating}`);
+    if (userBrilliants > 0) reasonBits.push(`${userBrilliants} !!`);
+    if (userGreats > 0) reasonBits.push(`${userGreats} great`);
+    if (userBlunders === 0) reasonBits.push('0 blunders');
+    const highlight: GameHighlight = {
+      gameId: ag.id,
+      opponent: opponentName,
+      opponentRating,
+      userRating,
+      userColor: uc,
+      result,
+      accuracy: sum.accuracy,
+      opening: rawOpen,
+      playedAt: ag.game.createdAt,
+      brilliants: userBrilliants,
+      blunders: userBlunders,
+      score,
+      highlightPly,
+      reason: reasonBits.join(' · '),
+    };
+    highlights.push(highlight);
+
+    if (userRating > 0 && opponentRating >= userRating + 50) {
+      giantGames++;
+      if (result === 'W') {
+        giantWins++;
+        if (!giantBest || opponentRating > giantBest.opponentRating) giantBest = highlight;
+      }
     }
   }
 
@@ -178,6 +313,25 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   const openings: OpeningStat[] = Array.from(openMap.values())
     .map((o) => ({ ...o, winRate: Math.round(((o.wins + o.draws * 0.5) / o.games) * 100), avgAccuracy: Number((o.accSum / o.games).toFixed(1)) }))
     .sort((a, b) => b.games - a.games || b.winRate - a.winRate);
+
+  const bestGames = highlights.slice().sort((a, b) => b.score - a.score).slice(0, 3);
+  const worstGame = highlights.slice().sort((a, b) => a.score - b.score)[0] ?? null;
+  const byDate = highlights.slice().sort((a, b) => b.playedAt - a.playedAt);
+  const latestResult = byDate[0]?.result;
+  const streakKind: 'W' | 'D' | 'L' | 'none' = latestResult ?? 'none';
+  let streakCount = 0;
+  if (latestResult) {
+    for (const h of byDate) {
+      if (h.result !== latestResult) break;
+      streakCount++;
+    }
+  }
+  const openingPool = openings.filter((o) => o.games >= 2);
+  const ratedOpenings = openingPool.length > 0 ? openingPool : openings;
+  const openingBest = ratedOpenings.slice().sort((a, b) => b.winRate - a.winRate || b.avgAccuracy - a.avgAccuracy)[0] ?? null;
+  const openingWorst = ratedOpenings.length > 1
+    ? ratedOpenings.slice().sort((a, b) => a.winRate - b.winRate || a.avgAccuracy - b.avgAccuracy)[0] ?? null
+    : null;
 
   const avgAccuracy = Number((accSum / games.length).toFixed(1));
   const avgEstimatedElo = Math.round(eloSum / games.length);
@@ -273,5 +427,20 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     ratingBand: `${band.label} (${Math.round(ratingAnchor)} anchor)`,
     brilliantCount,
     recommendation,
+    bestGames,
+    worstGame,
+    bestAccuracy,
+    avgOpponentRating: opponentRatingCount > 0 ? Math.round(opponentRatingSum / opponentRatingCount) : 0,
+    giantSlayer: { wins: giantWins, games: giantGames, best: giantBest },
+    comebacks,
+    blownWins,
+    blunderFreeGames,
+    scoreByColour: {
+      white: finishColour(colourAcc.w.split, colourAcc.w.accSum),
+      black: finishColour(colourAcc.b.split, colourAcc.b.accSum),
+    },
+    currentStreak: { kind: streakKind, count: streakCount },
+    openingBest,
+    openingWorst,
   };
 }

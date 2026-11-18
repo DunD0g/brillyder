@@ -648,6 +648,7 @@ export const App: React.FC = () => {
             onClearScout={() => setScout(null)}
             onOpenGames={() => setTab('games')}
             onOpenTrainer={() => setTab('train')}
+            onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
           />
         )}
       </main>

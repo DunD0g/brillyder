@@ -6,8 +6,10 @@ import {
   FlaskConical,
   Gem,
   Loader2,
+  RotateCcw,
   Sparkles,
   Square as StopIcon,
+  X,
 } from 'lucide-react';
 import {
   type AnalysisDepthPreset,
@@ -115,8 +117,16 @@ export const AnalysisView: React.FC<Props> = ({
   const celebratedInitialRef = useRef('');
   const botGenerationRef = useRef(0);
   const retryGenerationRef = useRef(0);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   const sandboxFen = sandbox?.fen ?? null;
+
+  const scrollBoardIntoView = () => {
+    if (typeof window === 'undefined' || !window.matchMedia('(max-width: 1023px)').matches) return;
+    window.setTimeout(() => {
+      boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  };
 
   useEffect(() => {
     const start = initialPly && initialPly > 0 ? initialPly : 0;
@@ -248,6 +258,7 @@ export const AnalysisView: React.FC<Props> = ({
       status: 'prompt',
       feedback: `Find a better move for ${currentPly.color === 'w' ? 'White' : 'Black'} instead of ${currentPly.san}.`,
     });
+    scrollBoardIntoView();
   };
 
   const jumpToNextMistake = () => {
@@ -392,6 +403,7 @@ export const AnalysisView: React.FC<Props> = ({
       historyFens: [activeFen],
       statusText: `Your turn (${turn === 'w' ? 'White' : 'Black'}) vs Stockfish ${botElo}`,
     });
+    scrollBoardIntoView();
   };
 
   const startSandbox = () => {
@@ -401,6 +413,7 @@ export const AnalysisView: React.FC<Props> = ({
     setRetryState(null);
     setBotState(null);
     setSandbox({ fen: reviewFen, basePly: currentPlyIndex, moves: [], eval: null, loading: true });
+    scrollBoardIntoView();
   };
 
   const applySandboxMove = (from: Square, to: Square, promotion?: PieceSymbol) => {
@@ -487,6 +500,30 @@ export const AnalysisView: React.FC<Props> = ({
 
   const basePly = sandbox?.basePly ?? currentPlyIndex;
   const baseLabel = basePly === 0 ? 'the starting position' : `after ${Math.ceil(basePly / 2)}${basePly % 2 === 1 ? '.' : '…'}`;
+  const sandboxBaseFen = basePly === 0 ? START_FEN : analyzed?.plies[basePly - 1]?.afterFen ?? START_FEN;
+
+  const rebuildSandbox = (moves: SandboxMove[]): string => {
+    const c = new Chess(sandboxBaseFen);
+    for (const m of moves) {
+      const parsed = uciToSquares(m.uci);
+      if (!parsed) break;
+      try { c.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion }); } catch { break; }
+    }
+    return c.fen();
+  };
+
+  const undoSandbox = () => {
+    if (!sandbox || sandbox.moves.length === 0) return;
+    const moves = sandbox.moves.slice(0, -1);
+    soundManager.playMove();
+    setSandbox((prev) => prev ? { ...prev, moves, fen: rebuildSandbox(moves), loading: true } : null);
+  };
+
+  const resetSandbox = () => {
+    if (!sandbox) return;
+    soundManager.playMove();
+    setSandbox((prev) => prev ? { ...prev, moves: [], fen: sandboxBaseFen, loading: true } : null);
+  };
 
   const startAnalysis = () => {
     botGenerationRef.current += 1;
@@ -572,7 +609,7 @@ export const AnalysisView: React.FC<Props> = ({
 
             <div className="mt-1.5 flex items-stretch gap-1.5 sm:gap-2">
               <EvalBar score={activeScore} orientation={orientation} />
-              <div className="relative min-w-0 flex-1">
+              <div className="relative min-w-0 flex-1" ref={boardRef}>
                 <ChessgroundBoard
                   fen={activeFen}
                   orientation={orientation}
@@ -628,6 +665,37 @@ export const AnalysisView: React.FC<Props> = ({
                 )}
               </div>
             </div>
+
+            {sandbox && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black text-fuchsia-200">
+                  <FlaskConical className="h-3 w-3" /> {sandbox.moves.length} explored
+                </span>
+                <button
+                  type="button"
+                  onClick={undoSandbox}
+                  disabled={sandbox.moves.length === 0}
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={resetSandbox}
+                  disabled={sandbox.moves.length === 0}
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/80 px-2 py-2 text-[11px] font-bold text-slate-200 active:bg-slate-800 disabled:opacity-40"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSandbox(null)}
+                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-2 py-2 text-[11px] font-black text-rose-200 active:bg-rose-500/20"
+                >
+                  <X className="h-3.5 w-3.5" /> Exit
+                </button>
+              </div>
+            )}
 
             <div className="mt-1.5">
               <PlayerBar
