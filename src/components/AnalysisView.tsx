@@ -25,6 +25,7 @@ import {
   type RetrySession,
 } from '../types/chess';
 import { isSacrificeMove, loadPgnSafely } from '../chess/classification';
+import { buildOpeningReport } from '../chess/openingBook';
 import { buildEngineScore, getMaterialBalance, getMoverWinPercent, uciToSquares } from '../utils/chessMath';
 import { soundManager } from '../utils/sound';
 import { stockfishService } from '../engine/StockfishService';
@@ -37,6 +38,8 @@ import { BotPanel, RetryPanel } from './AnalysisPanels';
 import { KeyMomentsBar } from './KeyMomentsBar';
 import { MoveList } from './MoveList';
 import { VariationExplorer } from './VariationExplorer';
+import { OpeningExplorer } from './OpeningExplorer';
+import { OpeningReportCard } from './OpeningReportCard';
 import { TransportControls } from './TransportControls';
 import { AccuracyCards } from './AccuracyCards';
 import { AlienCelebration, type CelebrationKind } from './AlienCelebration';
@@ -145,6 +148,15 @@ export const AnalysisView: React.FC<Props> = ({
   const totalPlies = analyzed ? analyzed.plies.length : rawMoves.length;
   const currentPly: AnalyzedPly | null = analyzed && currentPlyIndex > 0 ? analyzed.plies[currentPlyIndex - 1] ?? null : null;
 
+  const sanHistory = useMemo(
+    () => (analyzed ? analyzed.plies.map((p) => p.san) : rawMoves.map((m) => m.san)),
+    [analyzed, rawMoves],
+  );
+  const openingReport = useMemo(
+    () => buildOpeningReport(sanHistory, game.userColor ?? 'w'),
+    [sanHistory, game.userColor],
+  );
+
   const reviewFen = useMemo(() => {
     if (currentPlyIndex === 0) return START_FEN;
     if (analyzed?.plies[currentPlyIndex - 1]) return analyzed.plies[currentPlyIndex - 1].afterFen;
@@ -156,6 +168,25 @@ export const AnalysisView: React.FC<Props> = ({
     const p = analyzed?.plies[currentPlyIndex - 1] ?? rawMoves[currentPlyIndex - 1];
     return p ? [p.from, p.to] : undefined;
   }, [currentPlyIndex, analyzed, rawMoves]);
+
+  const historyForPly = (ply: number): string[] => {
+    if (analyzed && analyzed.plies.length >= ply) {
+      return analyzed.plies.slice(0, ply).map((p) => p.san);
+    }
+    return rawMoves.slice(0, ply).map((m) => m.san);
+  };
+
+  const activeSanHistory = useMemo(() => {
+    if (sandbox) {
+      return [...historyForPly(sandbox.basePly), ...sandbox.moves.map((m) => m.san)];
+    }
+    return historyForPly(currentPlyIndex);
+  }, [sandbox, analyzed, rawMoves, currentPlyIndex]);
+
+  const fenAtPly = (plyIndex: number): string => {
+    if (plyIndex <= 0) return START_FEN;
+    return analyzed?.plies[plyIndex - 1]?.afterFen ?? rawMoves[plyIndex - 1]?.after ?? START_FEN;
+  };
 
   const currentScore: EngineScore = useMemo(() => {
     if (!analyzed) return buildEngineScore(20, null);
@@ -406,13 +437,46 @@ export const AnalysisView: React.FC<Props> = ({
     scrollBoardIntoView();
   };
 
-  const startSandbox = () => {
-    if (!analyzed) return;
+  const toSandboxMove = (mv: { san: string; from: string; to: string; promotion?: string }): SandboxMove => ({
+    san: mv.san,
+    uci: `${mv.from}${mv.to}${mv.promotion ?? ''}`,
+    from: mv.from,
+    to: mv.to,
+  });
+
+  const beginSandboxAt = (plyIndex: number, san?: string) => {
+    const safePly = Math.max(0, Math.min(totalPlies, plyIndex));
     soundManager.unlock();
+    const c = new Chess(fenAtPly(safePly));
+    const moves: SandboxMove[] = [];
+    if (san) {
+      try { moves.push(toSandboxMove(c.move(san))); } catch { return; }
+    }
     setPlaying(false);
     setRetryState(null);
     setBotState(null);
-    setSandbox({ fen: reviewFen, basePly: currentPlyIndex, moves: [], eval: null, loading: true });
+    setPendingPromo(null);
+    setSandbox({ fen: c.fen(), basePly: safePly, moves, eval: null, loading: true });
+    scrollBoardIntoView();
+  };
+
+  const startSandbox = () => {
+    if (!analyzed) return;
+    beginSandboxAt(currentPlyIndex);
+  };
+
+  const playExplorerSan = (san: string) => {
+    if (!sandbox) {
+      beginSandboxAt(currentPlyIndex, san);
+      return;
+    }
+    soundManager.unlock();
+    const c = new Chess(sandbox.fen);
+    let mv;
+    try { mv = c.move(san); } catch { return; }
+    if (mv.captured) soundManager.playCapture(); else if (mv.san.includes('+')) soundManager.playCheck(); else soundManager.playMove();
+    const move = toSandboxMove(mv);
+    setSandbox((prev) => prev ? { ...prev, fen: c.fen(), moves: [...prev.moves, move], loading: true } : null);
     scrollBoardIntoView();
   };
 
@@ -775,6 +839,17 @@ export const AnalysisView: React.FC<Props> = ({
                 onStartSandbox={startSandbox}
                 onNextMistake={jumpToNextMistake}
               />
+              <OpeningReportCard
+                report={openingReport}
+                onJumpToPly={jumpToPly}
+                onExplorePly={beginSandboxAt}
+                onPlayBookMove={beginSandboxAt}
+              />
+              <OpeningExplorer
+                fen={reviewFen}
+                sanHistory={activeSanHistory}
+                onPlaySan={playExplorerSan}
+              />
               <VariationExplorer
                 active={false}
                 baseLabel={baseLabel}
@@ -790,16 +865,23 @@ export const AnalysisView: React.FC<Props> = ({
           )}
 
           {!botState && !retryState && sandbox && (
-            <VariationExplorer
-              active
-              baseLabel={baseLabel}
-              fen={sandbox.fen}
-              evalResult={sandbox.eval}
-              loading={sandbox.loading}
-              onStart={startSandbox}
-              onExit={() => setSandbox(null)}
-              onPlayLine={playSandboxLine}
-            />
+            <>
+              <OpeningExplorer
+                fen={sandbox.fen}
+                sanHistory={activeSanHistory}
+                onPlaySan={playExplorerSan}
+              />
+              <VariationExplorer
+                active
+                baseLabel={baseLabel}
+                fen={sandbox.fen}
+                evalResult={sandbox.eval}
+                loading={sandbox.loading}
+                onStart={startSandbox}
+                onExit={() => setSandbox(null)}
+                onPlayLine={playSandboxLine}
+              />
+            </>
           )}
 
           {analyzed && !sandbox && (
