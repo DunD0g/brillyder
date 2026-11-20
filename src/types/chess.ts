@@ -104,14 +104,21 @@ export interface AnalyzedPly {
   afterFen: string;
   clockText?: string;
   clockSeconds?: number;
+  timeSpentSeconds?: number;
+  clockTag?: 'impulse' | 'time-trouble';
   bestMoveUci: string;
   bestMoveSan: string;
   bestPvSan: string[];
+  topLines?: Array<{ san: string; evalDisplay: string; pvSan: string[] }>;
   threatMoveUci?: string;
   threatMoveSan?: string;
   evalBefore: EngineScore;
   evalAfter: EngineScore;
   secondBestGapWin: number;
+  secondBestGapPawns?: number;
+  isCriticalMoment?: boolean;
+  isClutchSave?: boolean;
+  deepened?: boolean;
   winLoss: number;
   accuracy: number;
   classification: MoveClassification;
@@ -237,6 +244,57 @@ export interface ColourSplit {
   accuracy: number;
 }
 
+export type EndgameCategory = 'Rook' | 'Pawn' | 'Minor Piece' | 'Queen' | 'Rook+Minor';
+
+export interface ClockLeakSummary {
+  impulseBlunders: number;
+  timeTroubleBlunders: number;
+  avgTimeSpentSec: number;
+  impulsePerGame: number;
+}
+
+export interface TiltStreakBucket {
+  label: string;
+  priorLosses: number;
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  winRate: number;
+}
+
+export interface TiltGuardStats {
+  buckets: TiltStreakBucket[];
+  activeWarning: boolean;
+  consecutiveLosses: number;
+}
+
+export interface CheckpointMetrics {
+  games: number;
+  avgEvalMove10: number | null;
+  impulseBlundersPerGame: number;
+  blownLeadPct: number;
+}
+
+export interface TwentyGameCheckpoints {
+  windowSize: number;
+  recent: CheckpointMetrics;
+  previous: CheckpointMetrics;
+}
+
+export interface MotifWeaknessStat {
+  motif: string;
+  count: number;
+  avgWinLoss: number;
+}
+
+export interface EndgameCategoryStat {
+  category: EndgameCategory;
+  moves: number;
+  accuracy: number;
+  blunders: number;
+}
+
 export interface MultiGameInsights {
   gamesCount: number;
   avgAccuracy: number;
@@ -246,6 +304,11 @@ export interface MultiGameInsights {
   openings: OpeningStat[];
   phaseStats: PhaseBlunderStats[];
   timeTrouble: ClockBucketStats[];
+  clockLeaks: ClockLeakSummary;
+  tiltGuard: TiltGuardStats;
+  checkpoints: TwentyGameCheckpoints | null;
+  missedMotifs: MotifWeaknessStat[];
+  endgameCategories: EndgameCategoryStat[];
   trend: AccuracyTrendPoint[];
   ratingBand: string;
   brilliantCount: number;
@@ -277,8 +340,11 @@ export interface ScoutState {
 
 export type BoardThemeId = 'slate' | 'emerald' | 'walnut' | 'neon';
 
+export type VaultCategory = 'brilliant' | 'clutch' | 'traps' | 'clean';
+
 export interface BrillyVaultEntry {
   id: string;
+  category: VaultCategory;
   gameId: string;
   ply: number;
   moveNumber: number;
@@ -297,12 +363,17 @@ export interface BrillyVaultEntry {
   playedAt: number;
   analyzedAt: number;
   captured?: string;
+  badgeText?: string;
+  reason?: string;
 }
 
 export interface BrillyVaultStats {
   total: number;
   userMoves: number;
   opponentMoves: number;
+  clutchSaves: number;
+  trapsPunished: number;
+  cleanSweeps: number;
   thisMonth: number;
   topOpenings: Array<{ name: string; count: number }>;
   topMonths: Array<{ key: string; label: string; count: number }>;

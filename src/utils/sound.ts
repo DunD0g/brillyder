@@ -56,13 +56,25 @@ class SoundEngine {
     this.tone(523.25, 0.09, 'sine', 0.11, 0);
     this.tone(783.99, 0.15, 'sine', 0.12, 0.08);
   }
+  playSonarPing(): void {
+    this.tone(880, 0.16, 'sine', 0.09, 0, 1174.66);
+    this.tone(1318.5, 0.22, 'sine', 0.05, 0.05);
+  }
+  playBrilliantChord(): void {
+    this.tone(523.25, 0.16, 'sine', 0.10, 0);
+    this.tone(659.25, 0.18, 'sine', 0.10, 0.05);
+    this.tone(783.99, 0.22, 'sine', 0.11, 0.10);
+    this.tone(1046.5, 0.28, 'triangle', 0.08, 0.15);
+  }
+  playHullThud(): void {
+    this.tone(145, 0.19, 'sawtooth', 0.09, 0, 74);
+    this.tone(92, 0.24, 'triangle', 0.11, 0.05, 58);
+  }
   playError(): void { this.tone(190, 0.14, 'triangle', 0.1, 0, 135); }
 
   playClassification(cls: MoveClassification, isCapture = false, isCheck = false): void {
     if (cls === 'brilliant') {
-      this.tone(523.25, 0.12, 'sine', 0.11, 0);
-      this.tone(659.25, 0.12, 'sine', 0.11, 0.06);
-      this.tone(783.99, 0.18, 'sine', 0.13, 0.12);
+      this.playBrilliantChord();
       return;
     }
     if (cls === 'great') {
@@ -71,8 +83,7 @@ class SoundEngine {
       return;
     }
     if (cls === 'blunder') {
-      this.tone(185, 0.16, 'sawtooth', 0.08, 0, 110);
-      this.tone(130, 0.22, 'triangle', 0.1, 0.08, 92);
+      this.playHullThud();
       return;
     }
     if (cls === 'mistake') { this.tone(220, 0.14, 'triangle', 0.09, 0, 165); return; }

@@ -3,9 +3,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        obsidian: '#0b0f19',
-        surface: '#111827',
-        card: '#1e293b',
+        obsidian: '#070B14',
+        void: '#070B14',
+        hull: '#0F172A',
+        cockpit: '#162036',
+        surface: '#0F172A',
+        card: '#162036',
+        brilly: '#2DD4BF',
+        warp: '#A855F7',
+        blunder: '#FB7185',
+        alert: '#FBBF24',
+        clean: '#34D399',
       },
     },
   },

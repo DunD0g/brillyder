@@ -7,16 +7,20 @@
     "postinstall": "node scripts/prepare-assets.mjs",
     "prepare:assets": "node scripts/prepare-assets.mjs",
     "dev": "node scripts/prepare-assets.mjs && vite",
+    "test": "vitest run",
     "build": "node scripts/prepare-assets.mjs && tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
     "chess.js": "^1.4.0",
+    "idb": "^8.0.4",
     "lucide-react": "^0.468.0",
+    "onnxruntime-web": "^1.31.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "stockfish": "^19.0.1"
+    "stockfish": "^19.0.1",
+    "ts-fsrs": "^6.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -26,6 +30,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^2.1.9"
   }
 }

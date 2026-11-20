@@ -26,9 +26,19 @@ import {
 } from '../types/chess';
 import { isSacrificeMove, loadPgnSafely } from '../chess/classification';
 import { buildOpeningReport } from '../chess/openingBook';
+import type { OpeningCourse } from '../types/openings';
+import { detectRepertoireDeviation, type RepertoireDeviation } from '../services/deviationDetector';
+import type { ExplorerPrefSettings } from './SettingsMenu';
 import { buildEngineScore, getMaterialBalance, getMoverWinPercent, uciToSquares } from '../utils/chessMath';
 import { soundManager } from '../utils/sound';
 import { stockfishService } from '../engine/StockfishService';
+import { maiaService } from '../engine/MaiaService';
+import {
+  fetchLichessTablebase,
+  formatTablebaseWdl,
+  isTablebaseEligible,
+  type TablebaseResult,
+} from '../services/tablebaseApi';
 import { ChessgroundBoard } from './ChessgroundBoard';
 import { EvalBar } from './EvalBar';
 import { EvalGraph } from './EvalGraph';
@@ -48,7 +58,7 @@ interface Props {
   game: LichessGameRecord;
   analyzed: AnalyzedGame | null;
   analyzing: boolean;
-  progress: { done: number; total: number } | null;
+  progress: { done: number; total: number; stageLabel?: string } | null;
   depthPreset: AnalysisDepthPreset;
   onDepthPresetChange: (d: AnalysisDepthPreset) => void;
   onStartAnalysis: () => void;
@@ -59,6 +69,10 @@ interface Props {
   initialPly?: number | null;
   boardTheme: BoardThemeId;
   celebrationsEnabled: boolean;
+  courses?: OpeningCourse[];
+  explorerPrefs?: ExplorerPrefSettings;
+  onBoostDeviationToFsrs?: (deviation: RepertoireDeviation) => Promise<void>;
+  onPatchDeviationGap?: (deviation: RepertoireDeviation) => Promise<void>;
 }
 
 type BoardMode = 'bot' | 'retry' | 'sandbox';
@@ -101,6 +115,10 @@ export const AnalysisView: React.FC<Props> = ({
   initialPly,
   boardTheme,
   celebrationsEnabled,
+  courses = [],
+  explorerPrefs,
+  onBoostDeviationToFsrs,
+  onPatchDeviationGap,
 }) => {
   const rawMoves = useMemo(() => {
     try { return loadPgnSafely(game.pgn).history({ verbose: true }); } catch { return []; }
@@ -117,6 +135,7 @@ export const AnalysisView: React.FC<Props> = ({
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
   const [celebration, setCelebration] = useState<CelebrationState | null>(null);
+  const [tablebase, setTablebase] = useState<TablebaseResult | null>(null);
   const celebratedInitialRef = useRef('');
   const botGenerationRef = useRef(0);
   const retryGenerationRef = useRef(0);
@@ -155,6 +174,18 @@ export const AnalysisView: React.FC<Props> = ({
   const openingReport = useMemo(
     () => buildOpeningReport(sanHistory, game.userColor ?? 'w'),
     [sanHistory, game.userColor],
+  );
+
+  const repertoireDeviation = useMemo(
+    () =>
+      detectRepertoireDeviation({
+        sanHistory,
+        userColor: game.userColor ?? 'w',
+        courses,
+        analyzed,
+        maxMoveNumber: 12,
+      }),
+    [sanHistory, game.userColor, courses, analyzed]
   );
 
   const reviewFen = useMemo(() => {
@@ -258,6 +289,18 @@ export const AnalysisView: React.FC<Props> = ({
     // jumpToPly intentionally read from the current render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, currentPlyIndex, totalPlies, speed, botState, retryState, sandbox]);
+
+  useEffect(() => {
+    if (!isTablebaseEligible(activeFen)) {
+      setTablebase(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchLichessTablebase(activeFen).then((res) => {
+      if (!cancelled) setTablebase(res);
+    });
+    return () => { cancelled = true; };
+  }, [activeFen]);
 
   useEffect(() => {
     if (!sandboxFen) return;
@@ -395,7 +438,7 @@ export const AnalysisView: React.FC<Props> = ({
     } : null);
 
     try {
-      const botUci = await stockfishService.getBotMove(afterFen, session.elo);
+      const { moveUci: botUci, engine: botEngine } = await maiaService.getSmartBotMove(afterFen, session.elo);
       if (botGenerationRef.current !== generation) return;
       const parsed = uciToSquares(botUci);
       if (!parsed) {
@@ -405,9 +448,10 @@ export const AnalysisView: React.FC<Props> = ({
       const bc = new Chess(afterFen);
       const bmv = bc.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion });
       if (bmv.captured) soundManager.playCapture(); else if (bmv.san.includes('+')) soundManager.playCheck(); else soundManager.playMove();
+      const engineName = botEngine === 'maia' ? `Maia ${session.elo}` : `Stockfish ${session.elo}`;
       setBotState((prev) => prev ? {
         ...prev, fen: bc.fen(), lastMove: [bmv.from, bmv.to], historyFens: [...prev.historyFens, bc.fen()], thinking: false,
-        statusText: bc.isGameOver() ? (bc.isCheckmate() ? `Checkmate — Stockfish (${prev.elo}) wins.` : 'Draw.') : `Bot played ${bmv.san}. Your turn!`,
+        statusText: bc.isGameOver() ? (bc.isCheckmate() ? `Checkmate — ${engineName} wins.` : 'Draw.') : `${engineName} played ${bmv.san}. Your turn!`,
       } : null);
     } catch {
       if (botGenerationRef.current !== generation) return;
@@ -643,15 +687,16 @@ export const AnalysisView: React.FC<Props> = ({
       </div>
 
       {analyzing && progress && (
-        <div className="glass-card border-cyan-500/30 p-2.5">
+        <div className="glass-card border-teal-400/35 p-2.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-200">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Stockfish WASM · D{depthPreset} · MultiPV 2
+            <span className="inline-flex items-center gap-2 font-semibold text-teal-200">
+              <span className="radar-sweep h-4 w-4 shrink-0" />
+              {progress.stageLabel || `Stockfish WASM · Two-Pass D${depthPreset}`}
             </span>
             <span className="font-mono text-slate-300">{progress.done}/{progress.total}</span>
           </div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-200" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
+          <div className="mt-1.5 tractor-beam-track h-2">
+            <div className="tractor-beam-fill" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
           </div>
         </div>
       )}
@@ -839,15 +884,46 @@ export const AnalysisView: React.FC<Props> = ({
                 onStartSandbox={startSandbox}
                 onNextMistake={jumpToNextMistake}
               />
+              {tablebase && (
+                <div className="glass-card border-teal-400/35 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-brilly">
+                      7-Piece Syzygy Tablebase
+                    </span>
+                    <span className="rounded-full border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-teal-200">
+                      {formatTablebaseWdl(tablebase.category, activeTurn).label}
+                      {tablebase.dtz !== null ? ` · DTZ ${Math.abs(tablebase.dtz)}` : ''}
+                    </span>
+                  </div>
+                  {tablebase.moves.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {tablebase.moves.slice(0, 5).map((mv) => (
+                        <button
+                          key={mv.uci}
+                          type="button"
+                          onClick={() => playExplorerSan(mv.san)}
+                          className="rounded-lg border border-slate-700 bg-void/70 px-2 py-1 font-mono text-[10px] font-bold text-slate-200 hover:border-teal-400/50"
+                        >
+                          {mv.san} <span className="text-slate-400">({mv.category})</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <OpeningReportCard
                 report={openingReport}
+                repertoireDeviation={repertoireDeviation}
                 onJumpToPly={jumpToPly}
                 onExplorePly={beginSandboxAt}
                 onPlayBookMove={beginSandboxAt}
+                onBoostDeviationToFsrs={onBoostDeviationToFsrs}
+                onPatchDeviationGap={onPatchDeviationGap}
               />
               <OpeningExplorer
                 fen={reviewFen}
                 sanHistory={activeSanHistory}
+                explorerPrefs={explorerPrefs}
                 onPlaySan={playExplorerSan}
               />
               <VariationExplorer
@@ -869,6 +945,7 @@ export const AnalysisView: React.FC<Props> = ({
               <OpeningExplorer
                 fen={sandbox.fen}
                 sanHistory={activeSanHistory}
+                explorerPrefs={explorerPrefs}
                 onPlaySan={playExplorerSan}
               />
               <VariationExplorer

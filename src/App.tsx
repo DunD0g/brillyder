@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
+  BookOpen,
   Gem,
   GraduationCap,
   ListChecks,
@@ -18,28 +19,63 @@ import type {
   LichessGameRecord,
   ScoutState,
 } from './types/chess';
+import type { FsrsOpeningCard, OpeningCourse, WoodpeckerCycleRecord } from './types/openings';
+import starterCoursesData from './data/starterCourses.json';
 import { getStoredBoardTheme, storeBoardTheme } from './chess/boardThemes';
 import { refreshBrilliantClassifications } from './chess/classification';
 import { analyzeGameToReview, AnalysisCancelledError } from './services/analysisRunner';
 import { fetchGamesForPlatform, platformLabel } from './services/gameSource';
 import { buildBrillyVault } from './services/vault';
+import { buildMistakeDeck } from './services/mistakeDeck';
+import type { DailyDurationMinutes } from './services/dailyCoach';
 import {
   extractLichessGameId,
   fetchLichessGameByUrlOrId,
   parseRawPgnToGame,
   SAMPLE_GAMES,
 } from './services/lichessApi';
-import { getAllAnalyzedGames, getPref, saveAnalyzedGame, setPref } from './storage/gameDb';
+import {
+  getAllAnalyzedGames,
+  getPref,
+  hydrateStorageFromIndexedDb,
+  saveAnalyzedGame,
+  setPref,
+} from './storage/gameDb';
+import {
+  deleteRepertoire,
+  getAllFsrsCards,
+  getAllRepertoires,
+  getAllWoodpeckerCycles,
+  getTrainingLog,
+  saveFsrsCard,
+  saveFsrsCardsBulk,
+  saveRepertoire,
+  saveTrainingLog,
+  saveWoodpeckerCycle,
+  type BackupImportSummary,
+} from './storage/brillyDb';
 import { stockfishService } from './engine/StockfishService';
+import { maiaService } from './engine/MaiaService';
 import { soundManager } from './utils/sound';
+import { getVibeCopy, VibeProvider, type VibeMode } from './utils/vibeCopy';
+import {
+  boostCardToDueNow,
+  createFsrsOpeningCard,
+  hydrateCourseCards,
+  isCardDue,
+} from './lib/fsrsOpening';
+import { addPatchedLineToCourse } from './services/repertoireCoverage';
+import type { RepertoireDeviation } from './services/deviationDetector';
 import { AnalysisView } from './components/AnalysisView';
 import { GameListView, type BatchState } from './components/GameListView';
 import { InsightsView } from './components/InsightsView';
-import { BrillyVaultView } from './components/BrillyVaultView';
-import { MistakeTrainerView } from './components/MistakeTrainerView';
-import { BoardThemePicker } from './components/BoardThemePicker';
+import { BrillyVaultModal } from './components/BrillyVaultModal';
+import { OpeningsView } from './components/OpeningsView';
+import { MistakeTrainerView, type TrainSection } from './components/MistakeTrainerView';
+import { GravityCheckModal } from './components/train/GravityCheckModal';
+import { SettingsMenu, type ExplorerPrefSettings } from './components/SettingsMenu';
 
-type ActiveTab = 'games' | 'analyze' | 'vault' | 'train' | 'insights';
+type ActiveTab = 'games' | 'analyze' | 'openings' | 'train' | 'insights';
 
 interface NavItem {
   id: ActiveTab;
@@ -50,10 +86,12 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'games', label: 'Games', Icon: ListChecks },
   { id: 'analyze', label: 'Analyze', Icon: Sparkles },
-  { id: 'vault', label: 'Vault', Icon: Gem },
+  { id: 'openings', label: 'Openings', Icon: BookOpen },
   { id: 'train', label: 'Train', Icon: GraduationCap },
   { id: 'insights', label: 'Insights', Icon: BarChart3 },
 ];
+
+const STARTER_COURSES = starterCoursesData as OpeningCourse[];
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
@@ -88,13 +126,26 @@ export const App: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; stageLabel?: string } | null>(null);
   const [batch, setBatch] = useState<BatchState | null>(null);
   const [scout, setScout] = useState<ScoutState | null>(null);
   const [muted, setMuted] = useState<boolean>(() => soundManager.isMuted());
   const [showIosTip, setShowIosTip] = useState(false);
   const [boardTheme, setBoardTheme] = useState<BoardThemeId>(() => getStoredBoardTheme());
   const [celebrationsEnabled, setCelebrationsEnabled] = useState<boolean>(() => getPref('brillyder_celebrations', true));
+  const [vibe, setVibe] = useState<VibeMode>(() => getPref<VibeMode>('brillyder_vibe', 'cosmic'));
+  const [maiaEnabled, setMaiaEnabled] = useState<boolean>(() => maiaService.isEnabled());
+  const [explorerPrefs, setExplorerPrefs] = useState<ExplorerPrefSettings>(() =>
+    getPref<ExplorerPrefSettings>('brillyder_explorer_prefs', { ratingBand: 1400, speeds: ['blitz', 'rapid'] })
+  );
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [gravityCheckOpen, setGravityCheckOpen] = useState(false);
+  const [trainSection, setTrainSection] = useState<TrainSection>('daily');
+  const [trainMotif, setTrainMotif] = useState<string | null>(null);
+  const [fsrsCards, setFsrsCards] = useState<FsrsOpeningCard[]>([]);
+  const [customRepertoires, setCustomRepertoires] = useState<OpeningCourse[]>([]);
+  const [woodpeckerCycles, setWoodpeckerCycles] = useState<WoodpeckerCycleRecord[]>([]);
+  const [convertedIds, setConvertedIds] = useState<string[]>([]);
 
   const cancelAnalysisRef = useRef(false);
   const analysisRunRef = useRef(0);
@@ -131,6 +182,14 @@ export const App: React.FC = () => {
     setPref('brillyder_celebrations', celebrationsEnabled);
   }, [celebrationsEnabled]);
 
+  useEffect(() => {
+    setPref('brillyder_vibe', vibe);
+  }, [vibe]);
+
+  useEffect(() => {
+    setPref('brillyder_explorer_prefs', explorerPrefs);
+  }, [explorerPrefs]);
+
   const setUsernameFor = useCallback((name: string) => {
     setUsernames((prev) => ({ ...prev, [platform]: name }));
   }, [platform]);
@@ -163,29 +222,207 @@ export const App: React.FC = () => {
     }
   }, [usernames]);
 
+  const reloadFromIndexedDb = useCallback(async () => {
+    await hydrateStorageFromIndexedDb();
+    const [cachedGames, cards, reps, cycles, convLog] = await Promise.all([
+      getAllAnalyzedGames(),
+      getAllFsrsCards(),
+      getAllRepertoires(),
+      getAllWoodpeckerCycles(),
+      getTrainingLog('conversion_completed'),
+    ]);
+    const map = new Map<string, AnalyzedGame>();
+    const refreshed: AnalyzedGame[] = [];
+    for (const ag of cachedGames) {
+      const next = refreshBrilliantClassifications(ag);
+      if (next !== ag) refreshed.push(next);
+      map.set(next.id, next);
+    }
+    setAnalyzedMap(map);
+    setFsrsCards(cards);
+    setCustomRepertoires(reps);
+    setWoodpeckerCycles(cycles);
+    const savedIds = Array.isArray(convLog?.data?.ids) ? (convLog.data.ids as string[]) : [];
+    setConvertedIds(savedIds);
+    setVibe(getPref<VibeMode>('brillyder_vibe', 'cosmic'));
+    setMaiaEnabled(maiaService.isEnabled());
+    setBoardTheme(getStoredBoardTheme());
+    setCelebrationsEnabled(getPref('brillyder_celebrations', true));
+    setExplorerPrefs(
+      getPref<ExplorerPrefSettings>('brillyder_explorer_prefs', { ratingBand: 1400, speeds: ['blitz', 'rapid'] })
+    );
+    for (const ag of refreshed) void saveAnalyzedGame(ag);
+  }, []);
+
   useEffect(() => {
-    getAllAnalyzedGames().then((cached) => {
-      if (cached.length === 0) return;
-      const map = new Map<string, AnalyzedGame>();
-      const refreshed: AnalyzedGame[] = [];
-      for (const ag of cached) {
-        const next = refreshBrilliantClassifications(ag);
-        if (next !== ag) refreshed.push(next);
-        map.set(next.id, next);
-      }
-      setAnalyzedMap(map);
-      for (const ag of refreshed) void saveAnalyzedGame(ag);
+    void reloadFromIndexedDb().then(() => {
+      const initialPlatform = getPref<GamePlatform>('brillyder_platform', 'lichess');
+      const storedName = initialPlatform === 'chesscom'
+        ? getPref<string>(usernamePrefKey('chesscom'), '')
+        : getPref<string>(usernamePrefKey('lichess'), getPref<string>(LEGACY_USERNAME_KEY, 'Lukedunwell'));
+      if (storedName.trim()) void syncGames(initialPlatform, storedName);
     });
-    const initialPlatform = getPref<GamePlatform>('brillyder_platform', 'lichess');
-    const storedName = initialPlatform === 'chesscom'
-      ? getPref<string>(usernamePrefKey('chesscom'), '')
-      : getPref<string>(usernamePrefKey('lichess'), getPref<string>(LEGACY_USERNAME_KEY, 'Lukedunwell'));
-    if (storedName.trim()) void syncGames(initialPlatform, storedName);
     // Boot-time hydration should only run once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const analyzedGamesList = useMemo(() => Array.from(analyzedMap.values()), [analyzedMap]);
+  const vibeCopy = useMemo(() => getVibeCopy(vibe), [vibe]);
+  const dueOpeningCount = useMemo(() => fsrsCards.filter((c) => isCardDue(c)).length, [fsrsCards]);
+
+  const allCourses = useMemo<OpeningCourse[]>(() => {
+    const customById = new Map<string, OpeningCourse>();
+    for (const c of customRepertoires) customById.set(c.id, c);
+    const merged: OpeningCourse[] = STARTER_COURSES.map((s) => customById.get(s.id) ?? s);
+    for (const c of customRepertoires) {
+      if (!STARTER_COURSES.some((s) => s.id === c.id)) merged.push(c);
+    }
+    return merged;
+  }, [customRepertoires]);
+
+  const upsertFsrsCards = useCallback(async (incoming: FsrsOpeningCard[]) => {
+    if (incoming.length === 0) return;
+    await saveFsrsCardsBulk(incoming);
+    setFsrsCards((prev) => {
+      const map = new Map(prev.map((c) => [c.cardId, c]));
+      for (const c of incoming) map.set(c.cardId, c);
+      return Array.from(map.values());
+    });
+  }, []);
+
+  const handleCardReviewed = useCallback(async (updated: FsrsOpeningCard) => {
+    await saveFsrsCard(updated);
+    setFsrsCards((prev) => {
+      const idx = prev.findIndex((c) => c.cardId === updated.cardId);
+      if (idx === -1) return [...prev, updated];
+      const next = [...prev];
+      next[idx] = updated;
+      return next;
+    });
+  }, []);
+
+  const handleSaveCourse = useCallback(async (course: OpeningCourse, newCards?: FsrsOpeningCard[]) => {
+    await saveRepertoire(course);
+    setCustomRepertoires((prev) => {
+      const idx = prev.findIndex((c) => c.id === course.id);
+      if (idx === -1) return [...prev, course];
+      const next = [...prev];
+      next[idx] = course;
+      return next;
+    });
+    if (newCards && newCards.length > 0) {
+      await upsertFsrsCards(newCards);
+    }
+  }, [upsertFsrsCards]);
+
+  const handleDeleteCourse = useCallback(async (courseId: string) => {
+    await deleteRepertoire(courseId);
+    setCustomRepertoires((prev) => prev.filter((c) => c.id !== courseId));
+  }, []);
+
+  const handleBoostDeviationToFsrs = useCallback(async (deviation: RepertoireDeviation) => {
+    const target = deviation.expectedMoves[0];
+    if (!target) return;
+    const existing = fsrsCards.find((c) => c.cardId === target.cardId);
+    const base = existing ?? createFsrsOpeningCard({
+      courseId: target.courseId,
+      lineId: target.lineId,
+      side: deviation.color === 'w' ? 'white' : 'black',
+      fen: deviation.beforeFen,
+      ply: target.ply,
+      moveSequence: target.moveSequence,
+      expectedSan: target.expectedSan,
+      expectedUci: target.expectedUci,
+      source: 'game-deviation',
+      unlocked: true,
+    });
+    const boosted = boostCardToDueNow(base);
+    await handleCardReviewed(boosted);
+    setNotice({
+      kind: 'info',
+      text: `Boosted ${target.expectedSan} (${target.courseName}) directly to today’s FSRS review queue.`,
+    });
+  }, [fsrsCards, handleCardReviewed]);
+
+  const handlePatchDeviationGap = useCallback(async (deviation: RepertoireDeviation) => {
+    if (!deviation.recommendedReplySan) return;
+    const course = allCourses.find((c) => c.id === deviation.courseId);
+    if (!course) return;
+    const { updatedCourse, newCards } = addPatchedLineToCourse(
+      course,
+      deviation.moveSequenceAfter,
+      deviation.recommendedReplySan,
+      { planNote: `Patched from analyzed game novelty ${deviation.playedSan} with Stockfish reply ${deviation.recommendedReplySan}.` }
+    );
+    await handleSaveCourse(updatedCourse, newCards);
+    setNotice({
+      kind: 'info',
+      text: `Patched ${deviation.recommendedReplySan} vs ${deviation.playedSan} into ${course.name} & added to FSRS.`,
+    });
+  }, [allCourses, handleSaveCourse]);
+
+  const mistakeDeck = useMemo(
+    () => buildMistakeDeck(analyzedGamesList, username),
+    [analyzedGamesList, username]
+  );
+
+  const handleSaveWoodpeckerCycle = useCallback(async (cycle: WoodpeckerCycleRecord) => {
+    await saveWoodpeckerCycle(cycle);
+    setWoodpeckerCycles((prev) => {
+      const others = prev.filter((c) => c.id !== cycle.id);
+      return [cycle, ...others].sort((a, b) => b.createdAt - a.createdAt);
+    });
+  }, []);
+
+  const handleMarkConverted = useCallback(async (positionId: string) => {
+    const next = Array.from(new Set([...convertedIds, positionId]));
+    setConvertedIds(next);
+    await saveTrainingLog({
+      id: 'conversion_completed',
+      kind: 'conversion',
+      updatedAt: Date.now(),
+      data: { ids: next },
+    });
+  }, [convertedIds]);
+
+  const handleUnlockAllStarterCards = useCallback(async () => {
+    const cardMap = new Map(fsrsCards.map((c) => [c.cardId, c]));
+    const batch: FsrsOpeningCard[] = [];
+    for (const course of allCourses) {
+      for (const c of hydrateCourseCards(course, cardMap, { unlocked: true })) {
+        batch.push({ ...c, unlocked: true });
+      }
+    }
+    await upsertFsrsCards(batch);
+  }, [allCourses, fsrsCards, upsertFsrsCards]);
+
+  const handleDailySessionComplete = useCallback(async (summary: { duration: DailyDurationMinutes; completedItems: number }) => {
+    const day = new Date().toISOString().slice(0, 10);
+    await saveTrainingLog({
+      id: `daily_${day}`,
+      kind: 'daily-session',
+      updatedAt: Date.now(),
+      data: summary,
+    });
+    setNotice({
+      kind: 'info',
+      text: `Daily Coach (${summary.duration}m) complete — ${summary.completedItems} training positions logged!`,
+    });
+  }, []);
+
+  const openTrainerFocus = useCallback((section: TrainSection = 'daily', motif?: string | null) => {
+    setTrainSection(section);
+    setTrainMotif(motif ?? null);
+    setTab('train');
+  }, []);
+
+  const handleBackupImported = useCallback((summary: BackupImportSummary) => {
+    void reloadFromIndexedDb();
+    setNotice({
+      kind: 'info',
+      text: `Backup restored — ${summary.analyzedGames} games, ${summary.repertoires} courses, ${summary.fsrsCards} FSRS cards loaded.`,
+    });
+  }, [reloadFromIndexedDb]);
 
   const vault = useMemo(
     () => buildBrillyVault(analyzedGamesList, username),
@@ -229,8 +466,8 @@ export const App: React.FC = () => {
       const analyzed = await analyzeGameToReview(targetGame, depth, {
         persist: true,
         shouldCancel: isStale,
-        onProgress: (done, total) => {
-          if (!isStale()) setProgress({ done, total });
+        onProgress: (done, total, stageLabel) => {
+          if (!isStale()) setProgress({ done, total, stageLabel });
         },
       });
       if (isStale()) return;
@@ -451,79 +688,95 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-slate-800/70 bg-[#070b13]/[0.88] pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-lg items-center gap-1.5 px-3 py-2.5 sm:gap-2 sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6">
-          <button
-            type="button"
-            onClick={() => setTab('games')}
-            className="flex min-w-0 items-center gap-2 text-left"
-            aria-label="BrillyDer home"
-          >
-            <img src="./icon.svg" alt="" className="h-7 w-7 rounded-lg shadow-lg shadow-cyan-500/10 sm:h-8 sm:w-8" />
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-sm font-black leading-none tracking-tight sm:text-base">
-                <span>
-                  <span className="text-cyan-300">Brilly</span>
-                  <span className="text-rose-400">Der</span>
+    <VibeProvider vibe={vibe} setVibe={setVibe}>
+      <div className="min-h-screen text-slate-100">
+        <header className="sticky top-0 z-40 border-b border-slate-800/70 bg-void/[0.90] pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+          <div className="mx-auto flex w-full max-w-lg items-center gap-1.5 px-3 py-2.5 sm:gap-2 sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6">
+            <button
+              type="button"
+              onClick={() => setTab('games')}
+              className="flex min-w-0 items-center gap-2 text-left"
+              aria-label="BrillyDer home"
+            >
+              <img src="./icon.svg" alt="" className="h-7 w-7 rounded-lg shadow-lg shadow-teal-500/15 sm:h-8 sm:w-8" />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-black leading-none tracking-tight sm:text-base">
+                  <span>
+                    <span className="text-brilly">Brilly</span>
+                    <span className="text-blunder">Der</span>
+                  </span>
+                  <span className="hidden rounded bg-cockpit px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-300 sm:inline">v2</span>
                 </span>
-                <span className="hidden rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-300 sm:inline">!!/??</span>
+                <span className="mt-0.5 hidden text-[10px] leading-tight text-slate-400 sm:block">{vibeCopy.appSubtitle}</span>
               </span>
-              <span className="mt-0.5 hidden text-[10px] leading-tight text-slate-400 sm:block">On-device Stockfish coach</span>
-            </span>
-          </button>
+            </button>
 
-          <nav className="mx-auto hidden items-center gap-0.5 rounded-xl border border-slate-800/80 bg-slate-950/50 p-0.5 lg:flex">
-            {NAV_ITEMS.map(({ id, label, Icon }) => (
+            <nav className="mx-auto hidden items-center gap-0.5 rounded-xl border border-slate-800/80 bg-hull/70 p-0.5 lg:flex">
+              {NAV_ITEMS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  aria-current={tab === id ? 'page' : undefined}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition lg:px-3 ${
+                    tab === id
+                      ? 'bg-teal-400/15 text-teal-200 shadow-sm'
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                  {id === 'openings' && dueOpeningCount > 0 && (
+                    <span className="rounded-full bg-purple-500/25 px-1.5 py-0.5 font-mono text-[9px] text-purple-200">
+                      {dueOpeningCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            <div className="ml-auto flex items-center gap-1.5 lg:ml-0">
               <button
-                key={id}
                 type="button"
-                onClick={() => setTab(id)}
-                aria-current={tab === id ? 'page' : undefined}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition lg:px-3 ${
-                  tab === id ? 'bg-cyan-500/15 text-cyan-200 shadow-sm' : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                }`}
+                onClick={() => setVaultOpen(true)}
+                className="inline-flex items-center gap-1 rounded-xl border border-teal-400/35 bg-teal-400/10 px-2 py-1.5 text-teal-200 transition hover:border-teal-300/60 hover:bg-teal-400/20"
+                aria-label={`Open Brilly Vault: ${vault.stats.total} brilliant moves`}
+                title="Open Brilly Vault modal"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-                {id === 'vault' && vault.stats.total > 0 && (
-                  <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200">{vault.stats.total}</span>
-                )}
+                <Gem className="h-3.5 w-3.5 text-brilly" />
+                <span className="font-mono text-xs font-black tabular-nums">{vault.stats.total}</span>
+                <span className="hidden text-[10px] font-bold sm:inline">Vault</span>
               </button>
-            ))}
-          </nav>
 
-          <div className="ml-auto flex items-center gap-1.5 lg:ml-0">
-            <button
-              type="button"
-              onClick={() => setTab('vault')}
-              className="inline-flex items-center gap-1 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 text-cyan-200 transition hover:border-cyan-400/60 hover:bg-cyan-500/20"
-              aria-label={`Brilly Vault: ${vault.stats.total} brilliant moves`}
-              title="Brilly Vault — every brilliant move"
-            >
-              <Gem className="h-3.5 w-3.5" />
-              <span className="font-mono text-xs font-black tabular-nums">{vault.stats.total}</span>
-              <span className="hidden text-[10px] font-bold sm:inline">Vault</span>
-            </button>
+              <SettingsMenu
+                theme={boardTheme}
+                onThemeChange={setBoardTheme}
+                celebrationsEnabled={celebrationsEnabled}
+                onToggleCelebrations={() => setCelebrationsEnabled((v) => !v)}
+                vibe={vibe}
+                onVibeChange={setVibe}
+                maiaEnabled={maiaEnabled}
+                onToggleMaia={() => {
+                  const next = !maiaEnabled;
+                  maiaService.setEnabled(next);
+                  setMaiaEnabled(next);
+                }}
+                explorerPrefs={explorerPrefs}
+                onExplorerPrefsChange={setExplorerPrefs}
+                onBackupImported={handleBackupImported}
+              />
 
-            <BoardThemePicker
-              theme={boardTheme}
-              onThemeChange={setBoardTheme}
-              celebrationsEnabled={celebrationsEnabled}
-              onToggleCelebrations={() => setCelebrationsEnabled((v) => !v)}
-            />
-
-            <button
-              type="button"
-              onClick={toggleSound}
-              className="rounded-xl border border-slate-800 bg-slate-900/80 p-2 text-slate-300 transition hover:border-slate-600"
-              aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
-            >
-              {muted ? <VolumeX className="h-4 w-4 text-slate-500" /> : <Volume2 className="h-4 w-4 text-cyan-400" />}
-            </button>
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="rounded-xl border border-slate-800 bg-hull/90 p-2 text-slate-300 transition hover:border-slate-600"
+                aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+              >
+                {muted ? <VolumeX className="h-4 w-4 text-slate-500" /> : <Volume2 className="h-4 w-4 text-brilly" />}
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
       <main className="mx-auto w-full max-w-lg px-3 pt-3 sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6 lg:pt-4">
         {showIosTip && (
@@ -592,10 +845,14 @@ export const App: React.FC = () => {
               onCancelAnalysis={cancelAnalysis}
               onBackToGames={() => setTab('games')}
               onOpenInsights={() => setTab('insights')}
-              onOpenVault={() => setTab('vault')}
+              onOpenVault={() => setVaultOpen(true)}
               initialPly={initialPly}
               boardTheme={boardTheme}
               celebrationsEnabled={celebrationsEnabled}
+              courses={allCourses}
+              explorerPrefs={explorerPrefs}
+              onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
+              onPatchDeviationGap={handlePatchDeviationGap}
             />
           ) : (
             <div className="glass-card mx-auto max-w-lg p-8 text-center">
@@ -615,14 +872,19 @@ export const App: React.FC = () => {
           )
         )}
 
-        {tab === 'vault' && (
-          <BrillyVaultView
-            entries={vault.entries}
-            stats={vault.stats}
+        {tab === 'openings' && (
+          <OpeningsView
+            courses={allCourses}
+            fsrsCards={fsrsCards}
+            analyzedGames={analyzedGamesList}
             username={username}
             boardTheme={boardTheme}
-            onOpenEntry={(entry) => openReviewedPly(entry.gameId, entry.ply)}
-            onOpenGames={() => setTab('games')}
+            explorerPrefs={explorerPrefs}
+            onSaveCourse={handleSaveCourse}
+            onDeleteCourse={handleDeleteCourse}
+            onUnlockCards={upsertFsrsCards}
+            onCardReviewed={handleCardReviewed}
+            onOpenGame={openReviewedPly}
           />
         )}
 
@@ -631,6 +893,18 @@ export const App: React.FC = () => {
             analyzedGames={analyzedGamesList}
             username={username}
             boardTheme={boardTheme}
+            courses={allCourses}
+            fsrsCards={fsrsCards}
+            woodpeckerCycles={woodpeckerCycles}
+            convertedIds={convertedIds}
+            initialSection={trainSection}
+            initialMotifFilter={trainMotif}
+            onCardReviewed={handleCardReviewed}
+            onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
+            onMarkConverted={handleMarkConverted}
+            onUnlockStarterCards={handleUnlockAllStarterCards}
+            onOpenGravityCheck={() => setGravityCheckOpen(true)}
+            onDailySessionComplete={handleDailySessionComplete}
             onOpenGame={openReviewedPly}
             onOpenGames={() => setTab('games')}
           />
@@ -647,33 +921,68 @@ export const App: React.FC = () => {
             onCancelScout={cancelScout}
             onClearScout={() => setScout(null)}
             onOpenGames={() => setTab('games')}
-            onOpenTrainer={() => setTab('train')}
+            onOpenOpenings={() => setTab('openings')}
+            onOpenGravityCheck={() => setGravityCheckOpen(true)}
+            onOpenTrainer={(section, motif) => openTrainerFocus(section ?? 'daily', motif)}
             onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
           />
         )}
       </main>
 
-      {tab !== 'analyze' && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#070b13]/[0.95] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
-          <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
-            {NAV_ITEMS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                aria-current={tab === id ? 'page' : undefined}
-                className={`flex flex-col items-center rounded-xl py-1.5 text-[9px] font-bold transition ${
-                  tab === id ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 active:bg-slate-800/50'
-                }`}
-              >
-                <Icon className="mb-0.5 h-[18px] w-[18px]" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </nav>
-      )}
-    </div>
+        {tab !== 'analyze' && (
+          <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-void/[0.95] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
+            <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
+              {NAV_ITEMS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  aria-current={tab === id ? 'page' : undefined}
+                  className={`relative flex flex-col items-center rounded-xl py-1.5 text-[9px] font-bold transition ${
+                    tab === id ? 'bg-teal-400/12 text-brilly' : 'text-slate-400 active:bg-slate-800/50'
+                  }`}
+                >
+                  <Icon className="mb-0.5 h-[18px] w-[18px]" />
+                  {label}
+                  {id === 'openings' && dueOpeningCount > 0 && (
+                    <span className="absolute right-2 top-1 h-2 w-2 rounded-full bg-warp" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </nav>
+        )}
+
+        <BrillyVaultModal
+          open={vaultOpen}
+          onClose={() => setVaultOpen(false)}
+          entries={vault.entries}
+          stats={vault.stats}
+          username={username}
+          boardTheme={boardTheme}
+          onOpenEntry={(entry) => openReviewedPly(entry.gameId, entry.ply)}
+          onOpenGames={() => setTab('games')}
+        />
+
+        <GravityCheckModal
+          open={gravityCheckOpen}
+          onClose={() => setGravityCheckOpen(false)}
+          deck={mistakeDeck}
+          fsrsCards={fsrsCards}
+          courses={allCourses}
+          boardTheme={boardTheme}
+          onCardReviewed={handleCardReviewed}
+          onCompleted={(summary) => {
+            void saveTrainingLog({
+              id: `gravity_${Date.now()}`,
+              kind: 'gravity-check',
+              updatedAt: Date.now(),
+              data: summary,
+            });
+          }}
+        />
+      </div>
+    </VibeProvider>
   );
 };
 

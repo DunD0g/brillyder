@@ -1,0 +1,1258 @@
+[
+  {
+    "id": "london-system-core",
+    "name": "London System",
+    "codename": "The Mothership",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Unshakeable dark-square pyramid, lethal e5 outpost, and kingside attacks.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "d5",
+        "Bf4",
+        "Nf6",
+        "e3",
+        "e6",
+        "Nf3",
+        "c5",
+        "c3",
+        "Nc6",
+        "Nbd2",
+        "Bd6",
+        "Bg3",
+        "O-O",
+        "Bd3"
+      ],
+      "arrows": [
+        {
+          "from": "f3",
+          "to": "e5",
+          "color": "outpost"
+        },
+        {
+          "from": "d3",
+          "to": "h7",
+          "color": "plan"
+        },
+        {
+          "from": "h1",
+          "to": "h7",
+          "color": "best"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d4",
+          "color": "plan"
+        },
+        {
+          "square": "c3",
+          "color": "plan"
+        },
+        {
+          "square": "e3",
+          "color": "plan"
+        },
+        {
+          "square": "e5",
+          "color": "outpost"
+        }
+      ],
+      "corePlans": [
+        "Build the c3-d4-e3 pawn pyramid AFTER getting the dark-squared bishop outside to f4.",
+        "Plant a knight on the e5 outpost backed by d4 and f4 (or c3-d4-e5 chain) and swing pieces toward h7.",
+        "Welcome ...Bxg3 trades—recapturing hxg3 opens the h-file for a free rook battery."
+      ],
+      "goldenRules": [
+        "Never play e3 before Bf4 (don't lock your own bishop inside the hull).",
+        "Against ...c5, hold firm with c3—never panic-capture dxc5.",
+        "If Black fianchettoes (...g6), play h3 early to build an h2 escape hatch for your bishop."
+      ]
+    },
+    "lines": [
+      {
+        "id": "london-classical-main",
+        "title": "Classical ...d5 & The h-File Hook",
+        "subtitle": "Your bread-and-butter setup against standard 1...d5 development",
+        "eco": "D02",
+        "frequencyNote": "Appears in ~45% of 1000–1600 Rapid games after 1. d4 d5",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "Nf6",
+          "e3",
+          "e6",
+          "Nf3",
+          "c5",
+          "c3",
+          "Nc6",
+          "Nbd2",
+          "Bd6",
+          "Bg3",
+          "O-O",
+          "Bd3"
+        ],
+        "annotations": [
+          {
+            "ply": 2,
+            "plan": "Deploy the dark-squared bishop OUTSIDE the pawn chain immediately before closing the door with e3.",
+            "cosmicCue": "Launch the probe before sealing the airlock.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "f4",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e3",
+                "punishmentLine": [
+                  "Nf6",
+                  "Bd3",
+                  "c5"
+                ],
+                "reason": "Playing e3 before Bf4 traps your c1 bishop behind your own pawns—you just turned the London into a passive Colle.",
+                "arrows": [
+                  {
+                    "from": "c1",
+                    "to": "e3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "plan": "Reinforce d4 with c3 to complete the London pyramid. If Black takes ...cxd4, you recapture exd4 and open the e-file.",
+            "arrows": [
+              {
+                "from": "c3",
+                "to": "d4",
+                "color": "plan"
+              },
+              {
+                "from": "e3",
+                "to": "d4",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "dxc5",
+                "punishmentLine": [
+                  "Bxc5"
+                ],
+                "reason": "Capturing dxc5 gives up your central stronghold and develops Black's bishop for free.",
+                "arrows": [
+                  {
+                    "from": "f8",
+                    "to": "c5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Retreat to g3! Never trade first with Bxd6. Make Black capture on g3 so hxg3 blasts open your h-file rook.",
+            "cosmicCue": "Bait the trade—open the h-file laser cannon.",
+            "arrows": [
+              {
+                "from": "f4",
+                "to": "g3",
+                "color": "best"
+              },
+              {
+                "from": "h2",
+                "to": "g3",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Bxd6",
+                "punishmentLine": [
+                  "Qxd6"
+                ],
+                "reason": "Trading on d6 helps Black develop their queen to an ideal square while you get zero h-file play.",
+                "arrows": [
+                  {
+                    "from": "d8",
+                    "to": "d6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Aim the bishop straight at h7 and control the critical e4 and e5 squares. Next up: Ne5 and kingside pressure.",
+            "arrows": [
+              {
+                "from": "d3",
+                "to": "h7",
+                "color": "plan"
+              },
+              {
+                "from": "f3",
+                "to": "e5",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "london-anti-qb6",
+        "title": "Refuting the Early ...Qb6 Raid",
+        "subtitle": "How to neutralize Black's #1 trick against the London",
+        "eco": "D02",
+        "frequencyNote": "Very common anti-London weapon from 1100–1700",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "Nf6",
+          "e3",
+          "c5",
+          "c3",
+          "Qb6",
+          "Qb3",
+          "c4",
+          "Qc2",
+          "Nc6",
+          "Nbd2",
+          "g6",
+          "e4"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Meet ...Qb6 head-on with Qb3! If Black trades ...Qxb3, axb3 opens your a-file rook and gives you a huge queenside grip.",
+            "cosmicCue": "Deflect the raid—never play passive b3.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "b3",
+                "color": "best"
+              },
+              {
+                "from": "b6",
+                "to": "b2",
+                "color": "threat"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "b3",
+                "punishmentLine": [
+                  "cxd4",
+                  "exd4",
+                  "Nc6"
+                ],
+                "reason": "Playing b3 weakens your light squares on c3 and a3 permanently. Qb3 defends b2 cleanly with tempo.",
+                "arrows": [
+                  {
+                    "from": "b6",
+                    "to": "c3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "plan": "Slide calmly to c2. Black's c4 push released all tension on your d4 pawn, which now lets you prepare a huge e4 central break!",
+            "arrows": [
+              {
+                "from": "b3",
+                "to": "c2",
+                "color": "best"
+              },
+              {
+                "from": "e3",
+                "to": "e4",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "isCritical": true,
+            "plan": "Strike with e4! Because Black released central tension with ...c4 and delayed castling, White blows open the center with advantage.",
+            "cosmicCue": "Center breach authorized.",
+            "arrows": [
+              {
+                "from": "e3",
+                "to": "e4",
+                "color": "best"
+              },
+              {
+                "from": "c2",
+                "to": "e4",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "london-anti-copycat",
+        "title": "Punishing the Copycat (...Bf5)",
+        "subtitle": "Exploit Black's abandoned b7 pawn immediately",
+        "eco": "D02",
+        "frequencyNote": "Frequent surprise at 1000–1400 when Black mirrors you",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "Bf5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "Qb3"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "isCritical": true,
+            "plan": "Break the symmetry immediately with c4! Black's light-squared bishop just left b7 undefended—switch into Queen's Gambit pressure.",
+            "cosmicCue": "Mirror broken. Target b7.",
+            "arrows": [
+              {
+                "from": "c2",
+                "to": "c4",
+                "color": "best"
+              },
+              {
+                "from": "d1",
+                "to": "b3",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Launch Qb3! Directly hits the undefended b7 pawn and forces Black into awkward concessions like ...b6 or ...Qc8.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "b3",
+                "color": "best"
+              },
+              {
+                "from": "b3",
+                "to": "b7",
+                "color": "threat"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "london-vs-kid",
+        "title": "The h3 Loft vs King's Indian (...g6)",
+        "subtitle": "Keep your prized f4 bishop alive against ...Nh5",
+        "eco": "A48",
+        "frequencyNote": "Standard fight against King's Indian / Modern setups",
+        "moves": [
+          "d4",
+          "Nf6",
+          "Bf4",
+          "g6",
+          "e3",
+          "Bg7",
+          "Nf3",
+          "O-O",
+          "Be2",
+          "d6",
+          "h3",
+          "Nbd7",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "plan": "Place the bishop safely on e2 instead of d3 against ...g6 setups—on d3 it risks getting hit by an early ...e5 and ...e4 fork.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "e2",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "Play h3! This prophylactic loft builds an escape hatch on h2 so Black can never hunt down your dark-squared bishop with ...Nh5.",
+            "cosmicCue": "Escape pod armed on h2.",
+            "arrows": [
+              {
+                "from": "h2",
+                "to": "h3",
+                "color": "best"
+              },
+              {
+                "from": "f4",
+                "to": "h2",
+                "color": "plan"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "h2",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "modern-defense-core",
+    "name": "Modern Defense",
+    "codename": "Stealth Sniper",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Universal counter-punch vs 1. e4 and 1. d4—let White overextend, then shred their center.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "g6",
+        "d4",
+        "Bg7",
+        "Nc3",
+        "d6",
+        "Nf3",
+        "a6",
+        "Be2",
+        "b5",
+        "O-O",
+        "Bb7"
+      ],
+      "arrows": [
+        {
+          "from": "g7",
+          "to": "a1",
+          "color": "outpost"
+        },
+        {
+          "from": "b7",
+          "to": "e4",
+          "color": "plan"
+        },
+        {
+          "from": "b5",
+          "to": "b4",
+          "color": "best"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "g7",
+          "color": "outpost"
+        },
+        {
+          "square": "b7",
+          "color": "outpost"
+        },
+        {
+          "square": "d4",
+          "color": "threat"
+        },
+        {
+          "square": "e4",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Hold back ...Nf6 early so White can't kick your knight with e5 and keep the g7 sniper diagonal wide open.",
+        "Expand with ...a6 + ...b5 + ...Bb7 (Tiger's Modern) to kick Nc3 and win the e4 pawn.",
+        "Against greedy 3-pawn centers (f4), strike IMMEDIATELY with ...c5 and ...Qa5."
+      ],
+      "goldenRules": [
+        "Your g7 bishop is your flagship weapon—never trade it lightly without compensation.",
+        "Don't play passively forever: always look for the ...c5, ...b5, or ...e5 pawn break.",
+        "If White plays Bh6 to trade your sniper, tuck the bishop or counterattack the center before your dark squares weaken."
+      ]
+    },
+    "lines": [
+      {
+        "id": "modern-tiger-sniper",
+        "title": "Tiger's Modern: Double-Fianchetto Crossfire",
+        "subtitle": "Active queenside expansion that punishes routine White development",
+        "eco": "B06",
+        "frequencyNote": "Highest practical win-rate weapon against standard 1. e4 setups",
+        "moves": [
+          "e4",
+          "g6",
+          "d4",
+          "Bg7",
+          "Nc3",
+          "d6",
+          "Nf3",
+          "a6",
+          "Be2",
+          "b5",
+          "O-O",
+          "Bb7"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "plan": "Play ...d6 before ...Nf6. This stops e5 tricks and keeps the g7 bishop's diagonal completely unobstructed.",
+            "arrows": [
+              {
+                "from": "d7",
+                "to": "d6",
+                "color": "best"
+              },
+              {
+                "from": "g7",
+                "to": "a1",
+                "color": "outpost"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nf6",
+                "punishmentLine": [
+                  "e5",
+                  "Ng8"
+                ],
+                "reason": "Developing ...Nf6 before ...d6 lets White jam e5 immediately, chasing your knight right back home.",
+                "arrows": [
+                  {
+                    "from": "e4",
+                    "to": "e5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 7,
+            "isCritical": true,
+            "plan": "Launch ...a6 (Tiger's Modern)! Stops Nb5/Bb5 annoyances and prepares a rapid ...b5 queenside expansion.",
+            "cosmicCue": "Flank thrusters engaged.",
+            "arrows": [
+              {
+                "from": "a7",
+                "to": "a6",
+                "color": "best"
+              },
+              {
+                "from": "b7",
+                "to": "b5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 9,
+            "plan": "Push ...b5! Claims queenside space and threatens ...b4 to deflect White's c3 knight away from guarding the e4 pawn.",
+            "arrows": [
+              {
+                "from": "b7",
+                "to": "b5",
+                "color": "best"
+              },
+              {
+                "from": "b5",
+                "to": "b4",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Complete the double fianchetto with ...Bb7! Now both bishops slice across the board, putting e4 and d4 under relentless crossfire.",
+            "cosmicCue": "Dual laser lock on e4.",
+            "arrows": [
+              {
+                "from": "b7",
+                "to": "e4",
+                "color": "best"
+              },
+              {
+                "from": "g7",
+                "to": "d4",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "modern-vs-austrian",
+        "title": "Shredding the Greedy f4 Center",
+        "subtitle": "Punish White's 4. f4 Austrian Attack with an instant ...c5 + ...Qa5 counterpunch",
+        "eco": "B06",
+        "frequencyNote": "White's most aggressive try at 1100–1600 Rapid",
+        "moves": [
+          "e4",
+          "g6",
+          "d4",
+          "Bg7",
+          "Nc3",
+          "d6",
+          "f4",
+          "c5",
+          "dxc5",
+          "Qa5",
+          "Bd2",
+          "Qxc5"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "isCritical": true,
+            "plan": "Counterattack IMMEDIATELY with ...c5! White pushed f4 instead of developing, leaving their d4 center and e1-a5 diagonal exposed.",
+            "cosmicCue": "They overextended—detonate d4.",
+            "arrows": [
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "best"
+              },
+              {
+                "from": "d8",
+                "to": "a5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 9,
+            "isCritical": true,
+            "plan": "Swing out ...Qa5! Pins the c3 knight to the king, prevents White from holding the extra c5 pawn, and puts instant heat on e4.",
+            "arrows": [
+              {
+                "from": "d8",
+                "to": "a5",
+                "color": "best"
+              },
+              {
+                "from": "a5",
+                "to": "e1",
+                "color": "threat"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "Recapture ...Qxc5 with comfort! White's big center is shattered, their f4 pawn weakens their king, and your g7 sniper rules the board.",
+            "arrows": [
+              {
+                "from": "a5",
+                "to": "c5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "modern-vs-d4-bridge",
+        "title": "Universal Modern vs 1. d4 (Center Strike)",
+        "subtitle": "Use the exact same ...g6 + ...Bg7 + ...d6 shell against 1. d4, then strike with ...e5",
+        "eco": "E70",
+        "frequencyNote": "Zero extra memorization needed against 1. d4 / Queen's Gambit",
+        "moves": [
+          "d4",
+          "g6",
+          "c4",
+          "Bg7",
+          "Nc3",
+          "d6",
+          "e4",
+          "Nf6",
+          "Nf3",
+          "O-O",
+          "Be2",
+          "e5"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "Once White commits to c4 and e4, ...Nf6 is completely safe (e5 is no longer a threat because you can answer ...dxe5). Castle fast.",
+            "arrows": [
+              {
+                "from": "g8",
+                "to": "f6",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Strike the center with ...e5! Forces White to make a decision: if d5, you launch a kingside pawn storm (...Nh5 + ...f5); if dxe5, your pieces fly out effortlessly.",
+            "cosmicCue": "Center clash initiated.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "g7",
+                "to": "d4",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "anti-system-modern-breaker",
+    "name": "Anti-London & Zukertort",
+    "codename": "Orbit Breaker",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Dismantle quiet 1. Nf3 fianchettos and opponent London Systems using active center strikes.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "g6",
+        "Bf4",
+        "Bg7",
+        "e3",
+        "d6",
+        "Nf3",
+        "Nd7",
+        "Be2",
+        "e5",
+        "Bg3",
+        "Nh6"
+      ],
+      "arrows": [
+        {
+          "from": "e7",
+          "to": "e5",
+          "color": "best"
+        },
+        {
+          "from": "h6",
+          "to": "f5",
+          "color": "outpost"
+        },
+        {
+          "from": "g7",
+          "to": "a1",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "e5",
+          "color": "plan"
+        },
+        {
+          "square": "f5",
+          "color": "outpost"
+        },
+        {
+          "square": "g3",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Against 1. Nf3 + g3 (Zukertort), grab the center immediately with ...e5 and keep the g7 sniper clear with ...Ne7.",
+        "Against the London, prepare ...Nd7 first, then blast ...e5 with tempo and hunt White's dark-squared bishop via ...Nh6–f5.",
+        "Against standard 1. d4 d5 2. Bf4, hit immediately with ...c5 and ...Qb6, then clamp the queenside with ...c4."
+      ],
+      "goldenRules": [
+        "Against 1. Nf3 (no d4 pawn), claim space with ...e5 instead of playing passively.",
+        "Never play ...e5 vs the London before ...Nd7 defends it—or dxe5 Qxd8+ Nxe5 drops a pawn.",
+        "When raiding b2 with ...Qb6, never trade queens on b3—push ...c4 to gain space and tempo."
+      ]
+    },
+    "lines": [
+      {
+        "id": "modern-vs-zukertort-fianchetto",
+        "title": "Crushing the Zukertort Fianchetto (1. Nf3)",
+        "subtitle": "Use your ...g6 + ...Bg7 shell to seize the whole center with ...e5",
+        "eco": "A04",
+        "frequencyNote": "Direct counter to 1. Nf3 + g3/Bg2 setups at 1100–1600",
+        "moves": [
+          "Nf3",
+          "g6",
+          "g3",
+          "Bg7",
+          "Bg2",
+          "e5",
+          "d3",
+          "Ne7",
+          "O-O",
+          "O-O",
+          "e4",
+          "d6",
+          "Nc3",
+          "Nbc6"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "isCritical": true,
+            "plan": "Grab the center with ...e5 immediately! Because White played Nf3 and g3 instead of d4, nobody stops you from claiming the best central real estate.",
+            "cosmicCue": "Unclaimed territory detected—drop the flag on e5.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "g7",
+                "to": "d4",
+                "color": "outpost"
+              }
+            ]
+          },
+          {
+            "ply": 7,
+            "plan": "Develop the knight to e7 instead of f6! This keeps your g7 sniper unobstructed and leaves the f-pawn free to storm forward with ...f5 later.",
+            "arrows": [
+              {
+                "from": "g8",
+                "to": "e7",
+                "color": "best"
+              },
+              {
+                "from": "f7",
+                "to": "f5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 13,
+            "plan": "Complete smooth development with ...Nbc6. You have a rock-solid Botvinnik shell controlling d4, ready to launch ...f5 or ...h6 + ...Be6.",
+            "arrows": [
+              {
+                "from": "b8",
+                "to": "c6",
+                "color": "best"
+              },
+              {
+                "from": "c6",
+                "to": "d4",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "modern-vs-london-e5-strike",
+        "title": "Modern Counter-Strike vs the London",
+        "subtitle": "Prep ...e5 with ...Nd7, then hunt the London bishop with ...Nh6–f5",
+        "eco": "A48",
+        "frequencyNote": "Keeps your Modern repertoire 100% universal against London players",
+        "moves": [
+          "d4",
+          "g6",
+          "Bf4",
+          "Bg7",
+          "e3",
+          "d6",
+          "Nf3",
+          "Nd7",
+          "Be2",
+          "e5",
+          "Bg3",
+          "Nh6",
+          "O-O",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "isCritical": true,
+            "plan": "Play ...Nd7 first! It defends e5 so you can launch ...e5 cleanly on the very next move without blundering the d-file queen trade.",
+            "cosmicCue": "Arm the escort before firing e5.",
+            "arrows": [
+              {
+                "from": "b8",
+                "to": "d7",
+                "color": "best"
+              },
+              {
+                "from": "e7",
+                "to": "e5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e5",
+                "punishmentLine": [
+                  "dxe5",
+                  "dxe5",
+                  "Qxd8+",
+                  "Kxd8",
+                  "Nxe5"
+                ],
+                "reason": "Playing ...e5 before ...Nd7 hangs the e5 pawn after dxe5 dxe5 Qxd8+ Kxd8 Nxe5!",
+                "arrows": [
+                  {
+                    "from": "f3",
+                    "to": "e5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 9,
+            "isCritical": true,
+            "plan": "Strike with ...e5! Hits White's prized London bishop with tempo and opens diagonals for your pieces.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "e5",
+                "to": "f4",
+                "color": "threat"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "Jump ...Nh6! Looks strange, works like magic: it clears the g7 diagonal and heads straight for f5 to eliminate White's g3 bishop.",
+            "cosmicCue": "Flank manoeuvre—locking onto the g3 bishop.",
+            "arrows": [
+              {
+                "from": "g8",
+                "to": "h6",
+                "color": "best"
+              },
+              {
+                "from": "h6",
+                "to": "f5",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "anti-london-qb6-c4-squeeze",
+        "title": "The ...c5 + ...Qb6 + ...c4 Queenside Clamp",
+        "subtitle": "Punish passive London players who forget how to handle the ...Qb6 raid",
+        "eco": "D02",
+        "frequencyNote": "High-scoring tactical antidote if you prefer 1...d5 vs the London",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "c5",
+          "e3",
+          "Nc6",
+          "c3",
+          "Nf6",
+          "Nd2",
+          "Qb6",
+          "Qb3",
+          "c4",
+          "Qc2",
+          "g6",
+          "Ngf3",
+          "Bf5"
+        ],
+        "annotations": [
+          {
+            "ply": 9,
+            "isCritical": true,
+            "plan": "Strike b2 immediately with ...Qb6! Forces White to defend awkwardly or walk straight into your ...c4 queenside clamp.",
+            "arrows": [
+              {
+                "from": "d8",
+                "to": "b6",
+                "color": "best"
+              },
+              {
+                "from": "b6",
+                "to": "b2",
+                "color": "threat"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Push ...c4! Never trade queens on b3—shut the queenside door, kick the queen back to c2, and prepare ...Bf5 with massive tempo.",
+            "cosmicCue": "Close the blast doors on c4.",
+            "arrows": [
+              {
+                "from": "c5",
+                "to": "c4",
+                "color": "best"
+              },
+              {
+                "from": "c8",
+                "to": "f5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Qxb3",
+                "punishmentLine": [
+                  "axb3"
+                ],
+                "reason": "Trading queens on b3 hands White a free open a-file for their rook and relieves all pressure on b2.",
+                "arrows": [
+                  {
+                    "from": "a2",
+                    "to": "b3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "Drop ...Bf5 with tempo on White's queen! Black controls the dark squares, has huge queenside space, and dictates the entire middlegame.",
+            "arrows": [
+              {
+                "from": "c8",
+                "to": "f5",
+                "color": "best"
+              },
+              {
+                "from": "f5",
+                "to": "c2",
+                "color": "threat"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "jobava-london-warp",
+    "name": "Jobava London",
+    "codename": "Warp Lance",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Turbo-charged Accelerated London (2. Nc3 + 3. Bf4) packed with c7 fork threats and fast attacks.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "d5",
+        "Nc3",
+        "Nf6",
+        "Bf4",
+        "e6",
+        "Nb5",
+        "Na6",
+        "e3",
+        "c6",
+        "Nc3"
+      ],
+      "arrows": [
+        {
+          "from": "c3",
+          "to": "b5",
+          "color": "best"
+        },
+        {
+          "from": "b5",
+          "to": "c7",
+          "color": "threat"
+        },
+        {
+          "from": "f4",
+          "to": "c7",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "c7",
+          "color": "threat"
+        },
+        {
+          "square": "b5",
+          "color": "outpost"
+        },
+        {
+          "square": "e5",
+          "color": "outpost"
+        }
+      ],
+      "corePlans": [
+        "Combine Nc3 + Bf4 to threaten Nb5 followed by Nxc7+ forking King and Rook.",
+        "Even when Black stops Nb5 with ...a6 or ...Na6, their pieces are tangled while you claim e5 and launch a kingside storm.",
+        "Against 3...c5, stabilize with 4. e3 first so ...Qa5+ never wins tempo against your knight."
+      ],
+      "goldenRules": [
+        "Always check for the ...Qa5+ check before jumping Nb5!",
+        "If Black defends c7 with ...Na6, retreat gracefully when kicked—you forced their knight onto the rim.",
+        "Once the queenside stabilizes, plant a knight on e5 or castle queenside and throw g4–h4."
+      ]
+    },
+    "lines": [
+      {
+        "id": "jobava-nb5-fork-pressure",
+        "title": "The c7 Fork Probe (4. Nb5)",
+        "subtitle": "Punish natural 3...e6 development by dragging Black's knight to the rim",
+        "eco": "D00",
+        "frequencyNote": "Catches over 50% of 1000–1500 opponents off guard immediately",
+        "moves": [
+          "d4",
+          "d5",
+          "Nc3",
+          "Nf6",
+          "Bf4",
+          "e6",
+          "Nb5",
+          "Na6",
+          "e3",
+          "c6",
+          "Nc3",
+          "Nc7",
+          "Nf3"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Jump Nb5 immediately! Together with your f4 bishop, you threaten Nxc7+ forking Black's king and rook—forcing awkward concessions.",
+            "cosmicCue": "Locking tractor beam on c7.",
+            "arrows": [
+              {
+                "from": "c3",
+                "to": "b5",
+                "color": "best"
+              },
+              {
+                "from": "b5",
+                "to": "c7",
+                "color": "threat"
+              },
+              {
+                "from": "f4",
+                "to": "c7",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "plan": "Retreat cleanly to c3. Mission accomplished: Black wasted two moves (...Na6 and ...c6) and trapped their light-squared bishop while you develop smoothly.",
+            "arrows": [
+              {
+                "from": "b5",
+                "to": "c3",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "jobava-vs-c5-strike",
+        "title": "Handling 3...c5 Without Falling for ...Qa5+",
+        "subtitle": "Keep the center ironclad before jumping into e5",
+        "eco": "D00",
+        "frequencyNote": "Black's #1 most critical test against the Jobava",
+        "moves": [
+          "d4",
+          "d5",
+          "Nc3",
+          "Nf6",
+          "Bf4",
+          "c5",
+          "e3",
+          "cxd4",
+          "exd4",
+          "a6",
+          "Nf3",
+          "Nc6",
+          "Ne5"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Play e3 FIRST! Do not jump Nb5 yet—because Black already moved the c-pawn, ...Qa5+ would fork your king and b5 knight.",
+            "cosmicCue": "Shields up before warping—watch the a5 diagonal.",
+            "arrows": [
+              {
+                "from": "e2",
+                "to": "e3",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nb5",
+                "punishmentLine": [
+                  "Qa5+",
+                  "Nc3",
+                  "cxd4"
+                ],
+                "reason": "After ...c5, jumping Nb5 immediately runs straight into ...Qa5+! Black chases your knight back and blows up your d4 center.",
+                "arrows": [
+                  {
+                    "from": "d8",
+                    "to": "a5",
+                    "color": "threat"
+                  },
+                  {
+                    "from": "a5",
+                    "to": "e1",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Plant Ne5! With your center rock-solid and Black spending a tempo on ...a6, your knight dominates the board and kicks off a strong kingside attack.",
+            "arrows": [
+              {
+                "from": "f3",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "d4",
+                "to": "e5",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

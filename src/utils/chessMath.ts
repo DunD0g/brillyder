@@ -188,6 +188,36 @@ export function extractClockSeconds(comment: string | undefined): number | undef
   return undefined;
 }
 
+export function parsePgnTimeControl(pgn: string): { baseSeconds: number | null; incrementSeconds: number } {
+  const match = pgn.match(/\[TimeControl\s+"(\d+)(?:\+(\d+))?"\]/);
+  if (!match) return { baseSeconds: null, incrementSeconds: 0 };
+  const base = parseInt(match[1], 10);
+  const inc = match[2] ? parseInt(match[2], 10) : 0;
+  return {
+    baseSeconds: Number.isFinite(base) ? base : null,
+    incrementSeconds: Number.isFinite(inc) ? inc : 0,
+  };
+}
+
+export function computeMoveTimeSpent(
+  prevClockSeconds: number | undefined,
+  currentClockSeconds: number | undefined,
+  incrementSeconds = 0
+): number | undefined {
+  if (prevClockSeconds === undefined || currentClockSeconds === undefined) return undefined;
+  const spent = prevClockSeconds - currentClockSeconds + incrementSeconds;
+  return Math.max(0, Math.round(spent));
+}
+
+export function countTotalPieces(fen: string): number {
+  const placement = fen.split(' ')[0] ?? '';
+  let count = 0;
+  for (const ch of placement) {
+    if (/[pnbrqkPNBRQK]/.test(ch)) count++;
+  }
+  return count;
+}
+
 export function formatClockSeconds(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);

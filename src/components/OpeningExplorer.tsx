@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Compass, Loader2 } from 'lucide-react';
 import { getBookPosition } from '../chess/openingBook';
 import { fetchLichessExplorer, type ExplorerPosition } from '../services/openingExplorer';
+import type { ExplorerPrefSettings } from './SettingsMenu';
 
 interface Props {
   fen: string;
   sanHistory: string[];
   disabled?: boolean;
+  explorerPrefs?: ExplorerPrefSettings;
   onPlaySan: (san: string) => void;
 }
 
@@ -69,7 +71,7 @@ const MoveBar: React.FC<{ row: ExplorerRow; live: boolean }> = ({ row, live }) =
   );
 };
 
-export const OpeningExplorer: React.FC<Props> = ({ fen, sanHistory, disabled, onPlaySan }) => {
+export const OpeningExplorer: React.FC<Props> = ({ fen, sanHistory, disabled, explorerPrefs, onPlaySan }) => {
   const local = useMemo(() => getBookPosition(sanHistory), [sanHistory]);
   const [live, setLive] = useState<ExplorerPosition | null>(null);
   const [checking, setChecking] = useState(false);
@@ -83,7 +85,10 @@ export const OpeningExplorer: React.FC<Props> = ({ fen, sanHistory, disabled, on
     let cancelled = false;
     setLive(null);
     setChecking(true);
-    fetchLichessExplorer(fen)
+    fetchLichessExplorer(fen, {
+      ratingBand: explorerPrefs?.ratingBand,
+      speeds: explorerPrefs?.speeds,
+    })
       .then((data) => {
         if (!cancelled) setLive(data);
       })
@@ -93,7 +98,7 @@ export const OpeningExplorer: React.FC<Props> = ({ fen, sanHistory, disabled, on
     return () => {
       cancelled = true;
     };
-  }, [fen, disabled]);
+  }, [fen, disabled, explorerPrefs?.ratingBand, explorerPrefs?.speeds.join(',')]);
 
   const rows: ExplorerRow[] = live
     ? live.moves.slice(0, 10).map((move) => ({

@@ -1,86 +1,17 @@
-import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js';
+import { Chess } from 'chess.js';
 import type { CoachingExplanation, EngineScore, MoveClassification, PlayerColor } from '../types/chess';
 import { uciToSquares } from '../utils/chessMath';
-
-const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
-const PIECE_VAL: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
-
-interface HangingTarget {
-  square: Square;
-  piece: PieceSymbol;
-  attackerPiece: PieceSymbol | null;
-  undefended: boolean;
-}
-
-function findHangingPieces(chess: Chess, defenderColor: Color): HangingTarget[] {
-  const attackerColor: Color = defenderColor === 'w' ? 'b' : 'w';
-  const targets: HangingTarget[] = [];
-  for (const row of chess.board()) {
-    for (const cell of row) {
-      if (!cell || cell.color !== defenderColor || cell.type === 'k') continue;
-      const attackers = chess.attackers(cell.square, attackerColor);
-      if (attackers.length === 0) continue;
-      const defenders = chess.attackers(cell.square, defenderColor);
-      let lowestAttacker: PieceSymbol | null = null;
-      let lowestVal = 999;
-      for (const attSq of attackers) {
-        const att = chess.get(attSq);
-        if (att && PIECE_VAL[att.type] < lowestVal) {
-          lowestVal = PIECE_VAL[att.type];
-          lowestAttacker = att.type;
-        }
-      }
-      const undefended = defenders.length === 0;
-      if ((undefended && PIECE_VAL[cell.type] >= 3) || lowestVal < PIECE_VAL[cell.type]) {
-        targets.push({ square: cell.square, piece: cell.type, attackerPiece: lowestAttacker, undefended });
-      }
-    }
-  }
-  return targets.sort((a, b) => PIECE_VAL[b.piece] - PIECE_VAL[a.piece]);
-}
-
-function detectForkOnMove(chessBefore: Chess, uci: string, moverColor: Color): { piece: PieceSymbol; targetSquare: Square; victims: string[] } | null {
-  const parsed = uciToSquares(uci);
-  if (!parsed) return null;
-  const oppColor: Color = moverColor === 'w' ? 'b' : 'w';
-  const clone = new Chess(chessBefore.fen());
-  let moved;
-  try {
-    moved = clone.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion });
-  } catch {
-    return null;
-  }
-  const victims: string[] = [];
-  for (const row of clone.board()) {
-    for (const cell of row) {
-      if (!cell || cell.color !== oppColor || PIECE_VAL[cell.type] < 3) continue;
-      if (clone.attackers(cell.square, moverColor).includes(moved.to)) {
-        const highVal = cell.type === 'k' || cell.type === 'q' || cell.type === 'r';
-        const undefended = clone.attackers(cell.square, oppColor).length === 0;
-        if (highVal || undefended || PIECE_VAL[moved.piece] < PIECE_VAL[cell.type]) {
-          victims.push(`${PIECE_NAMES[cell.type]} on ${cell.square}`);
-        }
-      }
-    }
-  }
-  return victims.length >= 2 ? { piece: moved.piece, targetSquare: moved.to, victims } : null;
-}
-
-function detectBackRank(chessBefore: Chess, threatUci: string, attackerColor: Color): Square | null {
-  const parsed = uciToSquares(threatUci);
-  if (!parsed) return null;
-  const piece = chessBefore.get(parsed.from);
-  if (!piece || (piece.type !== 'r' && piece.type !== 'q')) return null;
-  if (parsed.to[1] !== (attackerColor === 'w' ? '8' : '1')) return null;
-  const clone = new Chess(chessBefore.fen());
-  try {
-    clone.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion });
-    if (clone.isCheck() || clone.isCheckmate()) return parsed.to;
-  } catch {
-    return null;
-  }
-  return null;
-}
+import {
+  detectBackRankThreat,
+  detectDeflection,
+  detectDiscoveredAttack,
+  detectForkOnMove,
+  detectPinOrSkewer,
+  detectShortMate,
+  findHangingPieces,
+  PIECE_NAMES,
+  PIECE_VAL,
+} from './tacticalMotifs';
 
 export function generateMoveExplanation(params: {
   beforeFen: string;
@@ -90,13 +21,34 @@ export function generateMoveExplanation(params: {
   color: PlayerColor;
   bestMoveUci: string;
   bestMoveSan: string;
+  bestPvUci?: string[];
   threatMoveUci?: string;
+  threatMoveSan?: string;
   evalBefore: EngineScore;
   evalAfter: EngineScore;
+  secondBestGapPawns?: number;
+  isClutchSave?: boolean;
   classification: MoveClassification;
   openingName?: string;
 }): CoachingExplanation {
-  const { beforeFen, afterFen, san, uci, color, bestMoveUci, bestMoveSan, threatMoveUci, evalBefore, evalAfter, classification, openingName } = params;
+  const {
+    beforeFen,
+    afterFen,
+    san,
+    uci,
+    color,
+    bestMoveUci,
+    bestMoveSan,
+    bestPvUci,
+    threatMoveUci,
+    threatMoveSan,
+    evalBefore,
+    evalAfter,
+    secondBestGapPawns = 0,
+    isClutchSave = false,
+    classification,
+    openingName,
+  } = params;
   const oppColor: PlayerColor = color === 'w' ? 'b' : 'w';
   const chessBefore = new Chess(beforeFen);
   const chessAfter = new Chess(afterFen);
@@ -104,89 +56,237 @@ export function generateMoveExplanation(params: {
   if (classification === 'book') {
     return {
       headline: `Book Move — ${san}`,
-      detail: openingName ? `Standard theory in the ${openingName}. Builds development and central tension.` : 'Follows established opening theory.',
+      detail: openingName
+        ? `Standard theory in the ${openingName}. Builds harmonious development.`
+        : 'Follows established opening theory.',
       tacticalTag: 'Theory',
     };
   }
+
   if (classification === 'brilliant') {
+    const deflection = detectDeflection(chessBefore, uci, color, bestPvUci);
     return {
       headline: `Brilliant! ${san}`,
-      detail: 'Sacrifices material while keeping a sharp, winning initiative — pure BrillyDer magic!',
-      tacticalTag: 'Sacrifice',
+      detail: deflection
+        ? `Bold sacrifice deflecting the ${PIECE_NAMES[deflection.targetPiece]} on ${deflection.targetSq} for a winning initiative.`
+        : 'Sacrifices material while keeping a sharp, winning initiative — pure BrillyDer precision.',
+      tacticalTag: deflection ? 'Deflection' : 'Sacrifice',
     };
   }
-  if (classification === 'great') {
+
+  if (classification === 'great' || isClutchSave) {
     const fork = detectForkOnMove(chessBefore, uci, color);
+    const pin = detectPinOrSkewer(chessBefore, uci, color);
+    const disc = detectDiscoveredAttack(chessBefore, uci, color);
+    if (fork) {
+      return {
+        headline: `${isClutchSave ? 'Clutch Save!' : 'Great Move!'} ${san}`,
+        detail: `Only winning move — launches a ${PIECE_NAMES[fork.piece]} fork on ${fork.targetSquare} hitting ${fork.victims.slice(0, 2).join(' and ')}.`,
+        tacticalTag: 'Fork',
+      };
+    }
+    if (pin) {
+      return {
+        headline: `${isClutchSave ? 'Clutch Save!' : 'Great Move!'} ${san}`,
+        detail: `${pin.kind}s the ${PIECE_NAMES[pin.frontPiece]} on ${pin.frontSq} against the ${PIECE_NAMES[pin.backPiece]} on ${pin.backSq}.`,
+        tacticalTag: 'Pin/Skewer',
+      };
+    }
+    if (disc) {
+      return {
+        headline: `${isClutchSave ? 'Clutch Save!' : 'Great Move!'} ${san}`,
+        detail: `Unleashes a discovered attack from the ${PIECE_NAMES[disc.slider]} on ${disc.sliderSq} onto the ${PIECE_NAMES[disc.target]} on ${disc.targetSq}.`,
+        tacticalTag: 'Discovered Attack',
+      };
+    }
     return {
-      headline: `Great Move! ${san}`,
-      detail: fork
-        ? `Only winning move — launches a ${PIECE_NAMES[fork.piece]} fork on ${fork.targetSquare} hitting ${fork.victims.slice(0, 2).join(' and ')}.`
-        : 'The only move that preserves your advantage; alternatives lose substantial ground.',
-      tacticalTag: 'Only Move',
+      headline: isClutchSave ? `Clutch Save! ${san}` : `Great Move! ${san}`,
+      detail: secondBestGapPawns >= 2
+        ? `Only move to hold the position (next best alternative drops ${secondBestGapPawns.toFixed(1)} pawns).`
+        : 'The only move that preserves your edge; alternatives lose substantial ground.',
+      tacticalTag: 'Only Move Save',
     };
   }
+
   if (classification === 'best' || classification === 'excellent') {
-    if (evalAfter.isCheckmate) return { headline: `Checkmate! ${san}`, detail: 'Delivers forced checkmate cleanly.', tacticalTag: 'Checkmate' };
+    if (evalAfter.isCheckmate) {
+      return { headline: `Checkmate! ${san}`, detail: 'Delivers forced checkmate cleanly.', tacticalTag: 'Mate in 1–3' };
+    }
     const fork = detectForkOnMove(chessBefore, uci, color);
     if (fork) {
       return {
         headline: `${classification === 'best' ? 'Best' : 'Solid'} Move — ${san}`,
-        detail: `Creates a double attack on ${fork.targetSquare} targeting ${fork.victims.slice(0, 2).join(' and ')}.`,
-        tacticalTag: 'Tactic',
+        detail: `Creates a ${PIECE_NAMES[fork.piece]} fork on ${fork.targetSquare} targeting ${fork.victims.slice(0, 2).join(' and ')}.`,
+        tacticalTag: 'Fork',
+      };
+    }
+    const pin = detectPinOrSkewer(chessBefore, uci, color);
+    if (pin) {
+      return {
+        headline: `${classification === 'best' ? 'Best' : 'Solid'} Move — ${san}`,
+        detail: `${pin.kind}s the ${PIECE_NAMES[pin.frontPiece]} on ${pin.frontSq} to the ${PIECE_NAMES[pin.backPiece]} on ${pin.backSq}.`,
+        tacticalTag: 'Pin/Skewer',
+      };
+    }
+    const disc = detectDiscoveredAttack(chessBefore, uci, color);
+    if (disc) {
+      return {
+        headline: `${classification === 'best' ? 'Best' : 'Solid'} Move — ${san}`,
+        detail: `Opens a discovered attack from ${PIECE_NAMES[disc.slider]} on ${disc.sliderSq} toward ${disc.targetSq}.`,
+        tacticalTag: 'Discovered Attack',
       };
     }
     return {
       headline: classification === 'best' ? `Best Move — ${san}` : `Good Move — ${san}`,
-      detail: classification === 'best' ? `Matches Stockfish's top choice (${evalAfter.display}).` : `Keeps things solid; ${bestMoveSan || san} was slightly sharper.`,
+      detail: classification === 'best'
+        ? `Matches Stockfish's top choice (${evalAfter.display}).`
+        : `Solid move; ${bestMoveSan || san} was slightly sharper.`,
       tacticalTag: classification === 'best' ? 'Engine Top' : 'Accurate',
     };
   }
 
+  // Errors: Inaccuracy, Mistake, Blunder
   const prefix = classification === 'blunder' ? 'Blunder' : classification === 'mistake' ? 'Mistake' : 'Inaccuracy';
+
+  // 1. Missed short forced mate (Mate in 1-3)
+  const hadShortMate = detectShortMate(evalBefore, color);
+  const stillHasMate = evalAfter.isCheckmate || detectShortMate(evalAfter, color) !== null;
   const moverHadMate = evalBefore.mateWhite !== null && ((color === 'w' && evalBefore.mateWhite > 0) || (color === 'b' && evalBefore.mateWhite < 0));
   const moverHasMate = evalAfter.isCheckmate || (evalAfter.mateWhite !== null && ((color === 'w' && evalAfter.mateWhite > 0) || (color === 'b' && evalAfter.mateWhite < 0)));
-  if (moverHadMate && !moverHasMate) {
-    return { headline: `${prefix}: Missed Forced Mate`, detail: `${bestMoveSan} forced checkmate, whereas ${san} lets the opponent escape.`, tacticalTag: 'Missed Mate' };
+  if ((hadShortMate !== null && !stillHasMate) || (moverHadMate && !moverHasMate)) {
+    return {
+      headline: `${prefix}: Missed ${hadShortMate ? `Mate in ${hadShortMate}` : 'Forced Mate'}`,
+      detail: `${bestMoveSan} forced checkmate, whereas ${san} lets the opponent escape.`,
+      tacticalTag: 'Mate in 1–3',
+    };
   }
 
+  // 2. Walked into opponent forced mate / Back-Rank
   const oppGotMate = evalAfter.mateWhite !== null && ((color === 'w' && evalAfter.mateWhite < 0) || (color === 'b' && evalAfter.mateWhite > 0));
   if (oppGotMate) {
-    return { headline: `${prefix}: Walks Into Forced Mate`, detail: `${san} exposes your King to a mating net. ${bestMoveSan} stayed safe.`, tacticalTag: 'King Safety' };
+    const brSq = threatMoveUci ? detectBackRankThreat(chessAfter, threatMoveUci, oppColor) : null;
+    if (brSq) {
+      return {
+        headline: `${prefix}: Allows Back-Rank Mate on ${brSq}`,
+        detail: `${san} lets the opponent deliver mate on ${brSq}. ${bestMoveSan} defended the back rank.`,
+        tacticalTag: 'Back-Rank Mate',
+      };
+    }
+    return {
+      headline: `${prefix}: Walks Into Forced Mate`,
+      detail: `${san} exposes your King to a mating net${threatMoveSan ? ` starting with ${threatMoveSan}` : ''}. ${bestMoveSan} stayed safe.`,
+      tacticalTag: 'Mate in 1–3',
+    };
   }
 
+  // 3. Opponent immediate tactical refutation (Back-Rank, Fork, Pin/Skewer, Discovered Attack)
   if (threatMoveUci) {
-    const backRankSq = detectBackRank(chessAfter, threatMoveUci, oppColor);
+    const backRankSq = detectBackRankThreat(chessAfter, threatMoveUci, oppColor);
     if (backRankSq) {
-      return { headline: `${prefix}: Allows Back-Rank Infiltration`, detail: `Allows opponent's Rook/Queen onto ${backRankSq} with check. ${bestMoveSan} covered it.`, tacticalTag: 'Back Rank' };
+      return {
+        headline: `${prefix}: Allows Back-Rank Infiltration on ${backRankSq}`,
+        detail: `Allows ${threatMoveSan ?? 'Rook/Queen'} onto ${backRankSq} with check. ${bestMoveSan} covered it.`,
+        tacticalTag: 'Back-Rank Mate',
+      };
     }
     const oppFork = detectForkOnMove(chessAfter, threatMoveUci, oppColor);
     if (oppFork) {
-      return { headline: `${prefix}: Allows Fork on ${oppFork.targetSquare}`, detail: `${san} walks into a ${PIECE_NAMES[oppFork.piece]} fork hitting ${oppFork.victims.slice(0, 2).join(' and ')}. Prefer ${bestMoveSan}.`, tacticalTag: 'Allowed Fork' };
+      return {
+        headline: `${prefix}: Allows ${PIECE_NAMES[oppFork.piece]} Fork on ${oppFork.targetSquare}`,
+        detail: `${san} walks into ${threatMoveSan ?? 'a fork'} hitting ${oppFork.victims.slice(0, 2).join(' and ')}. Prefer ${bestMoveSan}.`,
+        tacticalTag: 'Fork',
+      };
+    }
+    const oppPin = detectPinOrSkewer(chessAfter, threatMoveUci, oppColor);
+    if (oppPin) {
+      return {
+        headline: `${prefix}: Allows ${oppPin.kind} on ${oppPin.frontSq}`,
+        detail: `Opponent plays ${threatMoveSan ?? 'a slider move'} to ${oppPin.kind.toLowerCase()} your ${PIECE_NAMES[oppPin.frontPiece]} to your ${PIECE_NAMES[oppPin.backPiece]}. ${bestMoveSan} prevented it.`,
+        tacticalTag: 'Pin/Skewer',
+      };
+    }
+    const oppDisc = detectDiscoveredAttack(chessAfter, threatMoveUci, oppColor);
+    if (oppDisc) {
+      return {
+        headline: `${prefix}: Allows Discovered Attack on ${oppDisc.targetSq}`,
+        detail: `Allows ${threatMoveSan ?? 'a discovered attack'} uncovering the ${PIECE_NAMES[oppDisc.slider]} on ${oppDisc.sliderSq}. ${bestMoveSan} kept control.`,
+        tacticalTag: 'Discovered Attack',
+      };
     }
   }
 
+  // 4. Missed offensive tactic (Fork, Pin/Skewer, Discovered Attack, Deflection)
   const missedFork = detectForkOnMove(chessBefore, bestMoveUci, color);
   if (missedFork) {
-    return { headline: `${prefix}: Missed ${PIECE_NAMES[missedFork.piece]} Fork on ${missedFork.targetSquare}`, detail: `Instead of ${san}, ${bestMoveSan} forked ${missedFork.victims.slice(0, 2).join(' and ')}.`, tacticalTag: 'Missed Fork' };
+    return {
+      headline: `${prefix}: Missed ${PIECE_NAMES[missedFork.piece]} Fork on ${missedFork.targetSquare}`,
+      detail: `Instead of ${san}, ${bestMoveSan} forked ${missedFork.victims.slice(0, 2).join(' and ')}.`,
+      tacticalTag: 'Fork',
+    };
+  }
+  const missedPin = detectPinOrSkewer(chessBefore, bestMoveUci, color);
+  if (missedPin) {
+    return {
+      headline: `${prefix}: Missed ${missedPin.kind} on ${missedPin.frontSq}`,
+      detail: `${bestMoveSan} would ${missedPin.kind.toLowerCase()} the ${PIECE_NAMES[missedPin.frontPiece]} to the ${PIECE_NAMES[missedPin.backPiece]} on ${missedPin.backSq}.`,
+      tacticalTag: 'Pin/Skewer',
+    };
+  }
+  const missedDisc = detectDiscoveredAttack(chessBefore, bestMoveUci, color);
+  if (missedDisc) {
+    return {
+      headline: `${prefix}: Missed Discovered Attack`,
+      detail: `${bestMoveSan} unleashed the ${PIECE_NAMES[missedDisc.slider]} on ${missedDisc.sliderSq} against the ${PIECE_NAMES[missedDisc.target]} on ${missedDisc.targetSq}.`,
+      tacticalTag: 'Discovered Attack',
+    };
+  }
+  const missedDeflection = detectDeflection(chessBefore, bestMoveUci, color, bestPvUci);
+  if (missedDeflection) {
+    return {
+      headline: `${prefix}: Missed Deflection on ${missedDeflection.targetSq}`,
+      detail: `${bestMoveSan} deflected the ${PIECE_NAMES[missedDeflection.targetPiece]} from its defensive duty.`,
+      tacticalTag: 'Deflection',
+    };
   }
 
+  // 5. Left own piece hanging or dropped material
   const beforeHanging = findHangingPieces(chessBefore, color).map((h) => h.square);
   const afterHanging = findHangingPieces(chessAfter, color);
   const newlyHanging = afterHanging.find((h) => !beforeHanging.includes(h.square)) || afterHanging[0];
   if (newlyHanging) {
     const pName = PIECE_NAMES[newlyHanging.piece];
     const reason = newlyHanging.undefended
-      ? `Leaves your ${pName} on ${newlyHanging.square} undefended`
-      : `Drops your ${pName} on ${newlyHanging.square} to a ${newlyHanging.attackerPiece ? PIECE_NAMES[newlyHanging.attackerPiece] : 'lesser'} attack`;
-    return { headline: `${prefix}: ${reason}`, detail: `${bestMoveSan} protected material and kept control.`, tacticalTag: 'Hanging Piece' };
+      ? `Leaves ${pName} on ${newlyHanging.square} undefended`
+      : `Drops ${pName} on ${newlyHanging.square} to a ${newlyHanging.attackerPiece ? PIECE_NAMES[newlyHanging.attackerPiece] : 'lesser'} attack`;
+    return {
+      headline: `${prefix}: ${reason}`,
+      detail: `${bestMoveSan} protected material and kept control.`,
+      tacticalTag: 'Hanging Piece',
+    };
   }
 
+  // 6. Missed capturing opponent's free hanging piece
   const parsedBest = uciToSquares(bestMoveUci);
   if (parsedBest) {
     const target = chessBefore.get(parsedBest.to);
     if (target && target.color === oppColor && PIECE_VAL[target.type] >= 3 && chessBefore.attackers(parsedBest.to, oppColor).length === 0) {
-      return { headline: `${prefix}: Missed Free ${PIECE_NAMES[target.type]} on ${parsedBest.to}`, detail: `${bestMoveSan} captured an undefended ${PIECE_NAMES[target.type]} instead of ${san}.`, tacticalTag: 'Missed Capture' };
+      return {
+        headline: `${prefix}: Missed Free ${PIECE_NAMES[target.type]} on ${parsedBest.to}`,
+        detail: `${bestMoveSan} won an undefended ${PIECE_NAMES[target.type]} instead of ${san}.`,
+        tacticalTag: 'Hanging Piece',
+      };
     }
+  }
+
+  // 7. Missed critical Only-Move save (MultiPV gap >= 2.0 pawns)
+  if (secondBestGapPawns >= 2.0) {
+    return {
+      headline: `${prefix}: Missed Only Move (${bestMoveSan})`,
+      detail: threatMoveSan
+        ? `${bestMoveSan} was the only move to stop ${threatMoveSan} (eval ${evalBefore.display} → ${evalAfter.display}).`
+        : `${bestMoveSan} was the only move holding the position (${evalBefore.display} → ${evalAfter.display}).`,
+      tacticalTag: 'Only Move Save',
+    };
   }
 
   return {

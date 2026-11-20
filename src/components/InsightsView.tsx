@@ -8,8 +8,10 @@ import {
   Flame,
   Gem,
   Play,
+  Rocket,
   Search,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Swords,
@@ -22,6 +24,8 @@ import {
 import type { AnalyzedGame, ColourSplit, GameHighlight, GamePlatform, ScoutState } from '../types/chess';
 import { computeMultiGameInsights } from '../services/insightsAggregator';
 import { PLATFORM_META, platformLabel, scopeAnalyzedGamesForPlatform } from '../services/gameSource';
+import { useVibe } from '../utils/vibeCopy';
+import type { TrainSection } from './MistakeTrainerView';
 import { ActivityTrendChart } from './ActivityTrendChart';
 import { TimeTroubleCard } from './TimeTroubleCard';
 
@@ -35,7 +39,9 @@ interface Props {
   onCancelScout: () => void;
   onClearScout: () => void;
   onOpenGames: () => void;
-  onOpenTrainer: () => void;
+  onOpenOpenings: () => void;
+  onOpenGravityCheck: () => void;
+  onOpenTrainer: (section?: TrainSection, motif?: string | null) => void;
   onOpenGame: (gameId: string, ply: number) => void;
 }
 
@@ -58,9 +64,12 @@ export const InsightsView: React.FC<Props> = ({
   onCancelScout,
   onClearScout,
   onOpenGames,
+  onOpenOpenings,
+  onOpenGravityCheck,
   onOpenTrainer,
   onOpenGame,
 }) => {
+  const { copy } = useVibe();
   const [scoutName, setScoutName] = useState('');
 
   const scopedGames = useMemo(() => scopeAnalyzedGamesForPlatform(analyzedGames, platform), [analyzedGames, platform]);
@@ -176,8 +185,8 @@ export const InsightsView: React.FC<Props> = ({
         {scout?.status === 'loading' && (
           <div className="mt-2.5 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-2.5">
             <div className="flex items-center justify-between text-[11px]">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-200">
-                <Activity className="h-3.5 w-3.5 animate-pulse" /> Scouting @{scout.username}… Stockfish D10
+              <span className="inline-flex items-center gap-2 font-semibold text-teal-200">
+                <span className="radar-sweep h-4 w-4 shrink-0" /> Scouting @{scout.username}… Stockfish D10
               </span>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-slate-400">{scout.progress ? `${scout.progress.done}/${scout.progress.total}` : 'fetching'}</span>
@@ -216,18 +225,42 @@ export const InsightsView: React.FC<Props> = ({
         </section>
       ) : (
         <>
+          {/* Tilt Guard Stop-Loss Alert */}
+          {insights.tiltGuard.activeWarning && (
+            <section className="glass-card border-rose-400/50 bg-rose-500/[0.09] p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-blunder" />
+                  <div>
+                    <div className="text-xs font-extrabold text-rose-200">
+                      Tilt Guard Active · {insights.tiltGuard.consecutiveLosses}L Streak
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-rose-100/90">{copy.tiltGuardWarning}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenGravityCheck}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-400 to-purple-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950"
+                >
+                  <Rocket className="h-3.5 w-3.5" /> Reset w/ {copy.gravityCheckTitle}
+                </button>
+              </div>
+            </section>
+          )}
+
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <StatCard icon={<Swords className="h-4 w-4 text-cyan-400" />} label="Games" value={String(insights.gamesCount)} sub={`${insights.record.wins}W-${insights.record.draws}D-${insights.record.losses}L`} />
-            <StatCard icon={<Target className="h-4 w-4 text-emerald-400" />} label="Avg accuracy" value={`${insights.avgAccuracy}%`} sub={`Best ${insights.bestAccuracy}%`} />
-            <StatCard icon={<TrendingUp className="h-4 w-4 text-cyan-300" />} label="Perf. Elo" value={String(insights.avgEstimatedElo)} sub={insights.ratingBand} />
-            <StatCard icon={<Gem className="h-4 w-4 text-fuchsia-300" />} label="Brilliant !!" value={String(insights.brilliantCount)} sub="Galaxy-brain moves" />
+            <StatCard icon={<Swords className="h-4 w-4 text-brilly" />} label="Games" value={String(insights.gamesCount)} sub={`${insights.record.wins}W-${insights.record.draws}D-${insights.record.losses}L`} ctaLabel="Daily Coach" onCta={() => onOpenTrainer('daily')} />
+            <StatCard icon={<Target className="h-4 w-4 text-clean" />} label="Avg accuracy" value={`${insights.avgAccuracy}%`} sub={`Best ${insights.bestAccuracy}%`} ctaLabel="Woodpecker" onCta={() => onOpenTrainer('woodpecker')} />
+            <StatCard icon={<TrendingUp className="h-4 w-4 text-cyan-300" />} label="Perf. Elo" value={String(insights.avgEstimatedElo)} sub={insights.ratingBand} ctaLabel="Warmup" onCta={onOpenGravityCheck} />
+            <StatCard icon={<Gem className="h-4 w-4 text-purple-300" />} label="Brilliant !!" value={String(insights.brilliantCount)} sub={copy.brilliantLabel} ctaLabel="Train Tactics" onCta={() => onOpenTrainer('deck')} />
           </div>
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <StatCard icon={<Crown className="h-4 w-4 text-amber-300" />} label="Giant slayer" value={String(insights.giantSlayer.wins)} sub={`${insights.giantSlayer.games} games vs stronger`} />
-            <StatCard icon={<Flame className="h-4 w-4 text-orange-300" />} label="Comebacks" value={String(insights.comebacks)} sub={`${insights.blownWins} blown leads`} />
-            <StatCard icon={<ShieldCheck className="h-4 w-4 text-emerald-300" />} label="Clean games" value={String(insights.blunderFreeGames)} sub="No blunders" />
-            <StatCard icon={<Activity className="h-4 w-4 text-cyan-300" />} label="Avg opponent" value={insights.avgOpponentRating > 0 ? String(insights.avgOpponentRating) : '—'} sub="Rating faced" />
+            <StatCard icon={<Crown className="h-4 w-4 text-amber-300" />} label="Giant slayer" value={String(insights.giantSlayer.wins)} sub={`${insights.giantSlayer.games} vs stronger`} ctaLabel="Openings" onCta={onOpenOpenings} />
+            <StatCard icon={<Flame className="h-4 w-4 text-blunder" />} label="Blown leads" value={String(insights.blownWins)} sub={`${insights.comebacks} comebacks`} ctaLabel="Train This" onCta={() => onOpenTrainer('conversion')} />
+            <StatCard icon={<ShieldCheck className="h-4 w-4 text-clean" />} label="Clean games" value={String(insights.blunderFreeGames)} sub="0 blunders" ctaLabel="Rewind" onCta={() => onOpenTrainer('daily')} />
+            <StatCard icon={<Activity className="h-4 w-4 text-brilly" />} label="Impulse ??" value={String(insights.clockLeaks.impulseBlunders)} sub={`${insights.clockLeaks.impulsePerGame}/game (<5s)`} ctaLabel="Radar Ping" onCta={() => onOpenTrainer('daily')} />
           </div>
 
           <section className="glass-card border-amber-500/20 p-3.5">
@@ -303,17 +336,213 @@ export const InsightsView: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="glass-card border-cyan-500/25 p-3.5">
+          <div className="glass-card border-teal-400/30 p-3.5">
             <div className="flex items-start gap-2.5">
-              <Target className="mt-0.5 h-5 w-5 shrink-0 text-cyan-400" />
+              <Target className="mt-0.5 h-5 w-5 shrink-0 text-brilly" />
               <div className="min-w-0">
-                <div className="text-xs font-bold text-cyan-200">BrillyDer training focus</div>
+                <div className="text-xs font-bold text-teal-200">BrillyDer training focus</div>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-300">{insights.recommendation}</p>
-                <button type="button" onClick={onOpenTrainer} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-200">
-                  <Flame className="h-3 w-3" /> Train this in the mistake deck
-                </button>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => onOpenTrainer('daily')} className="inline-flex items-center gap-1 rounded-lg border border-teal-400/35 bg-teal-400/15 px-2.5 py-1 text-[10px] font-extrabold text-teal-100">
+                    <Flame className="h-3 w-3" /> Start 15m Daily Coach
+                  </button>
+                  <button type="button" onClick={() => onOpenTrainer('conversion')} className="inline-flex items-center gap-1 rounded-lg border border-purple-400/35 bg-purple-500/15 px-2.5 py-1 text-[10px] font-bold text-purple-200">
+                    Train Blown Leads →
+                  </button>
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Tilt Guard Curve + 20-Game Checkpoints */}
+          <div className="grid gap-3 lg:grid-cols-2">
+            <section className="glass-card p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                  <ShieldAlert className="h-4 w-4 text-blunder" /> Tilt Guard (Win Rate by Loss Streak)
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenGravityCheck}
+                  className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
+                >
+                  Train This →
+                </button>
+              </div>
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                Stop-loss telemetry: how your score shifts after consecutive losses.
+              </p>
+              <div className="mt-3 space-y-2">
+                {insights.tiltGuard.buckets.map((tb) => (
+                  <div key={tb.label}>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-slate-200">
+                        {tb.label} <span className="text-[9px] text-slate-500">({tb.games}g)</span>
+                      </span>
+                      <span className="font-mono text-[10px] font-bold text-brilly">
+                        {tb.games > 0 ? `${tb.winRate}% (${tb.wins}W-${tb.draws}D-${tb.losses}L)` : '—'}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className={`h-full rounded-full ${
+                          tb.priorLosses >= 2 && tb.winRate < 45
+                            ? 'bg-gradient-to-r from-rose-500 to-amber-400'
+                            : 'bg-gradient-to-r from-teal-400 to-emerald-400'
+                        }`}
+                        style={{ width: `${tb.games > 0 ? Math.max(5, tb.winRate) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="glass-card p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                  <TrendingUp className="h-4 w-4 text-brilly" />
+                  {insights.checkpoints ? `${insights.checkpoints.windowSize}-Game Checkpoints` : '20-Game Checkpoints'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenTrainer('daily')}
+                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                >
+                  Train This →
+                </button>
+              </div>
+              {!insights.checkpoints ? (
+                <p className="py-6 text-center text-xs text-slate-500">
+                  Analyze at least 4 rated games to compare your recent checkpoint window against your previous window.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  <CheckpointRow
+                    label="Avg Eval @ Move 10"
+                    recent={
+                      insights.checkpoints.recent.avgEvalMove10 === null
+                        ? '—'
+                        : `${insights.checkpoints.recent.avgEvalMove10 >= 0 ? '+' : ''}${insights.checkpoints.recent.avgEvalMove10.toFixed(2)}`
+                    }
+                    previous={
+                      insights.checkpoints.previous.avgEvalMove10 === null
+                        ? '—'
+                        : `${insights.checkpoints.previous.avgEvalMove10 >= 0 ? '+' : ''}${insights.checkpoints.previous.avgEvalMove10.toFixed(2)}`
+                    }
+                    improved={
+                      (insights.checkpoints.recent.avgEvalMove10 ?? 0) >=
+                      (insights.checkpoints.previous.avgEvalMove10 ?? 0)
+                    }
+                  />
+                  <CheckpointRow
+                    label="Impulse Blunders / Game"
+                    recent={insights.checkpoints.recent.impulseBlundersPerGame.toFixed(2)}
+                    previous={insights.checkpoints.previous.impulseBlundersPerGame.toFixed(2)}
+                    improved={
+                      insights.checkpoints.recent.impulseBlundersPerGame <=
+                      insights.checkpoints.previous.impulseBlundersPerGame
+                    }
+                  />
+                  <CheckpointRow
+                    label="Blown Lead %"
+                    recent={`${insights.checkpoints.recent.blownLeadPct}%`}
+                    previous={`${insights.checkpoints.previous.blownLeadPct}%`}
+                    improved={
+                      insights.checkpoints.recent.blownLeadPct <=
+                      insights.checkpoints.previous.blownLeadPct
+                    }
+                  />
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Patterns You Miss Most + Endgame Weakness Tracker */}
+          <div className="grid gap-3 lg:grid-cols-2">
+            <section className="glass-card p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                  <Swords className="h-4 w-4 text-warp" /> Patterns You Miss Most
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenTrainer('woodpecker')}
+                  className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
+                >
+                  Woodpecker →
+                </button>
+              </div>
+              {insights.missedMotifs.length === 0 ? (
+                <p className="py-5 text-center text-xs text-slate-500">
+                  Analyze games to classify missed Hanging Pieces, Forks, Pins/Skewers, Back-Rank Mates, and Deflections.
+                </p>
+              ) : (
+                <div className="mt-2.5 space-y-1.5">
+                  {insights.missedMotifs.map((m) => (
+                    <div
+                      key={m.motif}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-void/55 px-2.5 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white">{m.motif}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {m.count} missed · avg -{m.avgWinLoss}% equity
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenTrainer('deck', m.motif)}
+                        className="shrink-0 rounded-lg border border-teal-400/35 bg-teal-400/10 px-2.5 py-1 text-[10px] font-extrabold text-teal-200 hover:bg-teal-400/20"
+                      >
+                        Train This →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="glass-card p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                  <Target className="h-4 w-4 text-clean" /> Endgame Weakness Tracker
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenTrainer('conversion')}
+                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                >
+                  Train This →
+                </button>
+              </div>
+              {insights.endgameCategories.length === 0 ? (
+                <p className="py-5 text-center text-xs text-slate-500">
+                  Play &amp; analyze games reaching endgames to see accuracy across Rook, Pawn, Minor Piece, Queen, and Rook+Minor endgames.
+                </p>
+              ) : (
+                <div className="mt-2.5 space-y-2">
+                  {insights.endgameCategories.map((eg) => (
+                    <div key={eg.category}>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-200">
+                          {eg.category} <span className="text-[9px] text-slate-500">({eg.moves} moves)</span>
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          {eg.accuracy}% acc · {eg.blunders} err
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-teal-400 to-purple-500"
+                          style={{ width: `${Math.min(100, eg.accuracy)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
@@ -388,15 +617,25 @@ export const InsightsView: React.FC<Props> = ({
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <TimeTroubleCard buckets={insights.timeTrouble} />
+            <TimeTroubleCard
+              buckets={insights.timeTrouble}
+              clockLeaks={insights.clockLeaks}
+              onTrainBlunders={() => onOpenTrainer('daily')}
+            />
             <ActivityTrendChart trend={insights.trend} />
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="glass-card p-3.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-100">Opening repertoire</div>
-                <span className="text-[10px] text-slate-500">{insights.openings.length} families</span>
+                <button
+                  type="button"
+                  onClick={onOpenOpenings}
+                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                >
+                  Train This →
+                </button>
               </div>
               {insights.openings.length === 0 ? (
                 <p className="py-4 text-xs text-slate-500">Analyze games to reveal your opening win rates.</p>
@@ -424,8 +663,17 @@ export const InsightsView: React.FC<Props> = ({
             </div>
 
             <div className="glass-card p-3.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
-                <Flame className="h-4 w-4 text-rose-400" /> Blunder rate by phase
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
+                  <Flame className="h-4 w-4 text-rose-400" /> Blunder rate by phase
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenTrainer('woodpecker')}
+                  className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200 hover:bg-amber-500/20"
+                >
+                  Train This →
+                </button>
               </div>
               <div className="mt-2.5 space-y-3">
                 {insights.phaseStats.map((ps) => (
@@ -459,11 +707,55 @@ export const InsightsView: React.FC<Props> = ({
   );
 };
 
-const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; sub: string }> = ({ icon, label, value, sub }) => (
-  <div className="glass-card p-3">
-    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{icon}{label}</div>
-    <div className="mt-1 text-lg font-extrabold text-white">{value}</div>
-    <div className="truncate text-[10px] text-slate-400">{sub}</div>
+const StatCard: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  ctaLabel?: string;
+  onCta?: () => void;
+}> = ({ icon, label, value, sub, ctaLabel, onCta }) => (
+  <div className="glass-card flex flex-col justify-between p-3">
+    <div>
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-extrabold text-white">{value}</div>
+      <div className="truncate text-[10px] text-slate-400">{sub}</div>
+    </div>
+    {ctaLabel && onCta && (
+      <button
+        type="button"
+        onClick={onCta}
+        className="mt-2 inline-flex items-center gap-0.5 self-start text-[10px] font-bold text-brilly hover:underline"
+      >
+        {ctaLabel} <ArrowUpRight className="h-3 w-3" />
+      </button>
+    )}
+  </div>
+);
+
+const CheckpointRow: React.FC<{
+  label: string;
+  recent: string;
+  previous: string;
+  improved: boolean;
+}> = ({ label, recent, previous, improved }) => (
+  <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-void/55 px-2.5 py-2 text-[11px]">
+    <span className="font-semibold text-slate-300">{label}</span>
+    <div className="flex items-center gap-2 font-mono">
+      <span className="text-[10px] text-slate-500">prev {previous}</span>
+      <span
+        className={`rounded-md border px-1.5 py-0.5 font-black ${
+          improved
+            ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-200'
+            : 'border-rose-400/35 bg-rose-500/15 text-rose-200'
+        }`}
+      >
+        {recent}
+      </span>
+    </div>
   </div>
 );
 

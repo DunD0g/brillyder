@@ -18,6 +18,13 @@ export interface ExplorerPosition {
   source: 'lichess';
 }
 
+export interface ExplorerQueryOptions {
+  ratingBand?: number;
+  ratings?: number[];
+  speeds?: string[];
+  moves?: number;
+}
+
 interface RawExplorerMove {
   uci?: string;
   san?: string;
@@ -40,12 +47,25 @@ interface CacheEntry {
 }
 
 const EXPLORER_URL = 'https://explorer.lichess.ovh/lichess';
+const LICHESS_BRACKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 const CACHE_MS = 15 * 60_000;
-const FAILURE_TTL_MS = 10 * 60_000;
-const REQUEST_TIMEOUT_MS = 6_000;
+const FAILURE_TTL_MS = 3 * 60_000;
+const REQUEST_TIMEOUT_MS = 6_500;
 
 const cache = new Map<string, CacheEntry>();
 let disabledUntil = 0;
+
+export function ratingsForBand(ratingBand?: number): number[] {
+  if (!ratingBand || !Number.isFinite(ratingBand)) {
+    return [1200, 1400, 1600, 1800, 2000];
+  }
+  const nearest = LICHESS_BRACKETS.reduce((best, cur) =>
+    Math.abs(cur - ratingBand) < Math.abs(best - ratingBand) ? cur : best
+  );
+  const idx = LICHESS_BRACKETS.indexOf(nearest);
+  const brackets = [LICHESS_BRACKETS[Math.max(0, idx - 1)], nearest, LICHESS_BRACKETS[Math.min(LICHESS_BRACKETS.length - 1, idx + 1)]];
+  return Array.from(new Set(brackets));
+}
 
 function normalise(raw: RawExplorerResponse, fen: string): ExplorerPosition | null {
   const moves: ExplorerMoveStat[] = (raw.moves ?? [])
@@ -84,14 +104,24 @@ function normalise(raw: RawExplorerResponse, fen: string): ExplorerPosition | nu
 }
 
 /**
- * Community move statistics from the Lichess opening explorer. The endpoint is
- * optional: when it is unavailable (offline, rate limited or blocked) the UI
- * falls back to BrillyDer's bundled theory book. Failures are remembered for a
- * while so moving around a review does not hammer the API.
+ * Community move statistics from the Lichess opening explorer filtered by
+ * rating bracket & time control. Falls back gracefully when offline/rate-limited.
  */
-export async function fetchLichessExplorer(fen: string): Promise<ExplorerPosition | null> {
+export async function fetchLichessExplorer(
+  fen: string,
+  options: ExplorerQueryOptions = {}
+): Promise<ExplorerPosition | null> {
+  const ratings = (options.ratings && options.ratings.length > 0)
+    ? options.ratings
+    : ratingsForBand(options.ratingBand);
+  const speeds = (options.speeds && options.speeds.length > 0)
+    ? options.speeds
+    : ['blitz', 'rapid', 'classical'];
+  const movesLimit = options.moves ?? 10;
+
+  const cacheKey = `${fen}|r:${ratings.join(',')}|s:${speeds.join(',')}|m:${movesLimit}`;
   const now = Date.now();
-  const cached = cache.get(fen);
+  const cached = cache.get(cacheKey);
   if (cached && now - cached.at < CACHE_MS) return cached.data;
   if (now < disabledUntil) return null;
 
@@ -100,9 +130,9 @@ export async function fetchLichessExplorer(fen: string): Promise<ExplorerPositio
   try {
     const params = new URLSearchParams({
       variant: 'standard',
-      speeds: 'blitz,rapid,classical',
-      ratings: '1200,1400,1600,1800,2000,2200',
-      moves: '10',
+      speeds: speeds.join(','),
+      ratings: ratings.join(','),
+      moves: String(movesLimit),
       topGames: '0',
       recentGames: '0',
       fen,
@@ -113,13 +143,17 @@ export async function fetchLichessExplorer(fen: string): Promise<ExplorerPositio
     });
     if (!res.ok) throw new Error(`Lichess explorer returned ${res.status}`);
     const data = normalise((await res.json()) as RawExplorerResponse, fen);
-    cache.set(fen, { data, at: now });
+    cache.set(cacheKey, { data, at: now });
     return data;
   } catch {
     disabledUntil = Date.now() + FAILURE_TTL_MS;
-    cache.set(fen, { data: null, at: now });
+    cache.set(cacheKey, { data: null, at: now });
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function resetExplorerBackoff(): void {
+  disabledUntil = 0;
 }

@@ -106,20 +106,63 @@ export const CoachCard: React.FC<Props> = ({
           </span>
         </div>
 
-        <div className="mt-2 flex items-center gap-1.5">
-          <span className="text-[9px] font-black uppercase tracking-[0.16em] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{currentPly.coaching.tacticalTag}</span>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] font-black uppercase tracking-[0.16em] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+            {currentPly.coaching.tacticalTag}
+          </span>
           <span className="text-[10px] text-slate-500 capitalize">{currentPly.phase}</span>
+          {currentPly.isClutchSave && (
+            <span className="rounded-full border border-teal-400/45 bg-teal-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-teal-200">
+              Clutch Save
+            </span>
+          )}
+          {currentPly.isCriticalMoment && !currentPly.isClutchSave && (
+            <span className="rounded-full border border-purple-400/40 bg-purple-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-purple-200">
+              Critical{currentPly.secondBestGapPawns ? ` +${currentPly.secondBestGapPawns.toFixed(1)}` : ''}
+            </span>
+          )}
+          {currentPly.clockTag === 'impulse' && (
+            <span className="rounded-full border border-amber-400/45 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-200">
+              Impulse ({currentPly.timeSpentSeconds ?? '<5'}s)
+            </span>
+          )}
+          {currentPly.clockTag === 'time-trouble' && (
+            <span className="rounded-full border border-rose-400/45 bg-rose-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-200">
+              Time Trouble ({currentPly.clockText ?? '<60s'})
+            </span>
+          )}
+          {currentPly.deepened && (
+            <span className="ml-auto rounded bg-void/70 px-1.5 py-0.5 font-mono text-[8px] font-bold text-brilly">
+              D18
+            </span>
+          )}
         </div>
 
         <h3 className="mt-2 text-sm font-extrabold leading-snug text-slate-50">{currentPly.coaching.headline}</h3>
         <p className="mt-1 text-xs leading-relaxed text-slate-300">{currentPly.coaching.detail}</p>
 
-        {currentPly.bestPvSan.length > 0 && (
+        {currentPly.topLines && currentPly.topLines.length > 1 ? (
+          <div className="mt-2 space-y-1 rounded-xl border border-emerald-500/15 bg-slate-950/70 px-2.5 py-2">
+            <div className="text-[9px] font-black uppercase tracking-[0.14em] text-emerald-400/80">
+              Stockfish MultiPV Top {currentPly.topLines.length}
+            </div>
+            {currentPly.topLines.map((line, idx) => (
+              <div key={idx} className="flex items-center gap-2 font-mono text-[10px]">
+                <span className={`shrink-0 rounded px-1 py-0.5 font-bold ${idx === 0 ? 'bg-teal-400/15 text-teal-200' : 'bg-slate-800 text-slate-400'}`}>
+                  {line.evalDisplay}
+                </span>
+                <span className={`truncate ${idx === 0 ? 'text-emerald-200 font-bold' : 'text-slate-400'}`}>
+                  {line.pvSan.join(' ')}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : currentPly.bestPvSan.length > 0 ? (
           <div className="mt-2 rounded-xl bg-slate-950/70 border border-emerald-500/15 px-2 py-1.5">
             <div className="text-[9px] font-black uppercase tracking-[0.14em] text-emerald-400/80">Engine line</div>
             <div className="mt-0.5 truncate font-mono text-[11px] text-emerald-200">{currentPly.bestPvSan.join(' ')}</div>
           </div>
-        )}
+        ) : null}
 
         {currentPly.threatMoveSan && (
           <div className="mt-2 flex items-center gap-1.5 text-[11px] text-red-300">

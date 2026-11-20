@@ -11,11 +11,13 @@ import type {
 import {
   calculateGameAccuracy,
   calculateMoveAccuracy,
+  computeMoveTimeSpent,
   countNonPawnMaterial,
   estimateGameElo,
   extractClockFromComment,
   extractClockSeconds,
   getMoverWinPercent,
+  parsePgnTimeControl,
   uciLineToSan,
 } from '../utils/chessMath';
 import { generateMoveExplanation } from './moveCoach';
@@ -169,16 +171,26 @@ export function loadPgnSafely(pgn: string): Chess {
   }
 }
 
-export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], depth: number): AnalyzedGame {
+export function buildAnalyzedGame(
+  game: LichessGameRecord,
+  evals: EngineEval[],
+  depth: number,
+  deepenedIndices?: Set<number>
+): AnalyzedGame {
   const chess = loadPgnSafely(game.pgn);
   const commentsMap = new Map<string, string>();
   for (const entry of chess.getComments()) commentsMap.set(entry.fen, entry.comment);
+  const timeControl = parsePgnTimeControl(game.pgn);
 
   const moves = chess.history({ verbose: true });
   const sanList = moves.map((m) => m.san);
   const openingLookup = lookupOpeningByMoves(sanList);
   const plies: AnalyzedPly[] = [];
   const seenPositions = new Set<string>();
+  const lastClockByColor: Record<PlayerColor, number | undefined> = {
+    w: timeControl.baseSeconds ?? undefined,
+    b: timeControl.baseSeconds ?? undefined,
+  };
   if (moves.length > 0) seenPositions.add(fenPositionKey(moves[0].before));
 
   for (let i = 0; i < moves.length; i++) {
@@ -193,6 +205,15 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
     const threatMoveUci = evalAfter?.bestMoveUci;
     const threatMoveSan = threatMoveUci ? uciLineToSan(mv.after, [threatMoveUci], 1)[0] : undefined;
 
+    const topLines = evalBefore.lines.slice(0, 3).map((l) => {
+      const pvSan = uciLineToSan(mv.before, l.pv, 4);
+      return {
+        san: pvSan[0] || l.bestMoveUci,
+        evalDisplay: l.score.display,
+        pvSan,
+      };
+    });
+
     const moverWinBefore = getMoverWinPercent(evalBefore.score, color);
     const moverWinAfter = getMoverWinPercent(evalAfter.score, color);
     const winLoss = playedUci === bestMoveUci ? 0 : Math.max(0, Number((moverWinBefore - moverWinAfter).toFixed(2)));
@@ -201,6 +222,10 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
     const line2 = evalBefore.lines.find((l) => l.multipv === 2);
     const hasSecondLine = Boolean(line1 && line2);
     const secondBestGapWin = line1 && line2 ? Math.max(0, getMoverWinPercent(line1.score, color) - getMoverWinPercent(line2.score, color)) : 0;
+    const sign = color === 'w' ? 1 : -1;
+    const cp1 = line1 ? Math.max(-1200, Math.min(1200, line1.score.cpWhite * sign)) : 0;
+    const cp2 = line2 ? Math.max(-1200, Math.min(1200, line2.score.cpWhite * sign)) : 0;
+    const secondBestGapPawns = line1 && line2 ? Number((Math.max(0, cp1 - cp2) / 100).toFixed(2)) : 0;
 
     const moverHadMate = evalBefore.score.mateWhite !== null && ((color === 'w' && evalBefore.score.mateWhite > 0) || (color === 'b' && evalBefore.score.mateWhite < 0));
     const moverHasMate = evalAfter.score.isCheckmate || (evalAfter.score.mateWhite !== null && ((color === 'w' && evalAfter.score.mateWhite > 0) || (color === 'b' && evalAfter.score.mateWhite < 0)));
@@ -231,6 +256,33 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       walkedIntoMate: oppHasMate && moverWinBefore > 15,
     });
 
+    const clockText = extractClockFromComment(commentsMap.get(mv.after));
+    const clockSeconds = extractClockSeconds(commentsMap.get(mv.after));
+    const prevClock = lastClockByColor[color];
+    const timeSpentSeconds = computeMoveTimeSpent(prevClock, clockSeconds, timeControl.incrementSeconds);
+    if (clockSeconds !== undefined) lastClockByColor[color] = clockSeconds;
+
+    let clockTag: 'impulse' | 'time-trouble' | undefined;
+    if (classification === 'blunder' || classification === 'mistake') {
+      if (clockSeconds !== undefined && clockSeconds < 60) {
+        clockTag = 'time-trouble';
+      } else if (
+        timeSpentSeconds !== undefined &&
+        timeSpentSeconds < 5 &&
+        (prevClock ?? clockSeconds ?? 0) > 180
+      ) {
+        clockTag = 'impulse';
+      }
+    }
+
+    const isCriticalMoment = hasSecondLine && secondBestGapPawns >= 2.0;
+    const isClutchSave =
+      isCriticalMoment &&
+      winLoss <= 2 &&
+      moverWinBefore < 88 &&
+      classification !== 'book' &&
+      (moverWinBefore <= 62 || (clockSeconds !== undefined && clockSeconds <= 90));
+
     const accuracy = classification === 'book' ? 100 : calculateMoveAccuracy(winLoss);
     const nonPawnMat = countNonPawnMaterial(mv.before);
     const phase: 'opening' | 'middlegame' | 'endgame' =
@@ -244,9 +296,13 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       color,
       bestMoveUci,
       bestMoveSan,
+      bestPvUci: evalBefore.pv,
       threatMoveUci,
+      threatMoveSan,
       evalBefore: evalBefore.score,
       evalAfter: evalAfter.score,
+      secondBestGapPawns,
+      isClutchSave,
       classification,
       openingName: game.openingName !== 'Unknown Opening' ? game.openingName : openingLookup?.name,
     });
@@ -263,16 +319,23 @@ export function buildAnalyzedGame(game: LichessGameRecord, evals: EngineEval[], 
       captured: mv.captured,
       beforeFen: mv.before,
       afterFen: mv.after,
-      clockText: extractClockFromComment(commentsMap.get(mv.after)),
-      clockSeconds: extractClockSeconds(commentsMap.get(mv.after)),
+      clockText,
+      clockSeconds,
+      timeSpentSeconds,
+      clockTag,
       bestMoveUci,
       bestMoveSan,
       bestPvSan,
+      topLines,
       threatMoveUci,
       threatMoveSan,
       evalBefore: evalBefore.score,
       evalAfter: evalAfter.score,
       secondBestGapWin: Number(secondBestGapWin.toFixed(1)),
+      secondBestGapPawns,
+      isCriticalMoment,
+      isClutchSave,
+      deepened: deepenedIndices?.has(i) ?? false,
       winLoss,
       accuracy,
       classification,

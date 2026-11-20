@@ -2,15 +2,22 @@ import type {
   AccuracyTrendPoint,
   AnalyzedGame,
   AnalyzedPly,
+  CheckpointMetrics,
   ClockBucketStats,
   ColourSplit,
+  EndgameCategory,
+  EndgameCategoryStat,
   GameHighlight,
+  MotifWeaknessStat,
   MultiGameInsights,
   OpeningStat,
   PhaseBlunderStats,
   PlayerColor,
+  TiltStreakBucket,
+  TwentyGameCheckpoints,
 } from '../types/chess';
-import { clamp } from '../utils/chessMath';
+import { classifyEndgameCategory } from '../chess/tacticalMotifs';
+import { clamp, computeMoveTimeSpent, parsePgnTimeControl } from '../utils/chessMath';
 import { resultForUser, resolveUserColor } from '../utils/player';
 
 interface RatingBand {
@@ -36,11 +43,12 @@ const RATING_BANDS: RatingBand[] = [
   { label: 'Master', min: 2200, max: 4000, expected: { openingAcc: 91, midAcc: 89, endAcc: 87, conversion: 74, resilience: 74, lowClockAcc: 83 } },
 ];
 
+const ENDGAME_CATEGORIES: EndgameCategory[] = ['Rook', 'Pawn', 'Minor Piece', 'Queen', 'Rook+Minor'];
+
 function bandForRating(rating: number): RatingBand {
   return RATING_BANDS.find((b) => rating >= b.min && rating < b.max) ?? RATING_BANDS[2];
 }
 
-/** Scores a raw metric as 50 = exactly typical for the player's rating band. */
 function relativeScore(raw: number, expected: number, spread: number): number {
   return clamp(Math.round(50 + ((raw - expected) / spread) * 34), 10, 99);
 }
@@ -84,6 +92,87 @@ function gameHighlightScore(input: {
   return Number((input.accuracy + resultBonus + opponentBonus + Math.min(6, input.brilliants * 3) - Math.min(8, input.blunders * 2)).toFixed(1));
 }
 
+function resolveClockMetricsForGame(ag: AnalyzedGame, uc: PlayerColor): {
+  impulseBlunders: number;
+  timeTroubleBlunders: number;
+  spentSum: number;
+  spentCount: number;
+} {
+  const tc = parsePgnTimeControl(ag.game.pgn);
+  let prevClock = tc.baseSeconds ?? undefined;
+  let impulseBlunders = 0;
+  let timeTroubleBlunders = 0;
+  let spentSum = 0;
+  let spentCount = 0;
+
+  for (const p of ag.plies) {
+    if (p.color !== uc) continue;
+    const spent = p.timeSpentSeconds ?? computeMoveTimeSpent(prevClock, p.clockSeconds, tc.incrementSeconds);
+    if (spent !== undefined) {
+      spentSum += spent;
+      spentCount++;
+    }
+    const isErr = p.classification === 'blunder' || p.classification === 'mistake';
+    if (isErr) {
+      if (p.clockTag === 'time-trouble' || (p.clockSeconds !== undefined && p.clockSeconds < 60)) {
+        timeTroubleBlunders++;
+      } else if (
+        p.clockTag === 'impulse' ||
+        (spent !== undefined && spent < 5 && (prevClock ?? p.clockSeconds ?? 0) > 180)
+      ) {
+        impulseBlunders++;
+      }
+    }
+    if (p.clockSeconds !== undefined) prevClock = p.clockSeconds;
+  }
+
+  return { impulseBlunders, timeTroubleBlunders, spentSum, spentCount };
+}
+
+function computeCheckpointSlice(games: AnalyzedGame[], username: string): CheckpointMetrics {
+  let eval10Sum = 0;
+  let eval10Count = 0;
+  let impulseTotal = 0;
+  let winningGames = 0;
+  let blownGames = 0;
+
+  for (const ag of games) {
+    const uc = resolveUserColor(ag.game, username);
+    const result = resultForUser(ag.game, uc);
+    const sign = uc === 'w' ? 1 : -1;
+
+    const ply10Idx = Math.min(ag.plies.length - 1, 19);
+    if (ply10Idx >= 0) {
+      const cp = Math.max(-800, Math.min(800, ag.plies[ply10Idx].evalAfter.cpWhite * sign));
+      eval10Sum += cp / 100;
+      eval10Count++;
+    }
+
+    const cm = resolveClockMetricsForGame(ag, uc);
+    impulseTotal += cm.impulseBlunders;
+
+    let hadClearLead = false;
+    for (const p of ag.plies) {
+      if (p.color !== uc) continue;
+      if (p.evalBefore.cpWhite * sign >= 250) {
+        hadClearLead = true;
+        break;
+      }
+    }
+    if (hadClearLead) {
+      winningGames++;
+      if (result !== 'W') blownGames++;
+    }
+  }
+
+  return {
+    games: games.length,
+    avgEvalMove10: eval10Count > 0 ? Number((eval10Sum / eval10Count).toFixed(2)) : null,
+    impulseBlundersPerGame: games.length > 0 ? Number((impulseTotal / games.length).toFixed(2)) : 0,
+    blownLeadPct: winningGames > 0 ? Math.round((blownGames / winningGames) * 100) : 0,
+  };
+}
+
 export function computeMultiGameInsights(games: AnalyzedGame[], username: string): MultiGameInsights {
   if (games.length === 0) {
     return {
@@ -95,6 +184,11 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       openings: [],
       phaseStats: [emptyPhase('Opening'), emptyPhase('Middlegame'), emptyPhase('Endgame')],
       timeTrouble: emptyClockBuckets(),
+      clockLeaks: { impulseBlunders: 0, timeTroubleBlunders: 0, avgTimeSpentSec: 0, impulsePerGame: 0 },
+      tiltGuard: { buckets: [], activeWarning: false, consecutiveLosses: 0 },
+      checkpoints: null,
+      missedMotifs: [],
+      endgameCategories: [],
       trend: [],
       ratingBand: 'Unrated',
       brilliantCount: 0,
@@ -137,15 +231,22 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   let giantWins = 0;
   let giantGames = 0;
   let giantBest: GameHighlight | null = null;
+  let impulseBlunders = 0;
+  let timeTroubleBlunders = 0;
+  let spentSumTotal = 0;
+  let spentCountTotal = 0;
+
   const highlights: GameHighlight[] = [];
   const colourAcc: Record<PlayerColor, { split: ColourSplit; accSum: number }> = {
     w: { split: emptyColour(), accSum: 0 },
     b: { split: emptyColour(), accSum: 0 },
   };
-
   const openMap = new Map<string, { name: string; eco: string; games: number; wins: number; draws: number; losses: number; accSum: number }>();
   const phases: Record<'opening' | 'middlegame' | 'endgame', AnalyzedPly[]> = { opening: [], middlegame: [], endgame: [] };
   const clockMoves: AnalyzedPly[] = [];
+  const motifMap = new Map<string, { count: number; winLossSum: number }>();
+  const endgameMap = new Map<EndgameCategory, { moves: number; accSum: number; blunders: number }>();
+  for (const cat of ENDGAME_CATEGORIES) endgameMap.set(cat, { moves: 0, accSum: 0, blunders: 0 });
 
   for (const ag of games) {
     const uc = resolveUserColor(ag.game, username);
@@ -160,6 +261,12 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
 
     const result = resultForUser(ag.game, uc);
     if (result === 'W') wins++; else if (result === 'D') draws++; else losses++;
+
+    const cm = resolveClockMetricsForGame(ag, uc);
+    impulseBlunders += cm.impulseBlunders;
+    timeTroubleBlunders += cm.timeTroubleBlunders;
+    spentSumTotal += cm.spentSum;
+    spentCountTotal += cm.spentCount;
 
     const userRating = (uc === 'w' ? ag.game.white.rating : ag.game.black.rating) ?? 0;
     const opponentRating = (uc === 'w' ? ag.game.black.rating : ag.game.white.rating) ?? 0;
@@ -200,6 +307,31 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       if (p.color !== uc) continue;
       phases[p.phase].push(p);
       if (p.clockSeconds !== undefined) clockMoves.push(p);
+
+      // Motif tracking for mistakes & blunders
+      if (p.classification === 'mistake' || p.classification === 'blunder') {
+        const tag = p.coaching.tacticalTag;
+        if (tag && tag !== 'Suboptimal' && tag !== 'Eval Collapse') {
+          const prev = motifMap.get(tag) ?? { count: 0, winLossSum: 0 };
+          prev.count++;
+          prev.winLossSum += p.winLoss;
+          motifMap.set(tag, prev);
+        }
+      }
+
+      // Endgame category tracking
+      if (p.phase === 'endgame') {
+        try {
+          const cat = classifyEndgameCategory(p.beforeFen);
+          const stat = endgameMap.get(cat)!;
+          stat.moves++;
+          stat.accSum += p.accuracy;
+          if (p.classification === 'blunder' || p.classification === 'mistake') stat.blunders++;
+        } catch {
+          // ignore invalid FEN
+        }
+      }
+
       if (p.classification === 'brilliant') {
         brilliantCount++;
         userBrilliants++;
@@ -221,11 +353,11 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
         if (p.winLoss <= 10) sharpOk++;
       }
     }
+
     if (hadClearAdvantage) {
       winPos++;
       if (result === 'W') convWinPos++;
     }
-
     if (result === 'W' && minWp <= 20) comebacks++;
     if (result === 'L' && maxWp >= 80) blownWins++;
     if (userBlunders === 0) blunderFreeGames++;
@@ -272,6 +404,45 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     }
   }
 
+  // Tilt Guard: chronological win-rate by consecutive prior losses (0L, 1L, 2L, 3L+)
+  const chronological = games.slice().sort((a, b) => a.game.createdAt - b.game.createdAt);
+  const tiltBuckets: TiltStreakBucket[] = [
+    { label: 'Fresh (0L)', priorLosses: 0, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
+    { label: 'After 1L', priorLosses: 1, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
+    { label: 'After 2L', priorLosses: 2, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
+    { label: '3L+ Tilt', priorLosses: 3, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
+  ];
+  let runningLosses = 0;
+  for (const ag of chronological) {
+    const uc = resolveUserColor(ag.game, username);
+    const res = resultForUser(ag.game, uc);
+    const bIdx = Math.min(3, runningLosses);
+    const tb = tiltBuckets[bIdx];
+    tb.games++;
+    if (res === 'W') tb.wins++;
+    else if (res === 'D') tb.draws++;
+    else tb.losses++;
+    runningLosses = res === 'L' ? runningLosses + 1 : 0;
+  }
+  for (const tb of tiltBuckets) {
+    tb.winRate = tb.games > 0 ? Math.round(((tb.wins + tb.draws * 0.5) / tb.games) * 100) : 0;
+  }
+
+  // 20-Game Checkpoints (adapts smoothly to half-split if 4..39 rated games exist)
+  const ratedChrono = chronological.filter((g) => g.game.rated);
+  const poolForCp = ratedChrono.length >= 4 ? ratedChrono : chronological;
+  let checkpoints: TwentyGameCheckpoints | null = null;
+  if (poolForCp.length >= 4) {
+    const windowSize = Math.min(20, Math.floor(poolForCp.length / 2));
+    const recentSlice = poolForCp.slice(-windowSize);
+    const prevSlice = poolForCp.slice(-(windowSize * 2), -windowSize);
+    checkpoints = {
+      windowSize,
+      recent: computeCheckpointSlice(recentSlice, username),
+      previous: computeCheckpointSlice(prevSlice, username),
+    };
+  }
+
   const mkPhase = (label: 'Opening' | 'Middlegame' | 'Endgame', list: AnalyzedPly[]): PhaseBlunderStats => {
     if (list.length === 0) return emptyPhase(label);
     let inac = 0, mis = 0, blun = 0, acc = 0;
@@ -314,6 +485,25 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     .map((o) => ({ ...o, winRate: Math.round(((o.wins + o.draws * 0.5) / o.games) * 100), avgAccuracy: Number((o.accSum / o.games).toFixed(1)) }))
     .sort((a, b) => b.games - a.games || b.winRate - a.winRate);
 
+  const missedMotifs: MotifWeaknessStat[] = Array.from(motifMap.entries())
+    .map(([motif, stat]) => ({
+      motif,
+      count: stat.count,
+      avgWinLoss: Number((stat.winLossSum / Math.max(1, stat.count)).toFixed(1)),
+    }))
+    .sort((a, b) => b.count - a.count || b.avgWinLoss - a.avgWinLoss)
+    .slice(0, 6);
+
+  const endgameCategories: EndgameCategoryStat[] = ENDGAME_CATEGORIES.map((category) => {
+    const s = endgameMap.get(category)!;
+    return {
+      category,
+      moves: s.moves,
+      accuracy: s.moves > 0 ? Number((s.accSum / s.moves).toFixed(1)) : 0,
+      blunders: s.blunders,
+    };
+  }).filter((c) => c.moves > 0);
+
   const bestGames = highlights.slice().sort((a, b) => b.score - a.score).slice(0, 3);
   const worstGame = highlights.slice().sort((a, b) => a.score - b.score)[0] ?? null;
   const byDate = highlights.slice().sort((a, b) => b.playedAt - a.playedAt);
@@ -326,6 +516,8 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       streakCount++;
     }
   }
+  const consecutiveLosses = streakKind === 'L' ? streakCount : 0;
+
   const openingPool = openings.filter((o) => o.games >= 2);
   const ratedOpenings = openingPool.length > 0 ? openingPool : openings;
   const openingBest = ratedOpenings.slice().sort((a, b) => b.winRate - a.winRate || b.avgAccuracy - a.avgAccuracy)[0] ?? null;
@@ -351,8 +543,6 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     ? lowClockMoves.reduce((sum, p) => sum + p.accuracy, 0) / lowClockMoves.length
     : avgAccuracy;
 
-  // Only score an axis when there is a real sample; otherwise leave it at the
-  // band-neutral 50 instead of extrapolating from an unrelated phase.
   const measured: Record<'openings' | 'tactics' | 'endgames' | 'conversion' | 'resilience' | 'timeManagement', boolean> = {
     openings: phases.opening.length >= 4,
     tactics: sharpTot >= 4,
@@ -371,9 +561,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     timeManagement: measured.timeManagement ? relativeScore(lowClockAcc, exp.lowClockAcc, 10) : 50,
   };
 
-  const trend: AccuracyTrendPoint[] = games
-    .slice()
-    .sort((a, b) => a.game.createdAt - b.game.createdAt)
+  const trend: AccuracyTrendPoint[] = chronological
     .slice(-12)
     .map((ag) => {
       const uc = resolveUserColor(ag.game, username);
@@ -397,12 +585,12 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     timeManagement: 'Time management',
   };
   const advice: Record<keyof typeof skillProfile, string> = {
-    endgames: `Endgame technique is your biggest lever (${skillProfile.endgames}/100 vs the ${band.label} band). Drill rook-and-pawn conversions and play them out against the bot.`,
-    tactics: `Tactical sharpness (${skillProfile.tactics}/100) trails your band. Warm up with 10 forced-mate puzzles before playing, then blunder-check every capture.`,
-    conversion: `You convert ${conversionRaw.toFixed(0)}% of clear advantages. Once +2.0, simplify: trade queens, activate the rook, and avoid unnecessary pawn pushes.`,
-    openings: `Your opening accuracy is ${openingAcc.toFixed(0)}%. Trim your repertoire to two systems per colour and review the first deviation in each loss.`,
-    resilience: `Defensive resilience (${skillProfile.resilience}/100) — when worse, prioritise king safety, blockading, and active counterplay over passive defence.`,
-    timeManagement: `Time management: low-clock accuracy is ${lowClockAcc.toFixed(0)}%. Bank 20% of your clock before move 20 and pre-move only forced recaptures.`,
+    endgames: `Endgame technique is your biggest lever (${skillProfile.endgames}/100 vs the ${band.label} band). Drill rook-and-pawn conversions and Syzygy positions.`,
+    tactics: `Tactical sharpness (${skillProfile.tactics}/100) trails your band. Warm up with a 60s Gravity Check before queuing and drill missed motifs.`,
+    conversion: `You convert ${conversionRaw.toFixed(0)}% of clear advantages. Launch Tractor Beam Conversion drills to practice simplifying +2.5 leads.`,
+    openings: `Your opening accuracy is ${openingAcc.toFixed(0)}%. Lock in your starter repertoires with FSRS and patch uncovered replies.`,
+    resilience: `Defensive resilience (${skillProfile.resilience}/100) — when worse, prioritise king safety, blockading, and active counterplay.`,
+    timeManagement: `Time management: low-clock accuracy is ${lowClockAcc.toFixed(0)}%. Eliminate impulse moves when >3m remain on your clock.`,
   };
   const measuredKeys = (Object.keys(skillProfile) as Array<keyof typeof skillProfile>).filter((k) => measured[k]);
   const focusKeys = measuredKeys.length > 0 ? measuredKeys : (Object.keys(skillProfile) as Array<keyof typeof skillProfile>);
@@ -411,7 +599,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   const recommendation = measuredKeys.length === 0
     ? 'Analyze a few more games — including endgames and low-clock positions — to unlock a reliable rating-relative focus.'
     : weakestScore >= 66
-      ? `No glaring weakness in your band yet — ${labels[weakest].toLowerCase()} (${weakestScore}/100) is your lowest measured axis. Analyze more games for a sharper read.`
+      ? `No glaring weakness in your band yet — ${labels[weakest].toLowerCase()} (${weakestScore}/100) is your lowest measured axis.`
       : `${labels[weakest]} is your focus. ${advice[weakest]}`;
 
   return {
@@ -423,6 +611,20 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     openings,
     phaseStats,
     timeTrouble,
+    clockLeaks: {
+      impulseBlunders,
+      timeTroubleBlunders,
+      avgTimeSpentSec: spentCountTotal > 0 ? Math.round(spentSumTotal / spentCountTotal) : 0,
+      impulsePerGame: Number((impulseBlunders / games.length).toFixed(2)),
+    },
+    tiltGuard: {
+      buckets: tiltBuckets,
+      activeWarning: consecutiveLosses >= 2,
+      consecutiveLosses,
+    },
+    checkpoints,
+    missedMotifs,
+    endgameCategories,
     trend,
     ratingBand: `${band.label} (${Math.round(ratingAnchor)} anchor)`,
     brilliantCount,

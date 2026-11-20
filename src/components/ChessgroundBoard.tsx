@@ -6,6 +6,7 @@ import type { Key } from '@lichess-org/chessground/types';
 import { Chess, type Square } from 'chess.js';
 import { BOARD_THEMES } from '../chess/boardThemes';
 import { CLASSIFICATION_META, type BoardThemeId, type MoveClassification, type PlayerColor } from '../types/chess';
+import type { BoardArrow, SquareHighlight } from '../types/openings';
 import { uciToSquares } from '../utils/chessMath';
 
 interface Props {
@@ -20,25 +21,47 @@ interface Props {
   showBestArrow?: boolean;
   showPlayedArrow?: boolean;
   showThreatArrow?: boolean;
+  customArrows?: BoardArrow[];
+  squareHighlights?: SquareHighlight[];
   badgeSquare?: string;
   badgeClassification?: MoveClassification;
   theme?: BoardThemeId;
   coordinates?: boolean;
   mini?: boolean;
   onUserMove?: (orig: Square, dest: Square) => void;
+  onSquareClick?: (square: Square) => void;
   onSwipePrev?: () => void;
   onSwipeNext?: () => void;
 }
 
-function squareToPct(sq: string, orientation: PlayerColor): { left: string; top: string } | null {
+function squareToGrid(sq: string, orientation: PlayerColor): { col: number; row: number } | null {
   if (!sq || sq.length < 2) return null;
   const file = sq.charCodeAt(0) - 97;
   const rank = parseInt(sq[1], 10) - 1;
   if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
   const col = orientation === 'w' ? file : 7 - file;
   const row = orientation === 'w' ? 7 - rank : rank;
-  return { left: `${(col + 0.5) * 12.5}%`, top: `${row * 12.5}%` };
+  return { col, row };
 }
+
+function squareToPct(sq: string, orientation: PlayerColor): { left: string; top: string } | null {
+  const g = squareToGrid(sq, orientation);
+  if (!g) return null;
+  return { left: `${(g.col + 0.5) * 12.5}%`, top: `${g.row * 12.5}%` };
+}
+
+const ARROW_COLOR_VAR: Record<BoardArrow['color'], string> = {
+  plan: 'var(--arrow-plan, rgba(45, 212, 191, 0.80))',
+  best: 'var(--arrow-best, rgba(52, 211, 153, 0.85))',
+  threat: 'var(--arrow-threat, rgba(251, 113, 133, 0.85))',
+  outpost: 'var(--arrow-outpost, rgba(168, 85, 247, 0.78))',
+};
+
+const HIGHLIGHT_STYLES: Record<SquareHighlight['color'], { bg: string; ring: string }> = {
+  plan: { bg: 'rgba(45, 212, 191, 0.24)', ring: 'rgba(45, 212, 191, 0.78)' },
+  threat: { bg: 'rgba(251, 113, 133, 0.26)', ring: 'rgba(251, 113, 133, 0.85)' },
+  outpost: { bg: 'rgba(168, 85, 247, 0.26)', ring: 'rgba(168, 85, 247, 0.82)' },
+};
 
 export const ChessgroundBoard: React.FC<Props> = ({
   fen,
@@ -52,20 +75,25 @@ export const ChessgroundBoard: React.FC<Props> = ({
   showBestArrow = true,
   showPlayedArrow = true,
   showThreatArrow = false,
+  customArrows,
+  squareHighlights,
   badgeSquare,
   badgeClassification,
   theme = 'slate',
   coordinates = true,
   mini = false,
   onUserMove,
+  onSquareClick,
   onSwipePrev,
   onSwipeNext,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cgRef = useRef<Api | null>(null);
   const onUserMoveRef = useRef(onUserMove);
+  const onSquareClickRef = useRef(onSquareClick);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   onUserMoveRef.current = onUserMove;
+  onSquareClickRef.current = onSquareClick;
 
   const boardTheme = BOARD_THEMES[theme];
 
@@ -193,11 +221,26 @@ export const ChessgroundBoard: React.FC<Props> = ({
     '--bd-shadow': boardTheme.shadow,
   } as React.CSSProperties;
 
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!onSquareClickRef.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const relY = (e.clientY - rect.top) / rect.height;
+    const col = Math.floor(relX * 8);
+    const row = Math.floor(relY * 8);
+    if (col < 0 || col > 7 || row < 0 || row > 7) return;
+    const file = orientation === 'w' ? col : 7 - col;
+    const rank = orientation === 'w' ? 7 - row : row;
+    const sq = `${String.fromCharCode(97 + file)}${rank + 1}` as Square;
+    onSquareClickRef.current(sq);
+  };
+
   return (
     <div
-      className={`relative w-full aspect-square overflow-hidden border border-white/10 brillyder-board theme-${theme} ${interactive ? 'touch-none' : 'touch-pan-y'} ${mini ? 'rounded-lg is-mini' : 'rounded-xl sm:rounded-2xl'}`}
+      className={`relative w-full aspect-square overflow-hidden border border-white/10 brillyder-board theme-${theme} ${interactive || onSquareClick ? 'touch-none' : 'touch-pan-y'} ${mini ? 'rounded-lg is-mini' : 'rounded-xl sm:rounded-2xl'} ${onSquareClick ? 'cursor-crosshair' : ''}`}
       style={{ ...cssVars, boxShadow: boardTheme.shadow }}
       onContextMenu={(e) => e.preventDefault()}
+      onClick={onSquareClick ? handleOverlayClick : undefined}
       onTouchStart={(e) => { if (!interactive) touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
       onTouchEnd={(e) => {
         if (interactive || !touchStartRef.current) return;
@@ -210,6 +253,84 @@ export const ChessgroundBoard: React.FC<Props> = ({
       }}
     >
       <div ref={containerRef} className="w-full h-full brillyder-board" />
+      {squareHighlights && squareHighlights.length > 0 && (
+        <div className="pointer-events-none absolute inset-0 z-[15]" aria-hidden="true">
+          {squareHighlights.map((hl, idx) => {
+            const g = squareToGrid(hl.square, orientation);
+            if (!g) return null;
+            const style = HIGHLIGHT_STYLES[hl.color];
+            return (
+              <div
+                key={`${hl.square}-${hl.color}-${idx}`}
+                className="absolute"
+                style={{
+                  left: `${g.col * 12.5}%`,
+                  top: `${g.row * 12.5}%`,
+                  width: '12.5%',
+                  height: '12.5%',
+                  backgroundColor: style.bg,
+                  boxShadow: `inset 0 0 0 2px ${style.ring}`,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+      {customArrows && customArrows.length > 0 && (
+        <svg
+          viewBox="0 0 800 800"
+          className="pointer-events-none absolute inset-0 z-[18] h-full w-full"
+          aria-hidden="true"
+        >
+          {customArrows.map((arrow, idx) => {
+            const fromG = squareToGrid(arrow.from, orientation);
+            const toG = squareToGrid(arrow.to, orientation);
+            if (!fromG || !toG) return null;
+            const x1 = (fromG.col + 0.5) * 100;
+            const y1 = (fromG.row + 0.5) * 100;
+            const x2 = (toG.col + 0.5) * 100;
+            const y2 = (toG.row + 0.5) * 100;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const len = Math.hypot(dx, dy);
+            if (len < 1) return null;
+            const ux = dx / len;
+            const uy = dy / len;
+            const headLen = 30;
+            const headHalf = 19;
+            const startX = x1 + ux * 16;
+            const startY = y1 + uy * 16;
+            const tipX = x2 - ux * 10;
+            const tipY = y2 - uy * 10;
+            const baseX = tipX - ux * headLen;
+            const baseY = tipY - uy * headLen;
+            const perpX = -uy;
+            const perpY = ux;
+            const p1x = baseX + perpX * headHalf;
+            const p1y = baseY + perpY * headHalf;
+            const p2x = baseX - perpX * headHalf;
+            const p2y = baseY - perpY * headHalf;
+            const stroke = ARROW_COLOR_VAR[arrow.color];
+            return (
+              <g key={`${arrow.from}-${arrow.to}-${arrow.color}-${idx}`}>
+                <line
+                  x1={startX}
+                  y1={startY}
+                  x2={baseX}
+                  y2={baseY}
+                  stroke={stroke}
+                  strokeWidth="15"
+                  strokeLinecap="round"
+                />
+                <polygon
+                  points={`${tipX},${tipY} ${p1x},${p1y} ${p2x},${p2y}`}
+                  fill={stroke}
+                />
+              </g>
+            );
+          })}
+        </svg>
+      )}
       {coordinates && (
         <div className="pointer-events-none absolute inset-0 z-20" aria-hidden="true">
           {rankLabels.map(({ label, top }) => (

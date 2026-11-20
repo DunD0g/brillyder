@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
+import { useVibe } from '../utils/vibeCopy';
 
 export type CelebrationKind = 'brilliant' | 'blunder';
 
@@ -41,6 +42,7 @@ interface Props {
 }
 
 export const AlienCelebration: React.FC<Props> = ({ kind, trigger, message, autoDismissMs, onDismiss }) => {
+  const { copy } = useVibe();
   const [entered, setEntered] = useState(true);
   const fallback = useMemo(() => pickCelebrationLine(kind, trigger), [kind, trigger]);
   const text = message ?? fallback;
@@ -73,8 +75,8 @@ export const AlienCelebration: React.FC<Props> = ({ kind, trigger, message, auto
           <UfoAlien kind={kind} />
         </div>
         <div className="relative min-w-0">
-          <div className={`text-[10px] font-black uppercase tracking-[0.16em] ${brilliant ? 'text-cyan-300' : 'text-rose-300'}`}>
-            {brilliant ? 'Brilliant move detected' : 'Blunder detected'}
+          <div className={`text-[10px] font-black uppercase tracking-[0.16em] ${brilliant ? 'text-teal-300' : 'text-rose-300'}`}>
+            {brilliant ? `${copy.brilliantLabel} detected` : `${copy.blunderLabel} detected`}
           </div>
           <p className="mt-0.5 text-[13px] font-bold leading-snug text-slate-50">{text}</p>
           <div className="mt-1 text-[10px] text-slate-400">Tap to dismiss · never blocks the board</div>

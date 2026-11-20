@@ -9,6 +9,7 @@ import {
   Lightbulb,
   Loader2,
   Play,
+  Rocket,
   RotateCcw,
   Sparkles,
   Target,
@@ -17,6 +18,8 @@ import {
   Zap,
 } from 'lucide-react';
 import type { AnalyzedGame, BoardThemeId, DrillStreak, MistakeClassification, MistakeProgressRecord, MistakePuzzle } from '../types/chess';
+import type { FsrsOpeningCard, OpeningCourse, WoodpeckerCycleRecord } from '../types/openings';
+import type { DailyDurationMinutes } from '../services/dailyCoach';
 import {
   buildMistakeDeck,
   dateKey,
@@ -33,16 +36,34 @@ import { isSacrificeMove } from '../chess/classification';
 import { getMoverWinPercent, uciToSquares } from '../utils/chessMath';
 import { stockfishService } from '../engine/StockfishService';
 import { soundManager } from '../utils/sound';
+import { useVibe } from '../utils/vibeCopy';
 import { ChessgroundBoard } from './ChessgroundBoard';
 import { ClassificationBadge } from './ClassificationBadge';
 import { ProgressRing } from './ProgressRing';
 import { AlienCelebration } from './AlienCelebration';
 import { PuzzleRush } from './PuzzleRush';
+import { DailyCoachSession } from './train/DailyCoachSession';
+import { WoodpeckerCycleView } from './train/WoodpeckerCycleView';
+import { AdvantageConversionView } from './train/AdvantageConversionView';
+
+export type TrainSection = 'daily' | 'woodpecker' | 'conversion' | 'deck';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
   username: string;
   boardTheme: BoardThemeId;
+  courses: OpeningCourse[];
+  fsrsCards: FsrsOpeningCard[];
+  woodpeckerCycles: WoodpeckerCycleRecord[];
+  convertedIds: string[];
+  initialSection?: TrainSection;
+  initialMotifFilter?: string | null;
+  onCardReviewed: (updated: FsrsOpeningCard) => Promise<void>;
+  onSaveWoodpeckerCycle: (cycle: WoodpeckerCycleRecord) => Promise<void>;
+  onMarkConverted: (positionId: string) => Promise<void>;
+  onUnlockStarterCards: () => Promise<void>;
+  onOpenGravityCheck: () => void;
+  onDailySessionComplete: (summary: { duration: DailyDurationMinutes; completedItems: number }) => Promise<void>;
   onOpenGame: (gameId: string, ply: number) => void;
   onOpenGames: () => void;
 }
@@ -53,7 +74,28 @@ type DeckPhaseFilter = 'all' | 'opening' | 'middlegame' | 'endgame';
 
 const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
 
-export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, boardTheme, onOpenGame, onOpenGames }) => {
+export const MistakeTrainerView: React.FC<Props> = ({
+  analyzedGames,
+  username,
+  boardTheme,
+  courses,
+  fsrsCards,
+  woodpeckerCycles,
+  convertedIds,
+  initialSection = 'daily',
+  initialMotifFilter = null,
+  onCardReviewed,
+  onSaveWoodpeckerCycle,
+  onMarkConverted,
+  onUnlockStarterCards,
+  onOpenGravityCheck,
+  onDailySessionComplete,
+  onOpenGame,
+  onOpenGames,
+}) => {
+  const { copy } = useVibe();
+  const [section, setSection] = useState<TrainSection>(initialSection);
+  const [motifFilter, setMotifFilter] = useState<string>(initialMotifFilter ?? '');
   const deck = useMemo(() => buildMistakeDeck(analyzedGames, username), [analyzedGames, username]);
   const dailyPuzzle = useMemo(() => pickDailyPuzzle(deck), [deck]);
   const [progress, setProgress] = useState<Record<string, MistakeProgressRecord>>(() => loadMistakeProgress());
@@ -61,6 +103,18 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
   const [mode, setMode] = useState<'practice' | 'rush'>('practice');
   const [filter, setFilter] = useState<DeckFilter>('unsolved');
   const [phaseFilter, setPhaseFilter] = useState<DeckPhaseFilter>('all');
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
+
+  useEffect(() => {
+    if (initialMotifFilter) {
+      setMotifFilter(initialMotifFilter);
+      setSection('deck');
+      setFilter('all');
+    }
+  }, [initialMotifFilter]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fen, setFen] = useState('');
   const [status, setStatus] = useState<DrillStatus>('idle');
@@ -213,6 +267,7 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
 
   const filteredDeck = deck.filter((p) => {
     if (phaseFilter !== 'all' && p.phase !== phaseFilter) return false;
+    if (motifFilter && p.tacticalTag.toLowerCase() !== motifFilter.toLowerCase()) return false;
     if (filter === 'all') return true;
     if (filter === 'mastered') return Boolean(progress[p.id]?.solved);
     return !progress[p.id]?.solved;
@@ -239,9 +294,109 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
     inaccuracy: 'text-yellow-300',
   };
 
+  const handleRecordMistakeAttempt = (puzzleId: string, solved: boolean) => {
+    setProgress((prev) => recordAttempt(prev, puzzleId, solved));
+    if (solved) setStreak(recordDrillSolve());
+  };
+
+  const trainHubBar = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="inline-flex flex-wrap rounded-xl border border-slate-800 bg-void/75 p-0.5">
+        {([
+          ['daily', '15m Daily Coach', Flame],
+          ['woodpecker', 'Woodpecker', Target],
+          ['conversion', copy.advantageConversionShort, Zap],
+          ['deck', 'Mistake Deck', GraduationCap],
+        ] as Array<[TrainSection, string, typeof Flame]>).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => { setSection(id); if (id !== 'deck') setMode('practice'); }}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-black transition ${
+              section === id
+                ? 'bg-gradient-to-r from-teal-400/20 to-purple-500/20 text-teal-200'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpenGravityCheck}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-[11px] font-extrabold text-purple-200 transition hover:bg-purple-500/25"
+      >
+        <Rocket className="h-3.5 w-3.5 text-brilly" /> 60s {copy.gravityCheckTitle}
+      </button>
+    </div>
+  );
+
+  if (section === 'daily') {
+    return (
+      <div className="space-y-3 pb-24">
+        {trainHubBar}
+        <DailyCoachSession
+          analyzedGames={analyzedGames}
+          username={username}
+          deck={deck}
+          courses={courses}
+          fsrsCards={fsrsCards}
+          activeCycle={woodpeckerCycles[0] ?? null}
+          convertedIds={convertedIds}
+          boardTheme={boardTheme}
+          onCardReviewed={onCardReviewed}
+          onSaveCycle={onSaveWoodpeckerCycle}
+          onMarkConverted={onMarkConverted}
+          onRecordMistakeAttempt={handleRecordMistakeAttempt}
+          onUnlockStarterCards={onUnlockStarterCards}
+          onOpenGravityCheck={onOpenGravityCheck}
+          onOpenGames={onOpenGames}
+          onOpenGame={onOpenGame}
+          onSessionComplete={onDailySessionComplete}
+        />
+      </div>
+    );
+  }
+
+  if (section === 'woodpecker') {
+    return (
+      <div className="space-y-3 pb-24">
+        {trainHubBar}
+        <WoodpeckerCycleView
+          deck={deck}
+          cycles={woodpeckerCycles}
+          boardTheme={boardTheme}
+          onSaveCycle={onSaveWoodpeckerCycle}
+          onOpenGames={onOpenGames}
+        />
+      </div>
+    );
+  }
+
+  if (section === 'conversion') {
+    return (
+      <div className="space-y-3 pb-24">
+        {trainHubBar}
+        <AdvantageConversionView
+          analyzedGames={analyzedGames}
+          username={username}
+          boardTheme={boardTheme}
+          convertedIds={convertedIds}
+          onMarkConverted={onMarkConverted}
+          onOpenGames={onOpenGames}
+          onOpenGame={onOpenGame}
+        />
+      </div>
+    );
+  }
+
   if (deck.length === 0) {
     return (
       <div className="space-y-3 pb-24">
+        {trainHubBar}
         <section className="glass-card p-7 text-center">
           <GraduationCap className="mx-auto h-9 w-9 text-slate-600" />
           <h1 className="mt-2 text-base font-extrabold text-slate-100">Mistake deck is empty</h1>
@@ -258,19 +413,31 @@ export const MistakeTrainerView: React.FC<Props> = ({ analyzedGames, username, b
 
   if (mode === 'rush') {
     return (
-      <PuzzleRush
-        puzzles={deck}
-        boardTheme={boardTheme}
-        onExit={() => setMode('practice')}
-        onSolved={handleRushSolved}
-        onWrong={handleRushWrong}
-        onFinished={handleRushFinished}
-      />
+      <div className="space-y-3 pb-24">
+        {trainHubBar}
+        <PuzzleRush
+          puzzles={deck}
+          boardTheme={boardTheme}
+          onExit={() => setMode('practice')}
+          onSolved={handleRushSolved}
+          onWrong={handleRushWrong}
+          onFinished={handleRushFinished}
+        />
+      </div>
     );
   }
 
   return (
     <div className="space-y-3 pb-24">
+      {trainHubBar}
+      {motifFilter && (
+        <div className="flex items-center justify-between rounded-xl border border-purple-400/35 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-200">
+          <span>Filtering deck by motif: <strong>{motifFilter}</strong></span>
+          <button type="button" onClick={() => setMotifFilter('')} className="rounded-lg border border-purple-400/30 px-2 py-0.5 text-[10px] font-bold">
+            Clear filter
+          </button>
+        </div>
+      )}
       <section className="glass-card glass-card-strong p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div>
