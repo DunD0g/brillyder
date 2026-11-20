@@ -37,6 +37,19 @@ export const MothershipCard: React.FC<Props> = ({
     setStep(course.mothershipSetup.previewMoves.length);
   }, [course.id, course.mothershipSetup.previewMoves.length]);
 
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); setStep((s) => Math.max(0, s - 1)); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); setStep((s) => Math.min(previewMoves.length, s + 1)); }
+      else if (e.key === 'Home') { e.preventDefault(); setStep(0); }
+      else if (e.key === 'End') { e.preventDefault(); setStep(previewMoves.length); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewMoves.length]);
+
   const { fen, lastMove } = useMemo(() => {
     const chess = new Chess();
     let last: [string, string] | undefined;

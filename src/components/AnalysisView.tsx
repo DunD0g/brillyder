@@ -30,6 +30,7 @@ import type { OpeningCourse } from '../types/openings';
 import { detectRepertoireDeviation, type RepertoireDeviation } from '../services/deviationDetector';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { buildEngineScore, getMaterialBalance, getMoverWinPercent, uciToSquares } from '../utils/chessMath';
+import { appendSandboxMoves, jumpSandboxEdge, stepSandboxNav, type SandboxNavMove } from '../utils/sandboxNav';
 import { soundManager } from '../utils/sound';
 import { stockfishService } from '../engine/StockfishService';
 import { maiaService } from '../engine/MaiaService';
@@ -77,17 +78,13 @@ interface Props {
 
 type BoardMode = 'bot' | 'retry' | 'sandbox';
 
-interface SandboxMove {
-  san: string;
-  uci: string;
-  from: string;
-  to: string;
-}
+type SandboxMove = SandboxNavMove;
 
 interface SandboxState {
   fen: string;
   basePly: number;
   moves: SandboxMove[];
+  cursor: number;
   eval: EngineEval | null;
   loading: boolean;
 }
@@ -209,7 +206,7 @@ export const AnalysisView: React.FC<Props> = ({
 
   const activeSanHistory = useMemo(() => {
     if (sandbox) {
-      return [...historyForPly(sandbox.basePly), ...sandbox.moves.map((m) => m.san)];
+      return [...historyForPly(sandbox.basePly), ...sandbox.moves.slice(0, sandbox.cursor).map((m) => m.san)];
     }
     return historyForPly(currentPlyIndex);
   }, [sandbox, analyzed, rawMoves, currentPlyIndex]);
@@ -279,14 +276,126 @@ export const AnalysisView: React.FC<Props> = ({
     }
   }, [initialPly, analyzed, game.id, celebrationsEnabled]);
 
+  const buildSandboxFen = (basePlyIdx: number, moves: SandboxMove[], cursor: number): string => {
+    const c = new Chess(fenAtPly(basePlyIdx));
+    for (const m of moves.slice(0, cursor)) {
+      const parsed = uciToSquares(m.uci);
+      if (!parsed) break;
+      try { c.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion }); } catch { break; }
+    }
+    return c.fen();
+  };
+
+  const applySandboxNav = (nextNav: { basePly: number; moves: SandboxMove[]; cursor: number }) => {
+    if (!sandbox) return;
+    if (
+      nextNav.basePly === sandbox.basePly &&
+      nextNav.cursor === sandbox.cursor &&
+      nextNav.moves.length === sandbox.moves.length
+    ) {
+      return;
+    }
+    soundManager.unlock();
+    soundManager.playMove();
+    if (nextNav.basePly !== currentPlyIndex) {
+      setCurrentPlyIndex(nextNav.basePly);
+    }
+    const nextFen = buildSandboxFen(nextNav.basePly, nextNav.moves, nextNav.cursor);
+    setSandbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            basePly: nextNav.basePly,
+            moves: nextNav.moves,
+            cursor: nextNav.cursor,
+            fen: nextFen,
+            loading: true,
+          }
+        : null
+    );
+  };
+
+  const handleJumpGamePly = (idx: number) => {
+    if (sandbox) {
+      const safe = Math.max(0, Math.min(totalPlies, idx));
+      applySandboxNav({ basePly: safe, moves: [], cursor: 0 });
+      return;
+    }
+    jumpToPly(idx);
+  };
+
+  const handleNavPrev = () => {
+    if (sandbox) {
+      applySandboxNav(stepSandboxNav(sandbox, -1, totalPlies));
+      return;
+    }
+    if (botState) {
+      if (botState.historyFens.length > 2 && !botState.thinking) {
+        setBotState((prev) => {
+          if (!prev || prev.historyFens.length <= 2) return prev;
+          const h = prev.historyFens.slice(0, -2);
+          return { ...prev, fen: h[h.length - 1], historyFens: h, lastMove: undefined, statusText: 'Turn undone.' };
+        });
+      }
+      return;
+    }
+    if (retryState && currentPly) {
+      retryGenerationRef.current += 1;
+      setRetryState({ active: true, fen: currentPly.beforeFen, status: 'prompt', feedback: `Position reset. Find a better move than ${currentPly.san}.` });
+      return;
+    }
+    jumpToPly(currentPlyIndex - 1);
+  };
+
+  const handleNavNext = () => {
+    if (sandbox) {
+      applySandboxNav(stepSandboxNav(sandbox, 1, totalPlies));
+      return;
+    }
+    if (botState || retryState) return;
+    jumpToPly(currentPlyIndex + 1);
+  };
+
+  const handleNavFirst = () => {
+    if (sandbox) {
+      applySandboxNav(jumpSandboxEdge(sandbox, 'first', totalPlies));
+      return;
+    }
+    if (botState) return;
+    if (retryState && currentPly) {
+      retryGenerationRef.current += 1;
+      setRetryState({ active: true, fen: currentPly.beforeFen, status: 'prompt', feedback: `Position reset. Find a better move than ${currentPly.san}.` });
+      return;
+    }
+    jumpToPly(0);
+  };
+
+  const handleNavLast = () => {
+    if (sandbox) {
+      applySandboxNav(jumpSandboxEdge(sandbox, 'last', totalPlies));
+      return;
+    }
+    if (botState || retryState) return;
+    jumpToPly(totalPlies);
+  };
+
   useEffect(() => {
     if (!playing) return;
-    if (botState || retryState || sandbox) { setPlaying(false); return; }
+    if (botState || retryState) { setPlaying(false); return; }
+    if (sandbox) {
+      const canAdvance =
+        sandbox.cursor < sandbox.moves.length ||
+        (sandbox.moves.length === 0 && sandbox.basePly < totalPlies);
+      if (!canAdvance) { setPlaying(false); return; }
+      const delay = speed === 2 ? 720 : 1450;
+      const timer = window.setTimeout(() => handleNavNext(), delay);
+      return () => window.clearTimeout(timer);
+    }
     if (currentPlyIndex >= totalPlies) { setPlaying(false); return; }
     const delay = speed === 2 ? 720 : 1450;
     const timer = window.setTimeout(() => jumpToPly(currentPlyIndex + 1), delay);
     return () => window.clearTimeout(timer);
-    // jumpToPly intentionally read from the current render.
+    // handleNavNext/jumpToPly intentionally read from the current render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, currentPlyIndex, totalPlies, speed, botState, retryState, sandbox]);
 
@@ -356,18 +465,24 @@ export const AnalysisView: React.FC<Props> = ({
         setRetryState(null); setBotState(null); setSandbox(null); setPlaying(false);
         return;
       }
+      if (e.key === 'f' || e.key === 'F') { setOrientation((o) => (o === 'w' ? 'b' : 'w')); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); handleNavPrev(); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); handleNavNext(); return; }
+      if (e.key === 'Home') { e.preventDefault(); handleNavFirst(); return; }
+      if (e.key === 'End') { e.preventDefault(); handleNavLast(); return; }
       if (botState || retryState) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); jumpToPly(currentPlyIndex - 1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); jumpToPly(currentPlyIndex + 1); }
-      else if (e.key === 'Home') { e.preventDefault(); jumpToPly(0); }
-      else if (e.key === 'End') { e.preventDefault(); jumpToPly(totalPlies); }
-      else if (e.key === 'f' || e.key === 'F') { setOrientation((o) => (o === 'w' ? 'b' : 'w')); }
-      else if (e.key === ' ') {
+      if (e.key === ' ') {
         e.preventDefault();
+        if (sandbox) {
+          const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
+          if (!playing && atBranchEnd) handleNavFirst();
+          setPlaying((p) => !p);
+          return;
+        }
         if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
         setPlaying((p) => !p);
       } else if (e.key === 'r' || e.key === 'R') {
-        if (isMistake) startRetry();
+        if (isMistake && !sandbox) startRetry();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -500,7 +615,8 @@ export const AnalysisView: React.FC<Props> = ({
     setRetryState(null);
     setBotState(null);
     setPendingPromo(null);
-    setSandbox({ fen: c.fen(), basePly: safePly, moves, eval: null, loading: true });
+    setCurrentPlyIndex(safePly);
+    setSandbox({ fen: c.fen(), basePly: safePly, moves, cursor: moves.length, eval: null, loading: true });
     scrollBoardIntoView();
   };
 
@@ -520,7 +636,11 @@ export const AnalysisView: React.FC<Props> = ({
     try { mv = c.move(san); } catch { return; }
     if (mv.captured) soundManager.playCapture(); else if (mv.san.includes('+')) soundManager.playCheck(); else soundManager.playMove();
     const move = toSandboxMove(mv);
-    setSandbox((prev) => prev ? { ...prev, fen: c.fen(), moves: [...prev.moves, move], loading: true } : null);
+    setSandbox((prev) => {
+      if (!prev) return null;
+      const nextNav = appendSandboxMoves(prev, [move]);
+      return { ...prev, ...nextNav, fen: c.fen(), loading: true };
+    });
     scrollBoardIntoView();
   };
 
@@ -531,12 +651,11 @@ export const AnalysisView: React.FC<Props> = ({
     try { mv = c.move({ from, to, promotion }); } catch { return; }
     const uci = `${mv.from}${mv.to}${mv.promotion ?? ''}`;
     if (mv.captured) soundManager.playCapture(); else if (mv.san.includes('+')) soundManager.playCheck(); else soundManager.playMove();
-    setSandbox((prev) => prev ? {
-      ...prev,
-      fen: c.fen(),
-      moves: [...prev.moves, { san: mv.san, uci, from: mv.from, to: mv.to }],
-      loading: true,
-    } : null);
+    setSandbox((prev) => {
+      if (!prev) return null;
+      const nextNav = appendSandboxMoves(prev, [{ san: mv.san, uci, from: mv.from, to: mv.to }]);
+      return { ...prev, ...nextNav, fen: c.fen(), loading: true };
+    });
   };
 
   const playSandboxLine = (uciMoves: string[]) => {
@@ -553,7 +672,11 @@ export const AnalysisView: React.FC<Props> = ({
     }
     if (applied.length === 0) return;
     soundManager.playMove();
-    setSandbox((prev) => prev ? { ...prev, fen: c.fen(), moves: [...prev.moves, ...applied], loading: true } : null);
+    setSandbox((prev) => {
+      if (!prev) return null;
+      const nextNav = appendSandboxMoves(prev, applied);
+      return { ...prev, ...nextNav, fen: c.fen(), loading: true };
+    });
   };
 
   const handleBoardMove = (from: Square, to: Square) => {
@@ -577,9 +700,18 @@ export const AnalysisView: React.FC<Props> = ({
     return undefined;
   };
 
-  const sandboxLastMove = sandbox && sandbox.moves.length > 0
-    ? [sandbox.moves[sandbox.moves.length - 1].from, sandbox.moves[sandbox.moves.length - 1].to] as [string, string]
-    : undefined;
+  const sandboxLastMove = useMemo<[string, string] | undefined>(() => {
+    if (!sandbox) return undefined;
+    if (sandbox.cursor > 0) {
+      const m = sandbox.moves[sandbox.cursor - 1];
+      return m ? [m.from, m.to] : undefined;
+    }
+    if (sandbox.basePly > 0) {
+      const p = analyzed?.plies[sandbox.basePly - 1] ?? rawMoves[sandbox.basePly - 1];
+      return p ? [p.from, p.to] : undefined;
+    }
+    return undefined;
+  }, [sandbox, analyzed, rawMoves]);
 
   const boardInteractive = Boolean(
     (botState && !botState.thinking) ||
@@ -601,37 +733,31 @@ export const AnalysisView: React.FC<Props> = ({
       : botState
         ? undefined
         : currentPly?.bestMoveUci;
-  const playedArrow = sandbox ? sandbox.moves[sandbox.moves.length - 1]?.uci : botState || retryState ? undefined : currentPly?.uci;
+  const playedArrow = sandbox
+    ? (sandbox.cursor > 0 ? sandbox.moves[sandbox.cursor - 1]?.uci : undefined)
+    : botState || retryState
+      ? undefined
+      : currentPly?.uci;
   const threatArrow = !sandbox && !botState && !retryState && showThreat ? currentPly?.threatMoveUci : undefined;
   const showBestArrow = !botState && (!retryState || retryState.status === 'revealed' || retryState.status === 'solved');
   const showPlayedArrow = !botState && !retryState;
 
   const basePly = sandbox?.basePly ?? currentPlyIndex;
   const baseLabel = basePly === 0 ? 'the starting position' : `after ${Math.ceil(basePly / 2)}${basePly % 2 === 1 ? '.' : '…'}`;
-  const sandboxBaseFen = basePly === 0 ? START_FEN : analyzed?.plies[basePly - 1]?.afterFen ?? START_FEN;
-
-  const rebuildSandbox = (moves: SandboxMove[]): string => {
-    const c = new Chess(sandboxBaseFen);
-    for (const m of moves) {
-      const parsed = uciToSquares(m.uci);
-      if (!parsed) break;
-      try { c.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion }); } catch { break; }
-    }
-    return c.fen();
-  };
-
-  const undoSandbox = () => {
-    if (!sandbox || sandbox.moves.length === 0) return;
-    const moves = sandbox.moves.slice(0, -1);
-    soundManager.playMove();
-    setSandbox((prev) => prev ? { ...prev, moves, fen: rebuildSandbox(moves), loading: true } : null);
-  };
+  const sandboxBaseFen = fenAtPly(basePly);
 
   const resetSandbox = () => {
     if (!sandbox) return;
     soundManager.playMove();
-    setSandbox((prev) => prev ? { ...prev, moves: [], fen: sandboxBaseFen, loading: true } : null);
+    setSandbox((prev) => prev ? { ...prev, moves: [], cursor: 0, fen: sandboxBaseFen, loading: true } : null);
   };
+
+  const transportCurrent = sandbox
+    ? (sandbox.moves.length > 0 ? sandbox.cursor : sandbox.basePly)
+    : currentPlyIndex;
+  const transportTotal = sandbox
+    ? (sandbox.moves.length > 0 ? sandbox.moves.length : totalPlies)
+    : totalPlies;
 
   const startAnalysis = () => {
     botGenerationRef.current += 1;
@@ -735,8 +861,8 @@ export const AnalysisView: React.FC<Props> = ({
                   badgeClassification={!botState && !retryState && !sandbox ? currentPly?.classification : undefined}
                   theme={boardTheme}
                   onUserMove={handleBoardMove}
-                  onSwipePrev={() => jumpToPly(currentPlyIndex - 1)}
-                  onSwipeNext={() => jumpToPly(currentPlyIndex + 1)}
+                  onSwipePrev={handleNavPrev}
+                  onSwipeNext={handleNavNext}
                 />
 
                 {sandbox && (
@@ -776,33 +902,78 @@ export const AnalysisView: React.FC<Props> = ({
             </div>
 
             {sandbox && (
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black text-fuchsia-200">
-                  <FlaskConical className="h-3 w-3" /> {sandbox.moves.length} explored
-                </span>
-                <button
-                  type="button"
-                  onClick={undoSandbox}
-                  disabled={sandbox.moves.length === 0}
-                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" /> Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={resetSandbox}
-                  disabled={sandbox.moves.length === 0}
-                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/80 px-2 py-2 text-[11px] font-bold text-slate-200 active:bg-slate-800 disabled:opacity-40"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSandbox(null)}
-                  className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-2 py-2 text-[11px] font-black text-rose-200 active:bg-rose-500/20"
-                >
-                  <X className="h-3.5 w-3.5" /> Exit
-                </button>
+              <div className="mt-1.5 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black text-fuchsia-200">
+                    <FlaskConical className="h-3 w-3" /> {sandbox.cursor}/{sandbox.moves.length} explored
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleNavPrev}
+                    disabled={sandbox.cursor === 0 && sandbox.basePly === 0}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNavNext}
+                    disabled={sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
+                  >
+                    Forward →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetSandbox}
+                    disabled={sandbox.moves.length === 0}
+                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/80 px-2.5 py-2 text-[11px] font-bold text-slate-200 active:bg-slate-800 disabled:opacity-40"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSandbox(null)}
+                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-2.5 py-2 text-[11px] font-black text-rose-200 active:bg-rose-500/20"
+                  >
+                    <X className="h-3.5 w-3.5" /> Exit
+                  </button>
+                </div>
+
+                {sandbox.moves.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 rounded-xl border border-fuchsia-400/20 bg-void/60 px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => applySandboxNav({ ...sandbox, cursor: 0 })}
+                      className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold transition ${
+                        sandbox.cursor === 0
+                          ? 'bg-fuchsia-500/30 text-fuchsia-100 ring-1 ring-fuchsia-400/60'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Base
+                    </button>
+                    {sandbox.moves.map((m, i) => {
+                      const plyNum = sandbox.basePly + i;
+                      const active = sandbox.cursor === i + 1;
+                      return (
+                        <button
+                          key={`${m.uci}-${i}`}
+                          type="button"
+                          onClick={() => applySandboxNav({ ...sandbox, cursor: i + 1 })}
+                          className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold transition ${
+                            active
+                              ? 'bg-fuchsia-500/30 text-fuchsia-100 ring-1 ring-fuchsia-400/60'
+                              : 'text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          {plyNum % 2 === 0 ? `${Math.floor(plyNum / 2) + 1}.` : i === 0 ? `${Math.floor(plyNum / 2) + 1}…` : ''}
+                          {m.san}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -823,17 +994,26 @@ export const AnalysisView: React.FC<Props> = ({
             <div className="mt-2 hidden lg:block">
               <TransportControls
                 variant="desktop"
-                current={currentPlyIndex}
-                total={totalPlies}
+                current={transportCurrent}
+                total={transportTotal}
                 playing={playing}
                 speed={speed}
                 canRetry={isMistake && !botState && !retryState && !sandbox}
-                onFirst={() => jumpToPly(0)}
-                onPrev={() => jumpToPly(currentPlyIndex - 1)}
-                onNext={() => jumpToPly(currentPlyIndex + 1)}
-                onLast={() => jumpToPly(totalPlies)}
+                onFirst={handleNavFirst}
+                onPrev={handleNavPrev}
+                onNext={handleNavNext}
+                onLast={handleNavLast}
                 onFlip={() => setOrientation((o) => (o === 'w' ? 'b' : 'w'))}
-                onTogglePlay={() => { if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0); setPlaying((p) => !p); }}
+                onTogglePlay={() => {
+                  if (sandbox) {
+                    const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
+                    if (!playing && atBranchEnd) handleNavFirst();
+                    setPlaying((p) => !p);
+                    return;
+                  }
+                  if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
+                  setPlaying((p) => !p);
+                }}
                 onToggleSpeed={() => setSpeed((s) => (s === 1 ? 2 : 1))}
                 onRetry={startRetry}
               />
@@ -961,15 +1141,15 @@ export const AnalysisView: React.FC<Props> = ({
             </>
           )}
 
-          {analyzed && !sandbox && (
-            <EvalGraph initialEval={analyzed.initialEval} plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onSelectPly={jumpToPly} />
+          {analyzed && (
+            <EvalGraph initialEval={analyzed.initialEval} plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onSelectPly={handleJumpGamePly} />
           )}
 
-          {analyzed && <KeyMomentsBar plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onJump={jumpToPly} />}
+          {analyzed && <KeyMomentsBar plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onJump={handleJumpGamePly} />}
 
           {analyzed && <AccuracyCards analyzed={analyzed} game={game} />}
 
-          {analyzed && <MoveList plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onJump={jumpToPly} />}
+          {analyzed && <MoveList plies={analyzed.plies} currentPlyIndex={currentPlyIndex} onJump={handleJumpGamePly} />}
 
           {!analyzed && (
             <div className="glass-card p-3 text-[11px] text-slate-400">
@@ -990,17 +1170,26 @@ export const AnalysisView: React.FC<Props> = ({
 
       <TransportControls
         variant="mobile"
-        current={currentPlyIndex}
-        total={totalPlies}
+        current={transportCurrent}
+        total={transportTotal}
         playing={playing}
         speed={speed}
         canRetry={isMistake && !botState && !retryState && !sandbox}
-        onFirst={() => jumpToPly(0)}
-        onPrev={() => jumpToPly(currentPlyIndex - 1)}
-        onNext={() => jumpToPly(currentPlyIndex + 1)}
-        onLast={() => jumpToPly(totalPlies)}
+        onFirst={handleNavFirst}
+        onPrev={handleNavPrev}
+        onNext={handleNavNext}
+        onLast={handleNavLast}
         onFlip={() => setOrientation((o) => (o === 'w' ? 'b' : 'w'))}
-        onTogglePlay={() => { if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0); setPlaying((p) => !p); }}
+        onTogglePlay={() => {
+          if (sandbox) {
+            const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
+            if (!playing && atBranchEnd) handleNavFirst();
+            setPlaying((p) => !p);
+            return;
+          }
+          if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
+          setPlaying((p) => !p);
+        }}
         onToggleSpeed={() => setSpeed((s) => (s === 1 ? 2 : 1))}
         onRetry={startRetry}
       />

@@ -92,6 +92,20 @@ export const GuidedWalkthrough: React.FC<Props> = ({
     if (clamped > step) soundManager.playMove();
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); stepTo(step - 1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); stepTo(step + 1); }
+      else if (e.key === 'Home') { e.preventDefault(); stepTo(0); }
+      else if (e.key === 'End') { e.preventDefault(); stepTo(line.moves.length); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, line.moves.length]);
+
   const previewTrap = (trap: WrongMoveTrap, annPly: number) => {
     clearTimers();
     soundManager.unlock();
