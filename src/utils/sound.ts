@@ -1,4 +1,5 @@
 import type { MoveClassification } from '../types/chess';
+import { getPrefSync, setPrefSync } from '../storage/brillyDb';
 
 const SOUND_PREF_KEY = 'brillyder_sound_muted';
 
@@ -7,7 +8,17 @@ class SoundEngine {
   private muted: boolean;
 
   constructor() {
-    this.muted = localStorage.getItem(SOUND_PREF_KEY) === 'true';
+    this.muted = this.readPref();
+  }
+
+  private readPref(): boolean {
+    const raw = getPrefSync<boolean | string>(SOUND_PREF_KEY, false);
+    return raw === true || raw === 'true';
+  }
+
+  syncFromStorage(): boolean {
+    this.muted = this.readPref();
+    return this.muted;
   }
 
   private ensureContext(): AudioContext | null {
@@ -25,7 +36,7 @@ class SoundEngine {
   isMuted(): boolean { return this.muted; }
   setMuted(next: boolean): void {
     this.muted = next;
-    localStorage.setItem(SOUND_PREF_KEY, String(next));
+    setPrefSync(SOUND_PREF_KEY, next);
   }
 
   private tone(freq: number, dur: number, type: OscillatorType = 'sine', peak = 0.12, delay = 0, endFreq?: number): void {

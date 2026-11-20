@@ -24,7 +24,7 @@ export function buildMistakeDeck(games: AnalyzedGame[], username: string): Mista
     for (const ply of analyzed.plies) {
       if (ply.color !== color) continue;
       if (ply.classification !== 'mistake' && ply.classification !== 'blunder') continue;
-      if (!ply.bestMoveUci) continue;
+      if (!ply.bestMoveUci || ply.bestMoveUci === ply.uci) continue;
       puzzles.push({
         id: `${analyzed.id}_${ply.ply}`,
         gameId: analyzed.id,
@@ -36,6 +36,7 @@ export function buildMistakeDeck(games: AnalyzedGame[], username: string): Mista
         san: ply.san,
         bestMoveSan: ply.bestMoveSan,
         bestMoveUci: ply.bestMoveUci,
+        threatMoveUci: ply.threatMoveUci,
         classification: ply.classification,
         phase: ply.phase,
         tacticalTag: ply.coaching.tacticalTag,
@@ -76,30 +77,39 @@ export function recordAttempt(progress: Record<string, MistakeProgressRecord>, i
   return next;
 }
 
-function startOfDay(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+export function dateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function loadDrillStreak(): DrillStreak {
+function yesterdayKey(now = new Date()): string {
+  const prev = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  return dateKey(prev);
+}
+
+export function loadDrillStreak(now = new Date()): DrillStreak {
   const stored = getPref<DrillStreak>(STREAK_KEY, { current: 0, best: 0, lastSolvedAt: 0 });
   if (!stored.lastSolvedAt) return stored;
-  const today = startOfDay(Date.now());
-  const last = startOfDay(stored.lastSolvedAt);
-  if (today - last > 86_400_000) return { ...stored, current: 0 };
+  const lastDay = dateKey(new Date(stored.lastSolvedAt));
+  const today = dateKey(now);
+  const yesterday = yesterdayKey(now);
+  // DST-safe calendar check: streak stays alive on same day or consecutive next day
+  if (lastDay !== today && lastDay !== yesterday) {
+    return { ...stored, current: 0 };
+  }
   return stored;
 }
 
-export function recordDrillSolve(): DrillStreak {
-  const current = loadDrillStreak();
-  const today = startOfDay(Date.now());
-  const last = startOfDay(current.lastSolvedAt);
-  const nextCurrent = last === today ? current.current + 1 : 1;
+export function recordDrillSolve(now = new Date()): DrillStreak {
+  const current = loadDrillStreak(now);
+  const today = dateKey(now);
+  const yesterday = yesterdayKey(now);
+  const lastDay = current.lastSolvedAt ? dateKey(new Date(current.lastSolvedAt)) : '';
+  const continues = lastDay === today || lastDay === yesterday;
+  const nextCurrent = continues ? current.current + 1 : 1;
   const next: DrillStreak = {
     current: nextCurrent,
     best: Math.max(current.best, nextCurrent),
-    lastSolvedAt: Date.now(),
+    lastSolvedAt: now.getTime(),
   };
   setPref(STREAK_KEY, next);
   return next;
@@ -107,10 +117,6 @@ export function recordDrillSolve(): DrillStreak {
 
 export function resetMistakeProgress(): void {
   setPref(PROGRESS_KEY, {});
-}
-
-export function dateKey(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 export function pickDailyPuzzle(deck: MistakePuzzle[], date = new Date()): MistakePuzzle | null {

@@ -1,9 +1,10 @@
 import type { AnalyzedGame, EngineScore, PlayerColor } from '../types/chess';
-import { resolveUserColor, resultForUser } from '../utils/player';
+import { resolveUserColor, resultForUserStrict } from '../utils/player';
 
 export const ADVANTAGE_THRESHOLD_CP = 250; // +2.5 pawns (or -2.5 as Black)
 export const CONVERSION_WIN_CP = 800; // +8.0 pawns win lock
 export const CONVERSION_SLIP_CP = 150; // < +1.5 pawns slip warning
+const PLAYABLE_PEAK_MAX_CP = 750; // keep starting conversion positions below CONVERSION_WIN_CP
 
 export interface BlownLeadPosition {
   id: string;
@@ -25,17 +26,17 @@ export interface BlownLeadPosition {
 export function userPerspectiveCp(score: EngineScore, userColor: PlayerColor): number {
   const sign = userColor === 'w' ? 1 : -1;
   if (score.isCheckmate) return score.cpWhite * sign;
-  if (score.mateWhite !== null) {
+  if (score.mateWhite !== null && score.mateWhite !== 0) {
     return score.mateWhite * sign > 0 ? 10000 : -10000;
   }
   return score.cpWhite * sign;
 }
 
 /**
- * Extracts "Tractor Beam" Advantage Conversion training positions from user games where:
+ * Extracts "Tractor Beam" Advantage Conversion training positions from completed user games where:
  * - User's eval reached >= +2.5 (or <= -2.5 as Black) on their turn
- * - And the game later slipped (drew/lost, or blew the advantage below +1.0)
- * Prioritizes games actually drawn or lost, sorted by largest blown peak advantage.
+ * - And the game later slipped (drew/lost, or blew the advantage below +1.0 AFTER that peak)
+ * Prefers playable peaks in [+2.5, +7.5] (below the +8.0 conversion win lock) so drills don't auto-win on move 1.
  */
 export function extractBlownLeadPositions(
   analyzedGames: AnalyzedGame[],
@@ -45,33 +46,51 @@ export function extractBlownLeadPositions(
 
   for (const ag of analyzedGames) {
     const uc = resolveUserColor(ag.game, username);
-    const finalResult = resultForUser(ag.game, uc);
+    const finalResult = resultForUserStrict(ag.game, uc);
+    if (!finalResult) continue; // exclude unfinished/aborted '*' games
+
+    const slippedToDrawOrLoss = finalResult === 'D' || finalResult === 'L';
     const oppName = uc === 'w' ? ag.game.black.name : ag.game.white.name;
     const oppRating = (uc === 'w' ? ag.game.black.rating : ag.game.white.rating) ?? 1400;
 
-    let peakPlyIndex = -1;
-    let peakCp = -Infinity;
-    let slippedAfterPeak = false;
+    // Precompute the minimum user eval reached AFTER each ply index
+    const minAfterFromIdx = new Array<number>(ag.plies.length).fill(Infinity);
+    let runningMin = Infinity;
+    for (let i = ag.plies.length - 1; i >= 0; i--) {
+      const afterCp = userPerspectiveCp(ag.plies[i].evalAfter, uc);
+      runningMin = Math.min(runningMin, afterCp);
+      minAfterFromIdx[i] = runningMin;
+    }
+
+    let bestPlayableIdx = -1;
+    let bestPlayableCp = -Infinity;
+    let fallbackIdx = -1;
+    let fallbackCp = -Infinity;
 
     for (let i = 0; i < ag.plies.length; i++) {
       const p = ag.plies[i];
-      if (p.color === uc) {
-        const cp = userPerspectiveCp(p.evalBefore, uc);
-        // Track the clearest non-trivial winning position (not already mate in 1)
-        if (cp >= ADVANTAGE_THRESHOLD_CP && cp < 9000 && cp > peakCp) {
-          peakCp = cp;
-          peakPlyIndex = i;
+      if (p.color !== uc) continue;
+      const cp = userPerspectiveCp(p.evalBefore, uc);
+      if (cp < ADVANTAGE_THRESHOLD_CP) continue;
+
+      const actuallySlippedAfter = minAfterFromIdx[i] < 100;
+      if (!slippedToDrawOrLoss && !actuallySlippedAfter) continue;
+
+      if (cp <= PLAYABLE_PEAK_MAX_CP) {
+        if (cp > bestPlayableCp) {
+          bestPlayableCp = cp;
+          bestPlayableIdx = i;
         }
-      }
-      if (peakPlyIndex !== -1 && i >= peakPlyIndex) {
-        const afterCp = userPerspectiveCp(p.evalAfter, uc);
-        if (afterCp < 100) slippedAfterPeak = true;
+      } else if (fallbackIdx === -1 || cp < fallbackCp) {
+        // If only huge >= +8.0 / mate leads slipped, pick the smallest winning peak above +7.5
+        fallbackCp = cp;
+        fallbackIdx = i;
       }
     }
 
+    const peakPlyIndex = bestPlayableIdx !== -1 ? bestPlayableIdx : fallbackIdx;
+    const peakCp = bestPlayableIdx !== -1 ? bestPlayableCp : fallbackCp;
     if (peakPlyIndex === -1) continue;
-    const slippedToDrawOrLoss = finalResult === 'D' || finalResult === 'L';
-    if (!slippedToDrawOrLoss && !slippedAfterPeak) continue;
 
     const targetPly = ag.plies[peakPlyIndex];
     results.push({

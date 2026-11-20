@@ -26,10 +26,11 @@ interface ChessComRawGame {
 }
 
 const CHESSCOM_API = 'https://api.chess.com/pub';
+const MAX_ARCHIVES_TO_WALK = 12;
 
 async function fetchJson<T>(url: string): Promise<T> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 16000);
+  const timer = globalThis.setTimeout(() => controller.abort(), 16000);
   try {
     const res = await fetch(url, {
       headers: { Accept: 'application/json' },
@@ -45,18 +46,35 @@ async function fetchJson<T>(url: string): Promise<T> {
     }
     throw err;
   } finally {
-    window.clearTimeout(timer);
+    globalThis.clearTimeout(timer);
   }
 }
 
-function formatTimeControl(raw: string | undefined, speed: string): string {
+export function formatChessComTimeControl(raw: string | undefined, speed: string): string {
   if (!raw) return speed ? speed.charAt(0).toUpperCase() + speed.slice(1) : 'Standard';
+  if (raw.startsWith('1/')) {
+    const secs = Number(raw.slice(2));
+    if (Number.isFinite(secs) && secs >= 86400) {
+      return `${Math.round(secs / 86400)}d`;
+    }
+    return 'Daily';
+  }
   const [baseRaw, incRaw] = raw.split('+');
   const base = Number(baseRaw);
   const inc = Number(incRaw ?? 0);
   if (!Number.isFinite(base)) return raw;
-  if (base < 60) return `${base}+${inc}`;
-  return `${Math.round(base / 60)}+${Number.isFinite(inc) ? inc : 0}`;
+  const safeInc = Number.isFinite(inc) ? inc : 0;
+  if (base < 60) return `${base}s+${safeInc}`;
+  const mins = base / 60;
+  const formattedMins = Number.isInteger(mins) ? String(mins) : mins.toFixed(1);
+  return `${formattedMins}+${safeInc}`;
+}
+
+function parseOpeningFromEcoUrl(ecoUrl?: string): string | null {
+  if (!ecoUrl) return null;
+  const match = ecoUrl.match(/\/openings\/([^?#]+)/i);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/-/g, ' ').trim() || null;
 }
 
 function resultStringFor(game: ChessComRawGame): '1-0' | '0-1' | '1/2-1/2' | '*' {
@@ -91,11 +109,12 @@ function normalizeChessComGame(raw: ChessComRawGame, username: string): LichessG
 
   const openingHeader = headers.Opening || '';
   const variationHeader = headers.Variation || '';
+  const ecoUrlOpening = parseOpeningFromEcoUrl(headers.ECOUrl);
   const lookup = lookupOpeningByMoves(history);
   const openingName =
     openingHeader && variationHeader
       ? `${openingHeader}: ${variationHeader}`
-      : openingHeader || lookup?.name || 'Unknown Opening';
+      : openingHeader || ecoUrlOpening || lookup?.name || 'Unknown Opening';
 
   const resultString = resultStringFor(raw);
   const idFromUrl = raw.url?.split('/').filter(Boolean).pop();
@@ -115,7 +134,7 @@ function normalizeChessComGame(raw: ChessComRawGame, username: string): LichessG
     status: 'finished',
     winner: resultString === '1-0' ? 'white' : resultString === '0-1' ? 'black' : undefined,
     resultString,
-    timeControlLabel: formatTimeControl(raw.time_control, speed),
+    timeControlLabel: formatChessComTimeControl(raw.time_control, speed),
     pgn: raw.pgn,
     openingName,
     openingEco: headers.ECO || lookup?.eco || '',
@@ -129,7 +148,8 @@ function normalizeChessComGame(raw: ChessComRawGame, username: string): LichessG
 
 /**
  * Fetches recent Chess.com games by walking the monthly archive list backwards
- * until enough games are collected. Uses only Chess.com's public CORS API.
+ * until enough usable normalized games are collected (capped at 12 monthly archives
+ * to prevent unbounded sequential fetches & 429s).
  */
 export async function fetchChessComGames(
   username: string,
@@ -144,22 +164,26 @@ export async function fetchChessComGames(
   const archives = archiveRes.archives ?? [];
   if (archives.length === 0) throw new Error(`No public games found for "${cleaned}".`);
 
-  const collected: ChessComRawGame[] = [];
-  for (let i = archives.length - 1; i >= 0 && collected.length < maxGames; i--) {
-    const month = await fetchJson<{ games?: ChessComRawGame[] }>(archives[i]);
-    const games = (month.games ?? []).slice().reverse();
-    collected.push(...games);
-  }
-
   const normalized: LichessGameRecord[] = [];
-  const sorted = collected.slice().sort((a, b) => (b.end_time ?? 0) - (a.end_time ?? 0));
-  for (const raw of sorted) {
-    if (normalized.length >= maxGames) break;
-    const game = normalizeChessComGame(raw, cleaned);
-    if (game) normalized.push(game);
+  const seenIds = new Set<string>();
+  const startIdx = archives.length - 1;
+  const minIdx = Math.max(0, archives.length - MAX_ARCHIVES_TO_WALK);
+
+  for (let i = startIdx; i >= minIdx && normalized.length < maxGames; i--) {
+    const month = await fetchJson<{ games?: ChessComRawGame[] }>(archives[i]);
+    const sortedMonth = (month.games ?? []).slice().sort((a, b) => (b.end_time ?? 0) - (a.end_time ?? 0));
+    for (const raw of sortedMonth) {
+      if (normalized.length >= maxGames) break;
+      const game = normalizeChessComGame(raw, cleaned);
+      if (game && !seenIds.has(game.id)) {
+        seenIds.add(game.id);
+        normalized.push(game);
+      }
+    }
   }
 
   if (normalized.length === 0) throw new Error(`No usable standard games found for "${cleaned}".`);
+  normalized.sort((a, b) => b.createdAt - a.createdAt);
   if (onGame) for (const game of normalized) onGame(game);
   return normalized;
 }

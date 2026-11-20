@@ -1,6 +1,6 @@
 import type { AnalyzedGame, BrillyVaultEntry, BrillyVaultStats } from '../types/chess';
 import { getMoverWinPercent } from '../utils/chessMath';
-import { resolveUserColor, resultForUser } from '../utils/player';
+import { resolveUserColor, resultForUserStrict } from '../utils/player';
 
 function positionKey(fen: string): string {
   return fen.split(' ').slice(0, 4).join(' ');
@@ -14,10 +14,11 @@ export function buildBrillyVault(
   let clutchSaves = 0;
   let trapsPunished = 0;
   let cleanSweeps = 0;
+  const uniqueHighlightKeys = new Set<string>();
 
   for (const analyzed of games) {
     const userColor = resolveUserColor(analyzed.game, username);
-    const userResult = resultForUser(analyzed.game, userColor);
+    const userResult = resultForUserStrict(analyzed.game, userColor);
     const userSummary = userColor === 'w' ? analyzed.whiteSummary : analyzed.blackSummary;
     const seenPositions = new Set<string>();
     const openingName = analyzed.openingLineDetected || analyzed.game.openingName || 'Unknown Opening';
@@ -32,8 +33,9 @@ export function buildBrillyVault(
       const playerName = ply.color === 'w' ? analyzed.game.white.name : analyzed.game.black.name;
       const opponentName = ply.color === 'w' ? analyzed.game.black.name : analyzed.game.white.name;
 
-      // 1. !! Brilliant moves (existing behavior preserved)
+      // 1. !! Brilliant moves
       if (ply.classification === 'brilliant' && !repeated) {
+        if (isUserMove) uniqueHighlightKeys.add(`${analyzed.id}:${ply.ply}`);
         entries.push({
           id: `br_${analyzed.id}_${ply.ply}`,
           category: 'brilliant',
@@ -62,17 +64,24 @@ export function buildBrillyVault(
 
       if (!isUserMove) continue;
 
-      // 2. Clutch Saves (critical only-move found under pressure)
+      // 2. Clutch Saves (critical only-move found under pressure in a viable position)
       const moverWinBefore = getMoverWinPercent(ply.evalBefore, ply.color);
+      const moverWinAfter = getMoverWinPercent(ply.evalAfter, ply.color);
+      const isGoodMove =
+        ply.classification === 'best' ||
+        ply.classification === 'great' ||
+        ply.classification === 'brilliant';
       const inferredClutch =
-        ply.isClutchSave ||
-        (ply.winLoss <= 2 &&
-          ply.classification !== 'book' &&
-          moverWinBefore <= 62 &&
-          ((ply.secondBestGapPawns ?? 0) >= 2.0 || ply.secondBestGapWin >= 14));
+        isGoodMove &&
+        moverWinAfter >= 30 &&
+        (ply.isClutchSave ||
+          (ply.winLoss <= 2 &&
+            moverWinBefore <= 62 &&
+            ((ply.secondBestGapPawns ?? 0) >= 2.0 || ply.secondBestGapWin >= 14)));
 
       if (inferredClutch && !repeated) {
         clutchSaves++;
+        uniqueHighlightKeys.add(`${analyzed.id}:${ply.ply}`);
         entries.push({
           id: `cl_${analyzed.id}_${ply.ply}`,
           category: 'clutch',
@@ -101,18 +110,20 @@ export function buildBrillyVault(
         });
       }
 
-      // 3. Traps Punished (opponent blundered/erred in opening/early middlegame and user punished cleanly)
-      if (i > 0 && ply.ply <= 34) {
+      // 3. Traps Punished (opponent blundered in opening/early middlegame and user punished into equal/better pos)
+      if (i > 0 && ply.ply <= 34 && !repeated) {
         const prevOpp = analyzed.plies[i - 1];
         const oppBlundered =
           prevOpp.color !== userColor &&
           (prevOpp.classification === 'blunder' || (prevOpp.classification === 'mistake' && prevOpp.winLoss >= 20));
         const userPunished =
           ply.winLoss <= 2 &&
-          (ply.classification === 'best' || ply.classification === 'great' || ply.classification === 'brilliant');
+          isGoodMove &&
+          moverWinAfter >= 50;
 
         if (oppBlundered && userPunished) {
           trapsPunished++;
+          uniqueHighlightKeys.add(`${analyzed.id}:${ply.ply}`);
           entries.push({
             id: `tr_${analyzed.id}_${ply.ply}`,
             category: 'traps',
@@ -141,29 +152,32 @@ export function buildBrillyVault(
       }
     }
 
-    // 4. Clean Sweeps (blunder-free user win with >= 82% accuracy)
+    // 4. Clean Sweeps (blunder-free user win with >= 82% accuracy; always spotlight the user's own final move)
     if (
       userResult === 'W' &&
       userSummary.counts.blunder === 0 &&
       userSummary.accuracy >= 82 &&
       analyzed.plies.length >= 10
     ) {
-      const finalPly = analyzed.plies[analyzed.plies.length - 1];
+      const userFinalPly =
+        [...analyzed.plies].reverse().find((p) => p.color === userColor) ??
+        analyzed.plies[analyzed.plies.length - 1];
       const playerName = userColor === 'w' ? analyzed.game.white.name : analyzed.game.black.name;
       const opponentName = userColor === 'w' ? analyzed.game.black.name : analyzed.game.white.name;
       cleanSweeps++;
+      uniqueHighlightKeys.add(`cs:${analyzed.id}`);
       entries.push({
         id: `cs_${analyzed.id}`,
         category: 'clean',
         gameId: analyzed.id,
-        ply: finalPly.ply,
-        moveNumber: finalPly.moveNumber,
-        san: finalPly.san,
-        uci: finalPly.uci,
-        from: finalPly.from,
-        to: finalPly.to,
-        beforeFen: finalPly.beforeFen,
-        afterFen: finalPly.afterFen,
+        ply: userFinalPly.ply,
+        moveNumber: userFinalPly.moveNumber,
+        san: userFinalPly.san,
+        uci: userFinalPly.uci,
+        from: userFinalPly.from,
+        to: userFinalPly.to,
+        beforeFen: userFinalPly.beforeFen,
+        afterFen: userFinalPly.afterFen,
         color: userColor,
         playerName,
         opponentName,
@@ -224,6 +238,7 @@ export function buildBrillyVault(
     entries,
     stats: {
       total: userMoves,
+      totalHighlights: uniqueHighlightKeys.size,
       userMoves,
       opponentMoves,
       clutchSaves,

@@ -25,12 +25,79 @@ interface LichessRawGame {
   players?: { white?: LichessRawPlayer; black?: LichessRawPlayer };
 }
 
+const FETCH_TIMEOUT_MS = 18_000;
+const RESERVED_LICHESS_PATHS = new Set([
+  'training',
+  'analysis',
+  'settings',
+  'tv',
+  'broadcast',
+  'tournament',
+  'practice',
+  'streamer',
+  'timeline',
+  'features',
+  'patterns',
+  'accounts',
+  'messages',
+]);
+
 function formatTc(clock?: { initial?: number; increment?: number }, speed?: string): string {
-  if (clock && typeof clock.initial === 'number') return `${Math.round(clock.initial / 60)}+${clock.increment ?? 0}`;
+  if (clock && typeof clock.initial === 'number') {
+    const inc = clock.increment ?? 0;
+    if (clock.initial < 60) return `${clock.initial}s+${inc}`;
+    const mins = clock.initial / 60;
+    const formattedMins = Number.isInteger(mins) ? String(mins) : mins.toFixed(1);
+    return `${formattedMins}+${inc}`;
+  }
   return speed ? speed.charAt(0).toUpperCase() + speed.slice(1) : 'Standard';
 }
 
+function parsePgnTimestamp(headers: Record<string, string>): number {
+  const dateStr = headers.UTCDate || headers.Date;
+  if (!dateStr || dateStr.includes('?')) return Date.now();
+  const normalizedDate = dateStr.replace(/\./g, '-');
+  const timeStr = headers.UTCTime && !headers.UTCTime.includes('?') ? headers.UTCTime : '12:00:00';
+  const parsed = Date.parse(`${normalizedDate}T${timeStr}Z`);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function stableHashId(text: string): string {
+  let h1 = 2166136261;
+  let h2 = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619);
+    h2 = Math.imul(h2 ^ (c + i), 2246822519);
+  }
+  return `pgn_${(h1 >>> 0).toString(36)}_${(h2 >>> 0).toString(36)}`;
+}
+
+function parseOpeningFromEcoUrl(ecoUrl?: string): string | null {
+  if (!ecoUrl) return null;
+  const match = ecoUrl.match(/\/openings\/([^?#]+)/i);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/-/g, ' ').trim() || null;
+}
+
 function mapRawGame(raw: LichessRawGame, username?: string): LichessGameRecord | null {
+  if (raw.status === 'aborted' || raw.status === 'noStart') return null;
+
+  const pgn = raw.pgn || raw.moves || '';
+  if (!pgn) return null;
+
+  // Verify the game actually has >= 2 plies (prevents 0-move aborted games scoring 100% accuracy)
+  let plyCount = 0;
+  let headerResult: string | undefined;
+  try {
+    const parsed = loadPgnSafely(pgn);
+    plyCount = parsed.history().length;
+    headerResult = parsed.getHeaders().Result;
+  } catch {
+    return null;
+  }
+  if (plyCount < 2) return null;
+
   const whiteName = raw.players?.white?.user?.name || (raw.players?.white?.aiLevel ? `Stockfish L${raw.players.white.aiLevel}` : 'White');
   const blackName = raw.players?.black?.user?.name || (raw.players?.black?.aiLevel ? `Stockfish L${raw.players.black.aiLevel}` : 'Black');
   let userColor: PlayerColor | undefined;
@@ -39,10 +106,20 @@ function mapRawGame(raw: LichessRawGame, username?: string): LichessGameRecord |
     if (whiteName.toLowerCase() === low) userColor = 'w';
     else if (blackName.toLowerCase() === low) userColor = 'b';
   }
-  const resultString: '1-0' | '0-1' | '1/2-1/2' | '*' =
-    raw.winner === 'white' ? '1-0' : raw.winner === 'black' ? '0-1' : raw.status === 'draw' || raw.status === 'stalemate' ? '1/2-1/2' : '*';
-  const pgn = raw.pgn || raw.moves || '';
-  if (!pgn) return null;
+
+  let resultString: '1-0' | '0-1' | '1/2-1/2' | '*' =
+    raw.winner === 'white'
+      ? '1-0'
+      : raw.winner === 'black'
+        ? '0-1'
+        : raw.status === 'draw' || raw.status === 'stalemate'
+          ? '1/2-1/2'
+          : '*';
+  // Catch timeout-vs-insufficient-material draws where raw.status is 'outoftime' with no winner
+  if (resultString === '*' && (headerResult === '1/2-1/2' || headerResult === '1-0' || headerResult === '0-1')) {
+    resultString = headerResult;
+  }
+
   return {
     id: raw.id,
     source: 'lichess',
@@ -69,64 +146,95 @@ function mapRawGame(raw: LichessRawGame, username?: string): LichessGameRecord |
 export async function fetchLichessGames(username: string, onGame?: (g: LichessGameRecord) => void, maxGames = 15): Promise<LichessGameRecord[]> {
   const cleaned = username.trim();
   if (!cleaned) throw new Error('Enter a Lichess username.');
-  const res = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(cleaned)}?max=${maxGames}&pgnInJson=true&opening=true&clocks=true`,
-    { headers: { Accept: 'application/x-ndjson' } }
-  );
-  if (res.status === 404) throw new Error(`Lichess user "${cleaned}" not found.`);
-  if (res.status === 429) throw new Error('Lichess rate limit hit — retry in a moment.');
-  if (!res.ok) throw new Error(`Lichess API error (${res.status}).`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  const out: LichessGameRecord[] = [];
-  const pushLine = (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    try {
-      const rec = mapRawGame(JSON.parse(trimmed) as LichessRawGame, cleaned);
-      if (rec) { out.push(rec); onGame?.(rec); }
-    } catch {
-      // Skip invalid NDJSON line
-    }
-  };
+  try {
+    const res = await fetch(
+      `https://lichess.org/api/games/user/${encodeURIComponent(cleaned)}?max=${maxGames}&pgnInJson=true&opening=true&clocks=true`,
+      { headers: { Accept: 'application/x-ndjson' }, signal: controller.signal }
+    );
+    if (res.status === 404) throw new Error(`Lichess user "${cleaned}" not found.`);
+    if (res.status === 429) throw new Error('Lichess rate limit hit — retry in a moment.');
+    if (!res.ok) throw new Error(`Lichess API error (${res.status}).`);
 
-  if (res.body) {
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx = buf.indexOf('\n');
-      while (idx !== -1) {
-        pushLine(buf.slice(0, idx));
-        buf = buf.slice(idx + 1);
-        idx = buf.indexOf('\n');
+    const out: LichessGameRecord[] = [];
+    const pushLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const rec = mapRawGame(JSON.parse(trimmed) as LichessRawGame, cleaned);
+        if (rec) { out.push(rec); onGame?.(rec); }
+      } catch {
+        // Skip invalid NDJSON line
       }
+    };
+
+    if (res.body) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx = buf.indexOf('\n');
+        while (idx !== -1) {
+          pushLine(buf.slice(0, idx));
+          buf = buf.slice(idx + 1);
+          idx = buf.indexOf('\n');
+        }
+      }
+      buf += decoder.decode();
+      pushLine(buf);
+    } else {
+      const txt = await res.text();
+      for (const l of txt.split(/\r?\n/)) pushLine(l);
     }
-    pushLine(buf);
-  } else {
-    const txt = await res.text();
-    for (const l of txt.split(/\r?\n/)) pushLine(l);
+    return out;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Lichess request timed out.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return out;
 }
 
 export function extractLichessGameId(input: string): string | null {
   const t = input.trim();
   const m = t.match(/(?:https?:\/\/)?(?:www\.)?lichess\.org\/([a-zA-Z0-9]{8})(?:[a-zA-Z0-9]{4})?(?:\/(?:white|black))?(?:[#?].*)?$/i);
-  if (m) return m[1];
-  return /^[a-zA-Z0-9]{8}$/.test(t) ? t : null;
+  if (m) {
+    if (RESERVED_LICHESS_PATHS.has(m[1].toLowerCase())) return null;
+    return m[1];
+  }
+  if (/^[a-zA-Z0-9]{8}$/.test(t) && !RESERVED_LICHESS_PATHS.has(t.toLowerCase())) return t;
+  return null;
 }
 
 export async function fetchLichessGameByUrlOrId(input: string, usernameHint?: string): Promise<LichessGameRecord> {
   const id = extractLichessGameId(input);
   if (!id) throw new Error('Unrecognized Lichess game URL.');
-  const res = await fetch(`https://lichess.org/game/export/${id}?pgnInJson=true&opening=true&clocks=true`, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Could not fetch game (${res.status}).`);
-  const rec = mapRawGame((await res.json()) as LichessRawGame, usernameHint);
-  if (!rec) throw new Error('Game contains no moves.');
-  return rec;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`https://lichess.org/game/export/${id}?pgnInJson=true&opening=true&clocks=true`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Could not fetch game (${res.status}).`);
+    const rec = mapRawGame((await res.json()) as LichessRawGame, usernameHint);
+    if (!rec) throw new Error('Game contains no usable moves.');
+    return rec;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Lichess game export timed out.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function parseRawPgnToGame(rawPgn: string, usernameHint?: string): LichessGameRecord {
@@ -147,29 +255,49 @@ export function parseRawPgnToGame(rawPgn: string, usernameHint?: string): Liches
   let userColor: PlayerColor | undefined;
   if (usernameHint) {
     const low = usernameHint.trim().toLowerCase();
-    if (whiteName.toLowerCase() === low) userColor = 'w';
-    else if (blackName.toLowerCase() === low) userColor = 'b';
+    if (whiteName.trim().toLowerCase() === low) userColor = 'w';
+    else if (blackName.trim().toLowerCase() === low) userColor = 'b';
   }
+
+  // Detect both Lichess and Chess.com URLs / sites so pasted Chess.com PGNs route properly
+  const linkHeader = h.Link?.trim();
+  const siteHeader = h.Site?.trim();
+  const isChessCom =
+    Boolean(linkHeader?.toLowerCase().includes('chess.com')) ||
+    Boolean(siteHeader?.toLowerCase().includes('chess.com'));
+  const resolvedUrl =
+    linkHeader && /^https?:\/\//i.test(linkHeader)
+      ? linkHeader
+      : siteHeader && /^https?:\/\//i.test(siteHeader)
+        ? siteHeader
+        : isChessCom
+          ? 'https://www.chess.com'
+          : undefined;
+
+  const ecoUrlOpening = parseOpeningFromEcoUrl(h.ECOUrl);
+  const createdAt = parsePgnTimestamp(h);
+  const contentId = stableHashId(`${whiteName}|${blackName}|${h.UTCDate ?? h.Date ?? ''}|${history.join(' ')}`);
+
   return {
-    id: `pgn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-    source: 'pgn',
+    id: contentId,
+    source: isChessCom ? 'chesscom' : 'pgn',
     rated: false,
     variant: 'standard',
     speed: 'rapid',
     perf: 'custom',
-    createdAt: Date.now(),
+    createdAt,
     status: resultString === '*' ? 'imported' : 'finished',
     winner: resultString === '1-0' ? 'white' : resultString === '0-1' ? 'black' : undefined,
     resultString,
     timeControlLabel: h.TimeControl || 'Custom',
     pgn: trimmed,
-    openingName: h.Opening || book?.name || 'Custom PGN',
+    openingName: h.Opening || ecoUrlOpening || book?.name || 'Custom PGN',
     openingEco: h.ECO || book?.eco || '',
     openingPly: book?.matchedPlies,
     white: { name: whiteName, rating: Number.isFinite(whiteElo) ? whiteElo : undefined },
     black: { name: blackName, rating: Number.isFinite(blackElo) ? blackElo : undefined },
     userColor,
-    url: h.Site?.startsWith('https://lichess.org/') ? h.Site : undefined,
+    url: resolvedUrl,
   };
 }
 
@@ -195,6 +323,7 @@ export const SAMPLE_GAMES: LichessGameRecord[] = [
     pgn: `[White "Lukedunwell"]
 [Black "TacticalPanda"]
 [Result "1-0"]
+[TimeControl "600+0"]
 [WhiteElo "1485"]
 [BlackElo "1492"]
 [ECO "D02"]
@@ -223,6 +352,7 @@ export const SAMPLE_GAMES: LichessGameRecord[] = [
     pgn: `[White "ViennaAttack99"]
 [Black "Lukedunwell"]
 [Result "0-1"]
+[TimeControl "300+3"]
 [WhiteElo "1478"]
 [BlackElo "1493"]
 [ECO "B06"]

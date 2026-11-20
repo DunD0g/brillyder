@@ -51,6 +51,7 @@ const LICHESS_BRACKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 const CACHE_MS = 15 * 60_000;
 const FAILURE_TTL_MS = 3 * 60_000;
 const REQUEST_TIMEOUT_MS = 6_500;
+const MAX_CACHE_ENTRIES = 200;
 
 const cache = new Map<string, CacheEntry>();
 let disabledUntil = 0;
@@ -111,15 +112,16 @@ export async function fetchLichessExplorer(
   fen: string,
   options: ExplorerQueryOptions = {}
 ): Promise<ExplorerPosition | null> {
-  const ratings = (options.ratings && options.ratings.length > 0)
+  const ratings = ((options.ratings && options.ratings.length > 0)
     ? options.ratings
-    : ratingsForBand(options.ratingBand);
-  const speeds = (options.speeds && options.speeds.length > 0)
+    : ratingsForBand(options.ratingBand)).slice().sort((a, b) => a - b);
+  const speeds = ((options.speeds && options.speeds.length > 0)
     ? options.speeds
-    : ['blitz', 'rapid', 'classical'];
+    : ['blitz', 'rapid', 'classical']).slice().sort();
   const movesLimit = options.moves ?? 10;
 
-  const cacheKey = `${fen}|r:${ratings.join(',')}|s:${speeds.join(',')}|m:${movesLimit}`;
+  const fenKey = fen.split(' ').slice(0, 4).join(' ');
+  const cacheKey = `${fenKey}|r:${ratings.join(',')}|s:${speeds.join(',')}|m:${movesLimit}`;
   const now = Date.now();
   const cached = cache.get(cacheKey);
   if (cached && now - cached.at < CACHE_MS) return cached.data;
@@ -141,13 +143,21 @@ export async function fetchLichessExplorer(
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Lichess explorer returned ${res.status}`);
+    if (res.status === 429 || res.status >= 500) {
+      disabledUntil = Date.now() + FAILURE_TTL_MS;
+      return null;
+    }
+    if (!res.ok) return null;
     const data = normalise((await res.json()) as RawExplorerResponse, fen);
+    if (cache.size >= MAX_CACHE_ENTRIES) {
+      const oldest = cache.keys().next().value;
+      if (oldest) cache.delete(oldest);
+    }
     cache.set(cacheKey, { data, at: now });
     return data;
   } catch {
+    // Transient network error — short backoff only, never poison cache for 15 minutes
     disabledUntil = Date.now() + FAILURE_TTL_MS;
-    cache.set(cacheKey, { data: null, at: now });
     return null;
   } finally {
     clearTimeout(timer);

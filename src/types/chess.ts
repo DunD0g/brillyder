@@ -273,7 +273,7 @@ export interface CheckpointMetrics {
   games: number;
   avgEvalMove10: number | null;
   impulseBlundersPerGame: number;
-  blownLeadPct: number;
+  blownLeadPct: number | null;
 }
 
 export interface TwentyGameCheckpoints {
@@ -369,6 +369,7 @@ export interface BrillyVaultEntry {
 
 export interface BrillyVaultStats {
   total: number;
+  totalHighlights: number;
   userMoves: number;
   opponentMoves: number;
   clutchSaves: number;
@@ -393,6 +394,7 @@ export interface MistakePuzzle {
   san: string;
   bestMoveSan: string;
   bestMoveUci: string;
+  threatMoveUci?: string;
   classification: MistakeClassification;
   phase: 'opening' | 'middlegame' | 'endgame';
   tacticalTag: string;

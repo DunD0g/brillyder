@@ -1,8 +1,12 @@
-import type { AnalyzedGame, MistakePuzzle, PlayerColor } from '../types/chess';
+import type { AnalyzedGame, MistakeProgressRecord, MistakePuzzle, PlayerColor } from '../types/chess';
 import type { FsrsOpeningCard, OpeningCourse, WoodpeckerCycleRecord } from '../types/openings';
 import { hydrateCourseCards, isCardDue } from '../lib/fsrsOpening';
 import { extractBlownLeadPositions, type BlownLeadPosition } from './advantageConversion';
-import { selectSolvableWoodpeckerPuzzles } from './woodpeckerCycles';
+import {
+  getCooldownRemainingMs,
+  isWoodpeckerCycleMastered,
+  selectSolvableWoodpeckerPuzzles,
+} from './woodpeckerCycles';
 
 export type DailyDurationMinutes = 10 | 15 | 25;
 
@@ -21,6 +25,8 @@ export interface DailyWorkoutPlan {
   stage1Cards: FsrsOpeningCard[];
   stage2Blunders: MistakePuzzle[];
   stage3Woodpecker: MistakePuzzle[];
+  stage3OnCooldown?: boolean;
+  stage3CooldownRemainingMs?: number;
   stage4Focus: Stage4Focus;
   stage4FocusLabel: string;
   stage4Conversion: BlownLeadPosition | null;
@@ -37,6 +43,7 @@ export interface GravityFlashItem {
   prompt: string;
   subtitle: string;
   timeLimitSec: number;
+  /** Present ONLY when this opening check is a real persisted due FSRS card to grade. */
   card?: FsrsOpeningCard;
 }
 
@@ -99,6 +106,37 @@ export const FALLBACK_GRAVITY_FLASHES: Array<{
 
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
 
+function localDaySeed(nowMs: number): number {
+  const d = new Date(nowMs);
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+
+function pickWithoutDuplicates(
+  primary: MistakePuzzle[],
+  usedIds: Set<string>,
+  quota: number,
+  fallbackPool: MistakePuzzle[] = primary
+): MistakePuzzle[] {
+  const chosen: MistakePuzzle[] = [];
+  for (const p of primary) {
+    if (chosen.length >= quota) break;
+    if (usedIds.has(p.id)) continue;
+    chosen.push(p);
+    usedIds.add(p.id);
+  }
+  // Only allow overlap with earlier stages if the user's deck is too small to fill the stage
+  if (chosen.length < quota) {
+    const chosenIds = new Set(chosen.map((p) => p.id));
+    for (const p of fallbackPool) {
+      if (chosen.length >= quota) break;
+      if (chosenIds.has(p.id)) continue;
+      chosen.push(p);
+      chosenIds.add(p.id);
+    }
+  }
+  return chosen;
+}
+
 export function buildDailyWorkoutPlan(params: {
   duration: DailyDurationMinutes;
   fsrsCards: FsrsOpeningCard[];
@@ -106,12 +144,26 @@ export function buildDailyWorkoutPlan(params: {
   analyzedGames: AnalyzedGame[];
   username: string;
   activeCycle: WoodpeckerCycleRecord | null;
+  convertedIds?: string[];
+  mistakeProgress?: Record<string, MistakeProgressRecord>;
   daySeed?: number;
   nowMs?: number;
 }): DailyWorkoutPlan {
-  const { duration, fsrsCards, deck, analyzedGames, username, activeCycle } = params;
+  const { duration, fsrsCards, deck, analyzedGames, username, activeCycle, convertedIds, mistakeProgress } = params;
   const nowMs = params.nowMs ?? Date.now();
   const quotas = QUOTAS_BY_DURATION[duration];
+  const convertedSet = new Set(convertedIds ?? []);
+
+  // Helper to prioritize unsolved mistakes ahead of already mastered ones
+  const preferUnsolved = (list: MistakePuzzle[]) => {
+    if (!mistakeProgress) return list;
+    return list.slice().sort((a, b) => {
+      const sa = mistakeProgress[a.id]?.solved ? 1 : 0;
+      const sb = mistakeProgress[b.id]?.solved ? 1 : 0;
+      if (sa !== sb) return sa - sb;
+      return b.winLoss - a.winLoss;
+    });
+  };
 
   // Stage 1: Due Opening FSRS (prioritize game-deviation boosts)
   const stage1Cards = fsrsCards
@@ -123,32 +175,53 @@ export function buildDailyWorkoutPlan(params: {
     })
     .slice(0, quotas.openingDue);
 
-  // Stage 2: Blunder Rewind ("Worst First" from last 14 days, fallback to all-time worst)
-  const recentCutoff = nowMs - FOURTEEN_DAYS_MS;
-  const recentWorst = deck
-    .filter((p) => p.playedAt >= recentCutoff)
-    .sort((a, b) => b.winLoss - a.winLoss);
-  const stage2Source = recentWorst.length >= 2 ? recentWorst : [...deck].sort((a, b) => b.winLoss - a.winLoss);
-  const stage2Blunders = stage2Source.slice(0, quotas.blunderRewind);
-
-  // Stage 3: Active Frozen Woodpecker Cycle (remaining puzzles in active cycle, else solvable pool)
+  // Stage 3 (planned first so the Frozen Woodpecker Cycle stays 100% faithful to its frozen set,
+  // while Stages 2 & 4 avoid handing the user back-to-back duplicate puzzles in the same sitting!):
   const deckById = new Map(deck.map((p) => [p.id, p]));
   let stage3Woodpecker: MistakePuzzle[] = [];
-  if (activeCycle && activeCycle.puzzleIds.length > 0) {
-    const remainingIds = activeCycle.puzzleIds.filter((id) => !(id in activeCycle.activeAttemptedIds));
-    const poolIds = remainingIds.length > 0 ? remainingIds : activeCycle.puzzleIds;
-    stage3Woodpecker = poolIds
-      .map((id) => deckById.get(id))
-      .filter((p): p is MistakePuzzle => Boolean(p))
-      .slice(0, quotas.woodpecker);
+  let stage3OnCooldown = false;
+  let stage3CooldownRemainingMs = 0;
+
+  if (activeCycle && activeCycle.puzzleIds.length > 0 && !isWoodpeckerCycleMastered(activeCycle)) {
+    const remainingCooldown = getCooldownRemainingMs(activeCycle, nowMs);
+    if (remainingCooldown > 0) {
+      // Honor the 24–48h consolidation rest instead of silently drilling a resting cycle
+      stage3OnCooldown = true;
+      stage3CooldownRemainingMs = remainingCooldown;
+    } else {
+      const remainingIds = activeCycle.puzzleIds.filter((id) => !(id in activeCycle.activeAttemptedIds));
+      const poolIds = remainingIds.length > 0 ? remainingIds : activeCycle.puzzleIds;
+      stage3Woodpecker = poolIds
+        .map((id) => deckById.get(id))
+        .filter((p): p is MistakePuzzle => Boolean(p))
+        .slice(0, quotas.woodpecker);
+    }
   }
-  if (stage3Woodpecker.length === 0) {
-    stage3Woodpecker = selectSolvableWoodpeckerPuzzles(deck, 30).slice(0, quotas.woodpecker);
+
+  const usedInSession = new Set<string>(stage3Woodpecker.map((p) => p.id));
+
+  // Stage 2: Blunder Rewind ("Worst First" from last 14 days, deduplicated against today's Stage 3 slice)
+  const recentCutoff = nowMs - FOURTEEN_DAYS_MS;
+  const recentWorst = preferUnsolved(
+    deck.filter((p) => p.playedAt >= recentCutoff).sort((a, b) => b.winLoss - a.winLoss)
+  );
+  const allWorst = preferUnsolved([...deck].sort((a, b) => b.winLoss - a.winLoss));
+  const stage2Primary = recentWorst.length >= 2 ? recentWorst : allWorst;
+  const stage2Blunders = pickWithoutDuplicates(stage2Primary, usedInSession, quotas.blunderRewind, allWorst);
+
+  // If no active Woodpecker cycle (and not on cooldown), fill Stage 3 from solvable pool excluding Stage 2!
+  if (stage3Woodpecker.length === 0 && !stage3OnCooldown) {
+    const solvable = selectSolvableWoodpeckerPuzzles(deck, 30);
+    stage3Woodpecker = pickWithoutDuplicates(solvable, usedInSession, quotas.woodpecker, solvable);
   }
 
   // Stage 4: Targeted Weakness Drill rotation (Conversion -> Endgame -> Missed Motif)
-  const blownLeads = extractBlownLeadPositions(analyzedGames, username);
-  const endgamePuzzles = deck.filter((p) => p.phase === 'endgame').sort((a, b) => b.winLoss - a.winLoss);
+  const allBlownLeads = extractBlownLeadPositions(analyzedGames, username);
+  const unconvertedBlownLeads = allBlownLeads.filter((b) => !convertedSet.has(b.id));
+  const blownLeads = unconvertedBlownLeads.length > 0 ? unconvertedBlownLeads : allBlownLeads;
+  const endgamePuzzles = preferUnsolved(
+    deck.filter((p) => p.phase === 'endgame').sort((a, b) => b.winLoss - a.winLoss)
+  );
 
   // Find most missed tactical motif
   const motifCounts = new Map<string, MistakePuzzle[]>();
@@ -160,9 +233,9 @@ export function buildDailyWorkoutPlan(params: {
   }
   const topMotifEntry = Array.from(motifCounts.entries()).sort((a, b) => b[1].length - a[1].length)[0] ?? null;
 
-  const dayBucket = params.daySeed ?? Math.floor(nowMs / 86_400_000);
+  const dayBucket = params.daySeed ?? localDaySeed(nowMs);
   const rotationOrder: Stage4Focus[] = ['conversion', 'endgame', 'motif'];
-  const preferred = rotationOrder[dayBucket % 3];
+  const preferred = rotationOrder[Math.abs(dayBucket) % 3];
 
   let stage4Focus: Stage4Focus = preferred;
   if (preferred === 'conversion' && blownLeads.length === 0) {
@@ -182,15 +255,16 @@ export function buildDailyWorkoutPlan(params: {
     stage4Conversion = blownLeads[0];
   } else if (stage4Focus === 'endgame' && endgamePuzzles.length > 0) {
     stage4FocusLabel = 'Weakest Endgame Drill';
-    stage4Puzzles = endgamePuzzles.slice(0, quotas.weakness);
+    stage4Puzzles = pickWithoutDuplicates(endgamePuzzles, usedInSession, quotas.weakness, endgamePuzzles);
   } else if (topMotifEntry) {
     stage4Focus = 'motif';
     stage4FocusLabel = `Missed Motif: ${topMotifEntry[0]}`;
-    stage4Puzzles = topMotifEntry[1].slice(0, quotas.weakness);
+    const sortedMotif = preferUnsolved(topMotifEntry[1]);
+    stage4Puzzles = pickWithoutDuplicates(sortedMotif, usedInSession, quotas.weakness, sortedMotif);
   } else {
     stage4Focus = 'motif';
     stage4FocusLabel = 'Sharp Tactic Closer';
-    stage4Puzzles = deck.slice(0, quotas.weakness);
+    stage4Puzzles = pickWithoutDuplicates(allWorst, usedInSession, quotas.weakness, allWorst);
   }
 
   return {
@@ -199,6 +273,8 @@ export function buildDailyWorkoutPlan(params: {
     stage1Cards,
     stage2Blunders,
     stage3Woodpecker,
+    stage3OnCooldown,
+    stage3CooldownRemainingMs,
     stage4Focus,
     stage4FocusLabel,
     stage4Conversion,
@@ -208,23 +284,32 @@ export function buildDailyWorkoutPlan(params: {
 
 /**
  * Composes the 60-Second "Gravity Check" pre-game warmup:
- * - 3 timed 8-second hanging-piece / tactic flashes
- * - 2 due FSRS opening moves (falling back to starter course critical nodes)
+ * - 3 timed 8-second hanging-piece / tactic flashes (rotated per run so they aren't always identical)
+ * - 2 due FSRS opening moves (falling back to read-only starter course previews that NEVER overwrite real FSRS history!)
  */
 export function buildGravityCheckItems(params: {
   deck: MistakePuzzle[];
   fsrsCards: FsrsOpeningCard[];
   courses: OpeningCourse[];
   nowMs?: number;
+  sessionSeed?: number;
 }): GravityFlashItem[] {
   const { deck, fsrsCards, courses } = params;
   const nowMs = params.nowMs ?? Date.now();
+  const seed = params.sessionSeed ?? Math.floor(nowMs / 60_000);
   const items: GravityFlashItem[] = [];
 
-  // 1. Pick 3 crisp hanging-piece / tactical puzzles from user deck
-  const sharpDeck = deck
-    .filter((p) => p.winLoss >= 18 || /Hanging|Fork|Mate|Back Rank|Capture/i.test(p.tacticalTag))
-    .slice(0, 3);
+  // 1. Pick 3 crisp hanging-piece / tactical puzzles from user deck with deterministic rotation
+  const sharpPool = deck.filter(
+    (p) => p.winLoss >= 18 || /Hanging|Fork|Mate|Back-?Rank|Pin|Skewer|Deflection/i.test(p.tacticalTag)
+  );
+  const sharpDeck: MistakePuzzle[] = [];
+  if (sharpPool.length > 0) {
+    const startOffset = Math.abs(seed) % sharpPool.length;
+    for (let i = 0; i < Math.min(3, sharpPool.length); i++) {
+      sharpDeck.push(sharpPool[(startOffset + i) % sharpPool.length]);
+    }
+  }
 
   for (const p of sharpDeck) {
     items.push({
@@ -250,28 +335,34 @@ export function buildGravityCheckItems(params: {
     });
   }
 
-  // 2. Pick 2 due FSRS opening moves (or critical starter course moves if none due)
+  // 2. Pick 2 due FSRS opening moves; fallback previews omit `card` so they NEVER overwrite real FSRS history!
   const dueCards = fsrsCards
     .filter((c) => isCardDue(c, nowMs))
     .sort((a, b) => a.dueAt - b.dueAt)
     .slice(0, 2);
 
-  const openingPicks: FsrsOpeningCard[] = [...dueCards];
+  const openingPicks: Array<{ card: FsrsOpeningCard; isPersistedDue: boolean }> = dueCards.map((card) => ({
+    card,
+    isPersistedDue: true,
+  }));
+
   if (openingPicks.length < 2) {
-    const existingIds = new Set(openingPicks.map((c) => c.cardId));
+    const existingById = new Map(fsrsCards.map((c) => [c.cardId, c]));
+    const pickedIds = new Set(openingPicks.map((p) => p.card.cardId));
     for (const course of courses) {
-      const hydrated = hydrateCourseCards(course, undefined, { unlocked: true });
+      // Pass existingById and unlocked: false so fallback previews never fabricate fresh cards overwriting IDB
+      const hydrated = hydrateCourseCards(course, existingById, { unlocked: false });
       for (const card of hydrated) {
         if (openingPicks.length >= 2) break;
-        if (card.ply < 2 || existingIds.has(card.cardId)) continue;
-        existingIds.add(card.cardId);
-        openingPicks.push(card);
+        if (card.ply < 2 || pickedIds.has(card.cardId)) continue;
+        pickedIds.add(card.cardId);
+        openingPicks.push({ card, isPersistedDue: false });
       }
       if (openingPicks.length >= 2) break;
     }
   }
 
-  for (const card of openingPicks.slice(0, 2)) {
+  for (const { card, isPersistedDue } of openingPicks.slice(0, 2)) {
     const courseName = courses.find((c) => c.id === card.courseId)?.name ?? 'Opening Repertoire';
     items.push({
       id: `gc-open-${card.cardId}`,
@@ -283,7 +374,7 @@ export function buildGravityCheckItems(params: {
       prompt: `Play your ${card.side} repertoire move!`,
       subtitle: `${courseName} · Move ${Math.floor(card.ply / 2) + 1}`,
       timeLimitSec: 12,
-      card,
+      card: isPersistedDue ? card : undefined,
     });
   }
 

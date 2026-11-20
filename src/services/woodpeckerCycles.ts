@@ -85,24 +85,27 @@ export function findRadarPingTargets(
 }
 
 /**
- * Evaluates centipawn swing magnitude (in pawns) from the mover's perspective.
+ * Evaluates negative centipawn swing magnitude (in pawns) from the mover's perspective.
+ * Only counts mate flips AGAINST the mover (missed own mate or walked into opponent mate).
  */
 export function puzzleEvalSwingPawns(puzzle: MistakePuzzle): number {
   const sign = puzzle.color === 'w' ? 1 : -1;
   const beforeCp = Math.max(-1000, Math.min(1000, puzzle.evalBefore.cpWhite * sign));
   const afterCp = Math.max(-1000, Math.min(1000, puzzle.evalAfter.cpWhite * sign));
   const cpSwing = Math.max(0, (beforeCp - afterCp) / 100);
-  const mateFlip =
-    (puzzle.evalBefore.mateWhite !== null && puzzle.evalAfter.mateWhite === null) ||
-    (puzzle.evalBefore.mateWhite === null && puzzle.evalAfter.mateWhite !== null);
-  return mateFlip ? Math.max(cpSwing, 4.0) : Number(cpSwing.toFixed(2));
+  const moverHadMate = puzzle.evalBefore.mateWhite !== null && puzzle.evalBefore.mateWhite * sign > 0;
+  const moverHasMate = puzzle.evalAfter.mateWhite !== null && puzzle.evalAfter.mateWhite * sign > 0;
+  const oppHadMate = puzzle.evalBefore.mateWhite !== null && puzzle.evalBefore.mateWhite * sign < 0;
+  const oppHasMate = puzzle.evalAfter.mateWhite !== null && puzzle.evalAfter.mateWhite * sign < 0;
+  const negativeMateFlip = (moverHadMate && !moverHasMate) || (!oppHadMate && oppHasMate);
+  return negativeMateFlip ? Math.max(cpSwing, 4.0) : Number(cpSwing.toFixed(2));
 }
 
 /**
  * Filters a user's mistake deck to solvable Woodpecker puzzles:
  * - Eval swing >= 1.5 pawns (or winLoss >= 18%)
  * - Excludes obscure engine-only quiet inaccuracies (classification must be mistake/blunder)
- * - Prioritizes forcing tactics (captures, checks, promotions, clear hanging pieces)
+ * - Prioritizes forcing tactics (captures, checks, promotions, clear hanging pieces & named motifs)
  */
 export function selectSolvableWoodpeckerPuzzles(
   deck: MistakePuzzle[],
@@ -117,7 +120,7 @@ export function selectSolvableWoodpeckerPuzzles(
 
     // Exclude obscure deep-only quiet moves when swing is borderline (< 2.2 pawns)
     const isForcingBest = /[x+#=]/.test(p.bestMoveSan);
-    const isConcreteTag = /Hanging|Fork|Mate|Back Rank|Capture|Pin|Skewer|King Safety|Only Move/i.test(p.tacticalTag);
+    const isConcreteTag = /Hanging|Fork|Mate|Back-?Rank|Pin|Skewer|Discovered|Deflection|Only Move/i.test(p.tacticalTag);
     if (swing < 2.2 && !isForcingBest && !isConcreteTag) continue;
 
     const forcingBonus = isForcingBest ? 2.5 : 0;
@@ -152,19 +155,29 @@ export function createFrozenWoodpeckerCycle(
     puzzleIds: chosen.map((p) => p.id),
     currentCycle: 1,
     activeIndex: 0,
-    activeStartedAt: null,
+    activeStartedAt: nowMs,
     activeAttemptedIds: {},
     completedCycles: [],
     cooldownUntil: null,
   };
 }
 
+export function isWoodpeckerCycleMastered(cycle: WoodpeckerCycleRecord): boolean {
+  return cycle.completedCycles.length >= MAX_WOODPECKER_CYCLES;
+}
+
 export function recordWoodpeckerPuzzleOutcome(
   cycle: WoodpeckerCycleRecord,
   puzzleId: string,
   outcome: { wrongMoves: number; hintsUsed: number; solved: boolean },
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  availableIds?: Set<string>
 ): { updated: WoodpeckerCycleRecord; cycleJustCompleted: boolean } {
+  // Never append duplicate Cycle #7 completions after all 7 cycles are mastered
+  if (isWoodpeckerCycleMastered(cycle)) {
+    return { updated: cycle, cycleJustCompleted: false };
+  }
+
   const startedAt = cycle.activeStartedAt ?? nowMs;
   const firstTry = outcome.solved && outcome.wrongMoves === 0 && outcome.hintsUsed === 0;
   const nextAttempted: WoodpeckerCycleRecord['activeAttemptedIds'] = {
@@ -177,28 +190,38 @@ export function recordWoodpeckerPuzzleOutcome(
     },
   };
 
-  const totalCount = cycle.puzzleIds.length;
-  const completedCount = Object.keys(nextAttempted).length;
+  // Intersect with currently available deck IDs if supplied so deleted/switched games never wedge the cycle
+  const effectiveIds = availableIds
+    ? cycle.puzzleIds.filter((id) => availableIds.has(id))
+    : cycle.puzzleIds;
+  const totalCount = effectiveIds.length;
+  const completedCount = effectiveIds.filter((id) => id in nextAttempted).length;
   const allDone = totalCount > 0 && completedCount >= totalCount;
 
   if (!allDone) {
-    const nextIdx = cycle.puzzleIds.findIndex((id) => !(id in nextAttempted));
+    const nextIdx = cycle.puzzleIds.findIndex(
+      (id) => !(id in nextAttempted) && (!availableIds || availableIds.has(id))
+    );
     return {
       updated: {
         ...cycle,
         activeStartedAt: startedAt,
         activeAttemptedIds: nextAttempted,
-        activeIndex: nextIdx === -1 ? Math.min(totalCount - 1, cycle.activeIndex + 1) : nextIdx,
+        activeIndex: nextIdx === -1 ? Math.min(Math.max(0, cycle.puzzleIds.length - 1), cycle.activeIndex + 1) : nextIdx,
       },
       cycleJustCompleted: false,
     };
   }
 
   // Entire frozen cycle completed!
-  const records = Object.values(nextAttempted);
+  const records = effectiveIds
+    .map((id) => nextAttempted[id])
+    .filter((r): r is NonNullable<typeof r> => Boolean(r));
   const solvedCount = records.filter((r) => r.solved).length;
   const firstTryCount = records.filter((r) => r.firstTry).length;
-  const elapsedSeconds = Math.max(1, Math.round((nowMs - startedAt) / 1000));
+  // Cap single-session runaway idle gaps (e.g. left open overnight) cleanly at 4 hours
+  const rawElapsed = Math.round((nowMs - startedAt) / 1000);
+  const elapsedSeconds = Math.max(1, Math.min(4 * 3600, rawElapsed));
   const accuracyPct = Math.round((solvedCount / totalCount) * 100);
   const firstTryPct = Math.round((firstTryCount / totalCount) * 100);
 

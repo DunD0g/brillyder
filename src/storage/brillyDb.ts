@@ -125,6 +125,13 @@ export async function getBrillyDb(): Promise<IDBPDatabase<BrillyDbSchema>> {
           db.createObjectStore('training_logs', { keyPath: 'id' });
         }
       },
+      blocking() {
+        dbPromise = null;
+      },
+    }).catch((err) => {
+      // Never cache a permanently rejected DB open promise
+      dbPromise = null;
+      throw err;
     });
   }
   return dbPromise;
@@ -149,6 +156,7 @@ export async function hydrateStorageFromIndexedDb(): Promise<void> {
       const prefStore = tx.objectStore('prefs');
       const gameStore = tx.objectStore('analyzed_games');
       const now = Date.now();
+      const migratedGameKeys: string[] = [];
 
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -159,6 +167,7 @@ export async function hydrateStorageFromIndexedDb(): Promise<void> {
           const parsed = JSON.parse(raw) as unknown;
           if (key.startsWith('brillyder_game_') && parsed && typeof parsed === 'object' && 'id' in parsed) {
             await gameStore.put(parsed as AnalyzedGame);
+            migratedGameKeys.push(key);
           } else {
             const existing = await prefStore.get(key);
             if (!existing) {
@@ -176,8 +185,12 @@ export async function hydrateStorageFromIndexedDb(): Promise<void> {
       }
 
       await prefStore.put({ key: MIGRATION_FLAG_KEY, value: true, updatedAt: now });
-      prefCache.set(MIGRATION_FLAG_KEY, true);
       await tx.done;
+      prefCache.set(MIGRATION_FLAG_KEY, true);
+      // Free legacy analyzed-game blobs from localStorage quota once safely committed in IDB
+      for (const k of migratedGameKeys) {
+        try { localStorage.removeItem(k); } catch { /* ignore */ }
+      }
     }
   } catch {
     // Graceful fallback to localStorage cache if IndexedDB fails (e.g. private mode restrictions)
@@ -203,7 +216,22 @@ export async function getAllAnalyzedGamesIdb(): Promise<AnalyzedGame[]> {
     const list = await db.getAll('analyzed_games');
     return list.sort((a, b) => b.analyzedAt - a.analyzedAt);
   } catch {
-    return [];
+    // Read back localStorage fallback games so private-mode / IDB-error fallback isn't write-only
+    if (!canUseLocalStorage()) return [];
+    const fallbackGames: AnalyzedGame[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('brillyder_game_')) continue;
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) ?? '') as AnalyzedGame;
+        if (parsed && typeof parsed.id === 'string' && Array.isArray(parsed.plies)) {
+          fallbackGames.push(parsed);
+        }
+      } catch {
+        // skip corrupted fallback entry
+      }
+    }
+    return fallbackGames.sort((a, b) => b.analyzedAt - a.analyzedAt);
   }
 }
 
@@ -273,7 +301,14 @@ export async function saveRepertoire(course: OpeningCourse): Promise<void> {
 
 export async function deleteRepertoire(courseId: string): Promise<void> {
   const db = await getBrillyDb();
-  await db.delete('repertoires', courseId);
+  const tx = db.transaction(['repertoires', 'fsrs_cards'], 'readwrite');
+  await tx.objectStore('repertoires').delete(courseId);
+  const fsrsStore = tx.objectStore('fsrs_cards');
+  const cardKeys = await fsrsStore.index('by-course').getAllKeys(courseId);
+  for (const key of cardKeys) {
+    await fsrsStore.delete(key);
+  }
+  await tx.done;
 }
 
 /* ---------- FSRS Opening Cards ---------- */
@@ -409,14 +444,19 @@ export function validateBackupPayload(input: unknown): BrillyBackupPayload {
 
 export async function exportFullBackup(): Promise<BrillyBackupPayload> {
   const db = await getBrillyDb();
+  const tx = db.transaction(
+    ['analyzed_games', 'prefs', 'repertoires', 'fsrs_cards', 'woodpecker_cycles', 'training_logs'],
+    'readonly'
+  );
   const [analyzed_games, prefs, repertoires, fsrs_cards, woodpecker_cycles, training_logs] = await Promise.all([
-    db.getAll('analyzed_games'),
-    db.getAll('prefs'),
-    db.getAll('repertoires'),
-    db.getAll('fsrs_cards'),
-    db.getAll('woodpecker_cycles'),
-    db.getAll('training_logs'),
+    tx.objectStore('analyzed_games').getAll(),
+    tx.objectStore('prefs').getAll(),
+    tx.objectStore('repertoires').getAll(),
+    tx.objectStore('fsrs_cards').getAll(),
+    tx.objectStore('woodpecker_cycles').getAll(),
+    tx.objectStore('training_logs').getAll(),
   ]);
+  await tx.done;
   return {
     app: 'brillyder',
     schemaVersion: BACKUP_SCHEMA_VERSION,
@@ -460,42 +500,87 @@ export async function importFullBackup(
       tx.objectStore('woodpecker_cycles').clear(),
       tx.objectStore('training_logs').clear(),
     ]);
-    prefCache.clear();
+    // Keep migration flag inside the replace transaction so hydration never resurrects old localStorage keys
+    await tx.objectStore('prefs').put({ key: MIGRATION_FLAG_KEY, value: true, updatedAt: Date.now() });
   }
 
+  let gamesWritten = 0;
+  let prefsWritten = 0;
+  let repertoiresWritten = 0;
+  let fsrsWritten = 0;
+  let cyclesWritten = 0;
+  let logsWritten = 0;
+  const writtenPrefs: PrefRecord[] = [];
+
   for (const g of payload.stores.analyzed_games) {
-    if (g && typeof g.id === 'string') await tx.objectStore('analyzed_games').put(g);
+    if (g && typeof g.id === 'string' && Array.isArray(g.plies) && g.game) {
+      await tx.objectStore('analyzed_games').put(g);
+      gamesWritten++;
+    }
   }
   for (const p of payload.stores.prefs) {
     if (p && typeof p.key === 'string') {
       await tx.objectStore('prefs').put(p);
-      prefCache.set(p.key, p.value);
-      if (canUseLocalStorage() && p.key !== MIGRATION_FLAG_KEY) {
-        try { localStorage.setItem(p.key, JSON.stringify(p.value)); } catch { /* ignore */ }
-      }
+      writtenPrefs.push(p);
+      prefsWritten++;
     }
   }
   for (const r of payload.stores.repertoires) {
-    if (r && typeof r.id === 'string') await tx.objectStore('repertoires').put(r);
+    if (r && typeof r.id === 'string' && Array.isArray(r.lines)) {
+      await tx.objectStore('repertoires').put(r);
+      repertoiresWritten++;
+    }
   }
   for (const c of payload.stores.fsrs_cards) {
-    if (c && typeof c.cardId === 'string') await tx.objectStore('fsrs_cards').put(c);
+    if (c && typeof c.cardId === 'string' && typeof c.courseId === 'string') {
+      await tx.objectStore('fsrs_cards').put(c);
+      fsrsWritten++;
+    }
   }
   for (const w of payload.stores.woodpecker_cycles) {
-    if (w && typeof w.id === 'string') await tx.objectStore('woodpecker_cycles').put(w);
+    if (w && typeof w.id === 'string' && Array.isArray(w.puzzleIds)) {
+      await tx.objectStore('woodpecker_cycles').put(w);
+      cyclesWritten++;
+    }
   }
   for (const t of payload.stores.training_logs) {
-    if (t && typeof t.id === 'string') await tx.objectStore('training_logs').put(t);
+    if (t && typeof t.id === 'string') {
+      await tx.objectStore('training_logs').put(t);
+      logsWritten++;
+    }
   }
 
+  // Only mutate in-memory cache and localStorage AFTER the IDB transaction commits atomically!
   await tx.done;
 
+  if (mode === 'replace') {
+    prefCache.clear();
+    prefCache.set(MIGRATION_FLAG_KEY, true);
+    if (canUseLocalStorage()) {
+      const toRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('brillyder_')) toRemove.push(key);
+      }
+      for (const k of toRemove) {
+        try { localStorage.removeItem(k); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  for (const p of writtenPrefs) {
+    prefCache.set(p.key, p.value);
+    if (canUseLocalStorage() && p.key !== MIGRATION_FLAG_KEY) {
+      try { localStorage.setItem(p.key, JSON.stringify(p.value)); } catch { /* ignore */ }
+    }
+  }
+
   return {
-    analyzedGames: payload.stores.analyzed_games.length,
-    prefs: payload.stores.prefs.length,
-    repertoires: payload.stores.repertoires.length,
-    fsrsCards: payload.stores.fsrs_cards.length,
-    woodpeckerCycles: payload.stores.woodpecker_cycles.length,
-    trainingLogs: payload.stores.training_logs.length,
+    analyzedGames: gamesWritten,
+    prefs: prefsWritten,
+    repertoires: repertoiresWritten,
+    fsrsCards: fsrsWritten,
+    woodpeckerCycles: cyclesWritten,
+    trainingLogs: logsWritten,
   };
 }

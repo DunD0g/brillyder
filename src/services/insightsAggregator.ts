@@ -3,7 +3,6 @@ import type {
   AnalyzedGame,
   AnalyzedPly,
   CheckpointMetrics,
-  ClockBucketStats,
   ColourSplit,
   EndgameCategory,
   EndgameCategoryStat,
@@ -14,13 +13,17 @@ import type {
   PhaseBlunderStats,
   PlayerColor,
   TiltStreakBucket,
+  ClockBucketStats,
   TwentyGameCheckpoints,
 } from '../types/chess';
-import { classifyEndgameCategory } from '../chess/tacticalMotifs';
 import { clamp, computeMoveTimeSpent, parsePgnTimeControl } from '../utils/chessMath';
-import { resultForUser, resolveUserColor } from '../utils/player';
+import { resultForUserStrict, resolveUserColor } from '../utils/player';
+import { classifyEndgameCategory } from '../chess/tacticalMotifs';
+import { ADVANTAGE_THRESHOLD_CP, userPerspectiveCp } from './advantageConversion';
 
-interface RatingBand {
+const ENDGAME_CATEGORIES: EndgameCategory[] = ['Rook', 'Pawn', 'Minor Piece', 'Queen', 'Rook+Minor'];
+
+interface RatingBandExpectation {
   label: string;
   min: number;
   max: number;
@@ -34,23 +37,21 @@ interface RatingBand {
   };
 }
 
-const RATING_BANDS: RatingBand[] = [
-  { label: 'Beginner', min: 0, max: 1000, expected: { openingAcc: 70, midAcc: 64, endAcc: 60, conversion: 42, resilience: 42, lowClockAcc: 58 } },
-  { label: 'Novice', min: 1000, max: 1300, expected: { openingAcc: 76, midAcc: 71, endAcc: 67, conversion: 50, resilience: 50, lowClockAcc: 64 } },
-  { label: 'Intermediate', min: 1300, max: 1600, expected: { openingAcc: 80, midAcc: 76, endAcc: 72, conversion: 56, resilience: 56, lowClockAcc: 69 } },
-  { label: 'Advanced', min: 1600, max: 1900, expected: { openingAcc: 84, midAcc: 81, endAcc: 77, conversion: 62, resilience: 62, lowClockAcc: 74 } },
-  { label: 'Expert', min: 1900, max: 2200, expected: { openingAcc: 88, midAcc: 85, endAcc: 82, conversion: 68, resilience: 68, lowClockAcc: 79 } },
-  { label: 'Master', min: 2200, max: 4000, expected: { openingAcc: 91, midAcc: 89, endAcc: 87, conversion: 74, resilience: 74, lowClockAcc: 83 } },
+const BANDS: RatingBandExpectation[] = [
+  { label: 'Under 1000', min: 0, max: 999, expected: { openingAcc: 67, midAcc: 58, endAcc: 54, conversion: 56, resilience: 45, lowClockAcc: 52 } },
+  { label: '1000–1299', min: 1000, max: 1299, expected: { openingAcc: 74, midAcc: 66, endAcc: 62, conversion: 65, resilience: 54, lowClockAcc: 59 } },
+  { label: '1300–1599', min: 1300, max: 1599, expected: { openingAcc: 80, midAcc: 73, endAcc: 70, conversion: 73, resilience: 62, lowClockAcc: 66 } },
+  { label: '1600–1899', min: 1600, max: 1899, expected: { openingAcc: 85, midAcc: 79, endAcc: 76, conversion: 80, resilience: 70, lowClockAcc: 73 } },
+  { label: '1900–2199', min: 1900, max: 2199, expected: { openingAcc: 89, midAcc: 84, endAcc: 82, conversion: 85, resilience: 76, lowClockAcc: 79 } },
+  { label: '2200+', min: 2200, max: 9999, expected: { openingAcc: 92, midAcc: 88, endAcc: 87, conversion: 90, resilience: 82, lowClockAcc: 84 } },
 ];
 
-const ENDGAME_CATEGORIES: EndgameCategory[] = ['Rook', 'Pawn', 'Minor Piece', 'Queen', 'Rook+Minor'];
-
-function bandForRating(rating: number): RatingBand {
-  return RATING_BANDS.find((b) => rating >= b.min && rating < b.max) ?? RATING_BANDS[2];
+function bandForRating(rating: number): RatingBandExpectation {
+  return BANDS.find((b) => rating >= b.min && rating <= b.max) ?? BANDS[2];
 }
 
-function relativeScore(raw: number, expected: number, spread: number): number {
-  return clamp(Math.round(50 + ((raw - expected) / spread) * 34), 10, 99);
+function relativeScore(actual: number, expected: number, spread: number): number {
+  return Math.round(clamp(55 + ((actual - expected) / spread) * 24, 15, 99));
 }
 
 function emptyPhase(phase: 'Opening' | 'Middlegame' | 'Endgame'): PhaseBlunderStats {
@@ -59,10 +60,10 @@ function emptyPhase(phase: 'Opening' | 'Middlegame' | 'Endgame'): PhaseBlunderSt
 
 function emptyClockBuckets(): ClockBucketStats[] {
   return [
-    { label: '<30s', clockLimit: 30, moves: 0, mistakes: 0, blunders: 0, errorsPer10Moves: 0, accuracy: 0 },
-    { label: '30–60s', clockLimit: 60, moves: 0, mistakes: 0, blunders: 0, errorsPer10Moves: 0, accuracy: 0 },
-    { label: '1–3m', clockLimit: 180, moves: 0, mistakes: 0, blunders: 0, errorsPer10Moves: 0, accuracy: 0 },
-    { label: '>3m', clockLimit: Number.POSITIVE_INFINITY, moves: 0, mistakes: 0, blunders: 0, errorsPer10Moves: 0, accuracy: 0 },
+    { label: '< 30s', clockLimit: 30, moves: 0, mistakes: 0, blunders: 0, accuracy: 0, errorsPer10Moves: 0 },
+    { label: '30s–1m', clockLimit: 60, moves: 0, mistakes: 0, blunders: 0, accuracy: 0, errorsPer10Moves: 0 },
+    { label: '1m–3m', clockLimit: 180, moves: 0, mistakes: 0, blunders: 0, accuracy: 0, errorsPer10Moves: 0 },
+    { label: '3m+', clockLimit: Number.POSITIVE_INFINITY, moves: 0, mistakes: 0, blunders: 0, accuracy: 0, errorsPer10Moves: 0 },
   ];
 }
 
@@ -70,11 +71,12 @@ function emptyColour(): ColourSplit {
   return { games: 0, wins: 0, draws: 0, losses: 0, winRate: 0, accuracy: 0 };
 }
 
-function finishColour(split: ColourSplit, accuracySum: number): ColourSplit {
+function finishColour(raw: ColourSplit, accSum: number, scoredGames: number): ColourSplit {
+  if (raw.games === 0) return raw;
   return {
-    ...split,
-    winRate: split.games > 0 ? Math.round(((split.wins + split.draws * 0.5) / split.games) * 100) : 0,
-    accuracy: split.games > 0 ? Number((accuracySum / split.games).toFixed(1)) : 0,
+    ...raw,
+    winRate: scoredGames > 0 ? Math.round(((raw.wins + raw.draws * 0.5) / scoredGames) * 100) : 0,
+    accuracy: Number((accSum / raw.games).toFixed(1)),
   };
 }
 
@@ -86,7 +88,7 @@ function gameHighlightScore(input: {
   brilliants: number;
   blunders: number;
 }): number {
-  const resultBonus = input.result === 'W' ? 18 : input.result === 'D' ? 4 : -14;
+  const resultBonus = input.result === 'W' ? 7 : input.result === 'D' ? 1 : -5;
   const ratingGap = input.opponentRating > 0 && input.userRating > 0 ? input.opponentRating - input.userRating : 0;
   const opponentBonus = clamp(ratingGap / 12, -6, 8);
   return Number((input.accuracy + resultBonus + opponentBonus + Math.min(6, input.brilliants * 3) - Math.min(8, input.blunders * 2)).toFixed(1));
@@ -97,17 +99,22 @@ function resolveClockMetricsForGame(ag: AnalyzedGame, uc: PlayerColor): {
   timeTroubleBlunders: number;
   spentSum: number;
   spentCount: number;
+  hasClockData: boolean;
 } {
-  const tc = parsePgnTimeControl(ag.game.pgn);
+  const tc = parsePgnTimeControl(ag.game.pgn, ag.game.timeControlLabel);
   let prevClock = tc.baseSeconds ?? undefined;
   let impulseBlunders = 0;
   let timeTroubleBlunders = 0;
   let spentSum = 0;
   let spentCount = 0;
+  let hasClockData = false;
 
   for (const p of ag.plies) {
     if (p.color !== uc) continue;
-    const spent = p.timeSpentSeconds ?? computeMoveTimeSpent(prevClock, p.clockSeconds, tc.incrementSeconds);
+    if (p.clockSeconds !== undefined) hasClockData = true;
+    const spent =
+      p.timeSpentSeconds ??
+      computeMoveTimeSpent(prevClock, p.clockSeconds, tc.incrementSeconds, p.moveNumber === 1);
     if (spent !== undefined) {
       spentSum += spent;
       spentCount++;
@@ -126,23 +133,25 @@ function resolveClockMetricsForGame(ag: AnalyzedGame, uc: PlayerColor): {
     if (p.clockSeconds !== undefined) prevClock = p.clockSeconds;
   }
 
-  return { impulseBlunders, timeTroubleBlunders, spentSum, spentCount };
+  return { impulseBlunders, timeTroubleBlunders, spentSum, spentCount, hasClockData };
 }
 
 function computeCheckpointSlice(games: AnalyzedGame[], username: string): CheckpointMetrics {
   let eval10Sum = 0;
   let eval10Count = 0;
   let impulseTotal = 0;
+  let clockGamesCount = 0;
   let winningGames = 0;
   let blownGames = 0;
 
   for (const ag of games) {
     const uc = resolveUserColor(ag.game, username);
-    const result = resultForUser(ag.game, uc);
+    const result = resultForUserStrict(ag.game, uc);
     const sign = uc === 'w' ? 1 : -1;
 
-    const ply10Idx = Math.min(ag.plies.length - 1, 19);
-    if (ply10Idx >= 0) {
+    // Require >= 16 plies (8 full moves) so early checkmates/aborts don't skew Move-10 eval
+    if (ag.plies.length >= 16) {
+      const ply10Idx = Math.min(ag.plies.length - 1, 19);
       const cp = Math.max(-800, Math.min(800, ag.plies[ply10Idx].evalAfter.cpWhite * sign));
       eval10Sum += cp / 100;
       eval10Count++;
@@ -150,26 +159,30 @@ function computeCheckpointSlice(games: AnalyzedGame[], username: string): Checkp
 
     const cm = resolveClockMetricsForGame(ag, uc);
     impulseTotal += cm.impulseBlunders;
+    if (cm.hasClockData) clockGamesCount++;
 
-    let hadClearLead = false;
-    for (const p of ag.plies) {
-      if (p.color !== uc) continue;
-      if (p.evalBefore.cpWhite * sign >= 250) {
-        hadClearLead = true;
-        break;
+    if (result) {
+      let hadClearLead = false;
+      for (const p of ag.plies) {
+        if (p.color !== uc) continue;
+        if (userPerspectiveCp(p.evalBefore, uc) >= ADVANTAGE_THRESHOLD_CP) {
+          hadClearLead = true;
+          break;
+        }
       }
-    }
-    if (hadClearLead) {
-      winningGames++;
-      if (result !== 'W') blownGames++;
+      if (hadClearLead) {
+        winningGames++;
+        if (result !== 'W') blownGames++;
+      }
     }
   }
 
+  const impulseDenom = clockGamesCount > 0 ? clockGamesCount : games.length;
   return {
     games: games.length,
     avgEvalMove10: eval10Count > 0 ? Number((eval10Sum / eval10Count).toFixed(2)) : null,
-    impulseBlundersPerGame: games.length > 0 ? Number((impulseTotal / games.length).toFixed(2)) : 0,
-    blownLeadPct: winningGames > 0 ? Math.round((blownGames / winningGames) * 100) : 0,
+    impulseBlundersPerGame: impulseDenom > 0 ? Number((impulseTotal / impulseDenom).toFixed(2)) : 0,
+    blownLeadPct: winningGames > 0 ? Math.round((blownGames / winningGames) * 100) : null,
   };
 }
 
@@ -233,15 +246,19 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   let giantBest: GameHighlight | null = null;
   let impulseBlunders = 0;
   let timeTroubleBlunders = 0;
+  let clockAnnotatedGames = 0;
   let spentSumTotal = 0;
   let spentCountTotal = 0;
 
-  const highlights: GameHighlight[] = [];
-  const colourAcc: Record<PlayerColor, { split: ColourSplit; accSum: number }> = {
-    w: { split: emptyColour(), accSum: 0 },
-    b: { split: emptyColour(), accSum: 0 },
+  const highlights: Array<GameHighlight & { worstPly: number; hasFinishedResult: boolean }> = [];
+  const colourAcc: Record<PlayerColor, { split: ColourSplit; accSum: number; scoredGames: number }> = {
+    w: { split: emptyColour(), accSum: 0, scoredGames: 0 },
+    b: { split: emptyColour(), accSum: 0, scoredGames: 0 },
   };
-  const openMap = new Map<string, { name: string; eco: string; games: number; wins: number; draws: number; losses: number; accSum: number }>();
+  const openMap = new Map<
+    string,
+    { name: string; eco: string; games: number; scoredGames: number; wins: number; draws: number; losses: number; accSum: number }
+  >();
   const phases: Record<'opening' | 'middlegame' | 'endgame', AnalyzedPly[]> = { opening: [], middlegame: [], endgame: [] };
   const clockMoves: AnalyzedPly[] = [];
   const motifMap = new Map<string, { count: number; winLossSum: number }>();
@@ -259,12 +276,15 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       ratingAnchorCount++;
     }
 
-    const result = resultForUser(ag.game, uc);
-    if (result === 'W') wins++; else if (result === 'D') draws++; else losses++;
+    const strictResult = resultForUserStrict(ag.game, uc);
+    if (strictResult === 'W') wins++;
+    else if (strictResult === 'D') draws++;
+    else if (strictResult === 'L') losses++;
 
     const cm = resolveClockMetricsForGame(ag, uc);
     impulseBlunders += cm.impulseBlunders;
     timeTroubleBlunders += cm.timeTroubleBlunders;
+    if (cm.hasClockData) clockAnnotatedGames++;
     spentSumTotal += cm.spentSum;
     spentCountTotal += cm.spentCount;
 
@@ -278,16 +298,30 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
 
     const rawOpen = ag.openingLineDetected || ag.game.openingName || 'Unknown Opening';
     const family = rawOpen.includes(':') ? rawOpen.slice(0, rawOpen.indexOf(':')).trim() : rawOpen.trim();
-    const bucket = openMap.get(family) ?? { name: family, eco: ag.game.openingEco || '', games: 0, wins: 0, draws: 0, losses: 0, accSum: 0 };
+    const bucket = openMap.get(family) ?? {
+      name: family,
+      eco: ag.game.openingEco || '',
+      games: 0,
+      scoredGames: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      accSum: 0,
+    };
+    if (!bucket.eco && ag.game.openingEco) bucket.eco = ag.game.openingEco;
     bucket.games++;
     bucket.accSum += sum.accuracy;
-    if (result === 'W') bucket.wins++; else if (result === 'D') bucket.draws++; else bucket.losses++;
+    if (strictResult === 'W') { bucket.wins++; bucket.scoredGames++; }
+    else if (strictResult === 'D') { bucket.draws++; bucket.scoredGames++; }
+    else if (strictResult === 'L') { bucket.losses++; bucket.scoredGames++; }
     openMap.set(family, bucket);
 
     const colour = colourAcc[uc];
     colour.split.games++;
     colour.accSum += sum.accuracy;
-    if (result === 'W') colour.split.wins++; else if (result === 'D') colour.split.draws++; else colour.split.losses++;
+    if (strictResult === 'W') { colour.split.wins++; colour.scoredGames++; }
+    else if (strictResult === 'D') { colour.split.draws++; colour.scoredGames++; }
+    else if (strictResult === 'L') { colour.split.losses++; colour.scoredGames++; }
 
     let hadClearAdvantage = false;
     let userBrilliants = 0;
@@ -295,18 +329,23 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     let userGreats = 0;
     let firstBrilliantPly = 0;
     let firstGreatPly = 0;
+    let worstPly = 0;
+    let maxWinLoss = -1;
     let minWp = uc === 'w' ? ag.initialEval.winPercentWhite : 100 - ag.initialEval.winPercentWhite;
-    let maxWp = minWp;
 
     for (const p of ag.plies) {
       const wpAll = uc === 'w' ? p.evalBefore.winPercentWhite : 100 - p.evalBefore.winPercentWhite;
       const wpAfter = uc === 'w' ? p.evalAfter.winPercentWhite : 100 - p.evalAfter.winPercentWhite;
       minWp = Math.min(minWp, wpAll, wpAfter);
-      maxWp = Math.max(maxWp, wpAll, wpAfter);
 
       if (p.color !== uc) continue;
       phases[p.phase].push(p);
       if (p.clockSeconds !== undefined) clockMoves.push(p);
+
+      if (p.winLoss > maxWinLoss) {
+        maxWinLoss = p.winLoss;
+        worstPly = p.ply;
+      }
 
       // Motif tracking for mistakes & blunders
       if (p.classification === 'mistake' || p.classification === 'blunder') {
@@ -342,8 +381,13 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
         if (firstGreatPly === 0) firstGreatPly = p.ply;
       }
       if (p.classification === 'blunder') userBlunders++;
+
+      // Unified clear-lead threshold (+2.5 pawns) aligned across Conversion, Checkpoints, and Blown Wins
+      if (userPerspectiveCp(p.evalBefore, uc) >= ADVANTAGE_THRESHOLD_CP) {
+        hadClearAdvantage = true;
+      }
+
       const wp = uc === 'w' ? p.evalBefore.winPercentWhite : 100 - p.evalBefore.winPercentWhite;
-      if (wp >= 68) hadClearAdvantage = true;
       if (wp >= 20 && wp <= 45) {
         defMoves++;
         if (p.winLoss <= 10) heldDef++;
@@ -354,36 +398,39 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       }
     }
 
-    if (hadClearAdvantage) {
-      winPos++;
-      if (result === 'W') convWinPos++;
+    if (strictResult) {
+      if (hadClearAdvantage) {
+        winPos++;
+        if (strictResult === 'W') convWinPos++;
+        else blownWins++;
+      }
+      if (strictResult === 'W' && minWp <= 20) comebacks++;
     }
-    if (result === 'W' && minWp <= 20) comebacks++;
-    if (result === 'L' && maxWp >= 80) blownWins++;
-    if (userBlunders === 0) blunderFreeGames++;
+    if (userBlunders === 0 && ag.plies.length >= 2) blunderFreeGames++;
     bestAccuracy = Math.max(bestAccuracy, sum.accuracy);
 
+    const displayResult: 'W' | 'D' | 'L' = strictResult ?? 'D';
     const highlightPly = firstBrilliantPly || firstGreatPly || ag.plies.length;
     const score = gameHighlightScore({
       accuracy: sum.accuracy,
-      result,
+      result: displayResult,
       userRating,
       opponentRating,
       brilliants: userBrilliants,
       blunders: userBlunders,
     });
     const reasonBits = [`${sum.accuracy.toFixed(1)}% accuracy`];
-    if (result === 'W' && opponentRating > 0) reasonBits.push(`beat ${opponentRating}`);
+    if (strictResult === 'W' && opponentRating > 0) reasonBits.push(`beat ${opponentRating}`);
     if (userBrilliants > 0) reasonBits.push(`${userBrilliants} !!`);
     if (userGreats > 0) reasonBits.push(`${userGreats} great`);
     if (userBlunders === 0) reasonBits.push('0 blunders');
-    const highlight: GameHighlight = {
+    const highlight: GameHighlight & { worstPly: number; hasFinishedResult: boolean } = {
       gameId: ag.id,
       opponent: opponentName,
       opponentRating,
       userRating,
       userColor: uc,
-      result,
+      result: displayResult,
       accuracy: sum.accuracy,
       opening: rawOpen,
       playedAt: ag.game.createdAt,
@@ -391,21 +438,28 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       blunders: userBlunders,
       score,
       highlightPly,
+      worstPly: worstPly || ag.plies.length,
+      hasFinishedResult: strictResult !== null,
       reason: reasonBits.join(' · '),
     };
     highlights.push(highlight);
 
-    if (userRating > 0 && opponentRating >= userRating + 50) {
+    if (strictResult && userRating > 0 && opponentRating >= userRating + 50) {
       giantGames++;
-      if (result === 'W') {
+      if (strictResult === 'W') {
         giantWins++;
         if (!giantBest || opponentRating > giantBest.opponentRating) giantBest = highlight;
       }
     }
   }
 
+  // Deterministic chronological ordering (ties broken by id)
+  const chronological = games
+    .slice()
+    .sort((a, b) => a.game.createdAt - b.game.createdAt || a.id.localeCompare(b.id));
+
   // Tilt Guard: chronological win-rate by consecutive prior losses (0L, 1L, 2L, 3L+)
-  const chronological = games.slice().sort((a, b) => a.game.createdAt - b.game.createdAt);
+  // Excludes unfinished '*' games so aborts never distort or reset tilt streaks.
   const tiltBuckets: TiltStreakBucket[] = [
     { label: 'Fresh (0L)', priorLosses: 0, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
     { label: 'After 1L', priorLosses: 1, games: 0, wins: 0, draws: 0, losses: 0, winRate: 0 },
@@ -415,7 +469,8 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   let runningLosses = 0;
   for (const ag of chronological) {
     const uc = resolveUserColor(ag.game, username);
-    const res = resultForUser(ag.game, uc);
+    const res = resultForUserStrict(ag.game, uc);
+    if (!res) continue;
     const bIdx = Math.min(3, runningLosses);
     const tb = tiltBuckets[bIdx];
     tb.games++;
@@ -482,7 +537,16 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   }
 
   const openings: OpeningStat[] = Array.from(openMap.values())
-    .map((o) => ({ ...o, winRate: Math.round(((o.wins + o.draws * 0.5) / o.games) * 100), avgAccuracy: Number((o.accSum / o.games).toFixed(1)) }))
+    .map((o) => ({
+      name: o.name,
+      eco: o.eco,
+      games: o.games,
+      wins: o.wins,
+      draws: o.draws,
+      losses: o.losses,
+      winRate: o.scoredGames > 0 ? Math.round(((o.wins + o.draws * 0.5) / o.scoredGames) * 100) : 0,
+      avgAccuracy: Number((o.accSum / o.games).toFixed(1)),
+    }))
     .sort((a, b) => b.games - a.games || b.winRate - a.winRate);
 
   const missedMotifs: MotifWeaknessStat[] = Array.from(motifMap.entries())
@@ -504,26 +568,45 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     };
   }).filter((c) => c.moves > 0);
 
-  const bestGames = highlights.slice().sort((a, b) => b.score - a.score).slice(0, 3);
-  const worstGame = highlights.slice().sort((a, b) => a.score - b.score)[0] ?? null;
-  const byDate = highlights.slice().sort((a, b) => b.playedAt - a.playedAt);
-  const latestResult = byDate[0]?.result;
+  const bestGames: GameHighlight[] = highlights
+    .slice()
+    .sort((a, b) => b.score - a.score || b.playedAt - a.playedAt)
+    .slice(0, 3);
+  const worstCandidate =
+    highlights.length > 1
+      ? highlights.slice().sort((a, b) => a.score - b.score || a.playedAt - b.playedAt)[0]
+      : null;
+  const worstGame: GameHighlight | null = worstCandidate
+    ? { ...worstCandidate, highlightPly: worstCandidate.worstPly }
+    : null;
+
+  // Reverse chronological for current streak (strictly matching chronological tie-breaker)
+  const finishedByDate = highlights
+    .filter((h) => h.hasFinishedResult)
+    .sort((a, b) => b.playedAt - a.playedAt || b.gameId.localeCompare(a.gameId));
+  const latestResult = finishedByDate[0]?.result;
   const streakKind: 'W' | 'D' | 'L' | 'none' = latestResult ?? 'none';
   let streakCount = 0;
   if (latestResult) {
-    for (const h of byDate) {
+    for (const h of finishedByDate) {
       if (h.result !== latestResult) break;
       streakCount++;
     }
   }
   const consecutiveLosses = streakKind === 'L' ? streakCount : 0;
 
+  // Opening Best vs Worst: fall back to full openings if <2 openings meet games>=2, and NEVER return the same opening for both!
   const openingPool = openings.filter((o) => o.games >= 2);
-  const ratedOpenings = openingPool.length > 0 ? openingPool : openings;
-  const openingBest = ratedOpenings.slice().sort((a, b) => b.winRate - a.winRate || b.avgAccuracy - a.avgAccuracy)[0] ?? null;
-  const openingWorst = ratedOpenings.length > 1
-    ? ratedOpenings.slice().sort((a, b) => a.winRate - b.winRate || a.avgAccuracy - b.avgAccuracy)[0] ?? null
-    : null;
+  const ratedOpenings = openingPool.length >= 2 ? openingPool : openings;
+  const openingBest =
+    ratedOpenings
+      .slice()
+      .sort((a, b) => b.winRate - a.winRate || b.avgAccuracy - a.avgAccuracy || b.games - a.games)[0] ?? null;
+  const worstPool = openingBest ? ratedOpenings.filter((o) => o.name !== openingBest.name) : ratedOpenings;
+  const openingWorst =
+    worstPool
+      .slice()
+      .sort((a, b) => a.winRate - b.winRate || a.avgAccuracy - b.avgAccuracy || b.games - a.games)[0] ?? null;
 
   const avgAccuracy = Number((accSum / games.length).toFixed(1));
   const avgEstimatedElo = Math.round(eloSum / games.length);
@@ -542,6 +625,11 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
   const lowClockAcc = lowClockMoves.length > 0
     ? lowClockMoves.reduce((sum, p) => sum + p.accuracy, 0) / lowClockMoves.length
     : avgAccuracy;
+  const impulseDenom = clockAnnotatedGames > 0 ? clockAnnotatedGames : games.length;
+  const impulsePerGame = Number((impulseBlunders / Math.max(1, impulseDenom)).toFixed(2));
+  // Factor impulse blunders into effective time-management accuracy
+  const impulsePenalty = Math.min(14, impulsePerGame * 6);
+  const effectiveTimeAcc = clamp(lowClockAcc - impulsePenalty, 0, 100);
 
   const measured: Record<'openings' | 'tactics' | 'endgames' | 'conversion' | 'resilience' | 'timeManagement', boolean> = {
     openings: phases.opening.length >= 4,
@@ -549,7 +637,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     endgames: phases.endgame.length >= 4,
     conversion: winPos >= 2,
     resilience: defMoves >= 4,
-    timeManagement: lowClockMoves.length >= 5,
+    timeManagement: lowClockMoves.length >= 5 || clockAnnotatedGames >= 2,
   };
 
   const skillProfile = {
@@ -558,7 +646,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     endgames: measured.endgames ? relativeScore(endAcc, exp.endAcc, 11) : 50,
     conversion: measured.conversion ? relativeScore(conversionRaw, exp.conversion, 22) : 50,
     resilience: measured.resilience ? relativeScore(resilienceRaw, exp.resilience, 22) : 50,
-    timeManagement: measured.timeManagement ? relativeScore(lowClockAcc, exp.lowClockAcc, 10) : 50,
+    timeManagement: measured.timeManagement ? relativeScore(effectiveTimeAcc, exp.lowClockAcc, 10) : 50,
   };
 
   const trend: AccuracyTrendPoint[] = chronological
@@ -570,7 +658,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       return {
         date: ag.game.createdAt,
         accuracy: sum.accuracy,
-        result: resultForUser(ag.game, uc),
+        result: resultForUserStrict(ag.game, uc) ?? 'D',
         opening: ag.openingLineDetected || ag.game.openingName || 'Unknown Opening',
         opponent,
       };
@@ -590,7 +678,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     conversion: `You convert ${conversionRaw.toFixed(0)}% of clear advantages. Launch Tractor Beam Conversion drills to practice simplifying +2.5 leads.`,
     openings: `Your opening accuracy is ${openingAcc.toFixed(0)}%. Lock in your starter repertoires with FSRS and patch uncovered replies.`,
     resilience: `Defensive resilience (${skillProfile.resilience}/100) — when worse, prioritise king safety, blockading, and active counterplay.`,
-    timeManagement: `Time management: low-clock accuracy is ${lowClockAcc.toFixed(0)}%. Eliminate impulse moves when >3m remain on your clock.`,
+    timeManagement: `Time management: low-clock accuracy is ${lowClockAcc.toFixed(0)}% with ${impulsePerGame.toFixed(2)} impulse mistakes/game. Slow down on critical turns when >3m remain.`,
   };
   const measuredKeys = (Object.keys(skillProfile) as Array<keyof typeof skillProfile>).filter((k) => measured[k]);
   const focusKeys = measuredKeys.length > 0 ? measuredKeys : (Object.keys(skillProfile) as Array<keyof typeof skillProfile>);
@@ -615,7 +703,7 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
       impulseBlunders,
       timeTroubleBlunders,
       avgTimeSpentSec: spentCountTotal > 0 ? Math.round(spentSumTotal / spentCountTotal) : 0,
-      impulsePerGame: Number((impulseBlunders / games.length).toFixed(2)),
+      impulsePerGame,
     },
     tiltGuard: {
       buckets: tiltBuckets,
@@ -638,8 +726,8 @@ export function computeMultiGameInsights(games: AnalyzedGame[], username: string
     blownWins,
     blunderFreeGames,
     scoreByColour: {
-      white: finishColour(colourAcc.w.split, colourAcc.w.accSum),
-      black: finishColour(colourAcc.b.split, colourAcc.b.accSum),
+      white: finishColour(colourAcc.w.split, colourAcc.w.accSum, colourAcc.w.scoredGames),
+      black: finishColour(colourAcc.b.split, colourAcc.b.accSum, colourAcc.b.scoredGames),
     },
     currentStreak: { kind: streakKind, count: streakCount },
     openingBest,

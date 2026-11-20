@@ -467,11 +467,21 @@ export const InsightsView: React.FC<Props> = ({
                   />
                   <CheckpointRow
                     label="Blown Lead %"
-                    recent={`${insights.checkpoints.recent.blownLeadPct}%`}
-                    previous={`${insights.checkpoints.previous.blownLeadPct}%`}
+                    recent={
+                      insights.checkpoints.recent.blownLeadPct !== null
+                        ? `${insights.checkpoints.recent.blownLeadPct}%`
+                        : '—'
+                    }
+                    previous={
+                      insights.checkpoints.previous.blownLeadPct !== null
+                        ? `${insights.checkpoints.previous.blownLeadPct}%`
+                        : '—'
+                    }
                     improved={
-                      insights.checkpoints.recent.blownLeadPct <=
-                      insights.checkpoints.previous.blownLeadPct
+                      insights.checkpoints.recent.blownLeadPct !== null &&
+                      insights.checkpoints.previous.blownLeadPct !== null
+                        ? insights.checkpoints.recent.blownLeadPct <= insights.checkpoints.previous.blownLeadPct
+                        : true
                     }
                   />
                 </div>
