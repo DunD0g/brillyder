@@ -5,6 +5,8 @@ import {
   Gem,
   GraduationCap,
   ListChecks,
+  Pause,
+  Play,
   Sparkles,
   Volume2,
   VolumeX,
@@ -57,6 +59,7 @@ import {
 import { stockfishService } from './engine/StockfishService';
 import { maiaService } from './engine/MaiaService';
 import { soundManager } from './utils/sound';
+import { computeBatchProgressPercent, computeSingleGamePercent } from './utils/analysisProgress';
 import { getVibeCopy, VibeProvider, type VibeMode } from './utils/vibeCopy';
 import {
   boostCardToDueNow,
@@ -126,7 +129,7 @@ export const App: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number; stageLabel?: string } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; stageLabel?: string; percent?: number } | null>(null);
   const [batch, setBatch] = useState<BatchState | null>(null);
   const [scout, setScout] = useState<ScoutState | null>(null);
   const [muted, setMuted] = useState<boolean>(() => soundManager.isMuted());
@@ -462,12 +465,16 @@ export const App: React.FC = () => {
     if (isStale()) return;
     setAnalyzing(true);
     setProgress(null);
+    let maxPct = 2;
     try {
       const analyzed = await analyzeGameToReview(targetGame, depth, {
         persist: true,
         shouldCancel: isStale,
-        onProgress: (done, total, stageLabel) => {
-          if (!isStale()) setProgress({ done, total, stageLabel });
+        onProgress: (done, total, stageLabel, meta) => {
+          if (isStale()) return;
+          const frac = meta?.gameFraction ?? (total > 0 ? done / total : 0);
+          maxPct = computeSingleGamePercent(frac, maxPct, true);
+          setProgress({ done, total, stageLabel, percent: maxPct });
         },
       });
       if (isStale()) return;
@@ -515,22 +522,61 @@ export const App: React.FC = () => {
     batchCancelRef.current = false;
     batchPauseRef.current = false;
     const isStale = () => batchRunRef.current !== runId || batchCancelRef.current;
+    const waitIfPaused = async () => {
+      while (batchPauseRef.current && !isStale()) await wait(160);
+    };
     setNotice(null);
-    setBatch({ active: true, paused: false, total: queue.length, done: 0, currentLabel: 'Preparing engine…' });
+    let maxBatchPct = 2;
+    setBatch({
+      active: true,
+      paused: false,
+      total: queue.length,
+      done: 0,
+      currentLabel: 'Preparing engine…',
+      stageLabel: 'Starting Stockfish WASM…',
+      percent: maxBatchPct,
+    });
 
     let completed = 0;
     let failed = 0;
 
     for (let i = 0; i < queue.length; i++) {
-      while (batchPauseRef.current && !isStale()) await wait(160);
+      await waitIfPaused();
       if (isStale()) return;
 
       const game = queue[i];
-      setBatch((prev) => (!isStale() && prev ? { ...prev, currentLabel: `${game.white.name} vs ${game.black.name}` } : prev));
+      setBatch((prev) =>
+        !isStale() && prev
+          ? {
+              ...prev,
+              currentLabel: `${game.white.name} vs ${game.black.name}`,
+              stageLabel: 'Loading game positions…',
+              plyDone: 0,
+              plyTotal: undefined,
+            }
+          : prev
+      );
       try {
         const analyzed = await analyzeGameToReview(game, depthPreset, {
           persist: true,
           shouldCancel: isStale,
+          waitIfPaused,
+          onProgress: (done, total, stageLabel, meta) => {
+            if (isStale()) return;
+            const gameFraction = meta?.gameFraction ?? (total > 0 ? done / total : 0);
+            maxBatchPct = computeBatchProgressPercent(i, queue.length, gameFraction, maxBatchPct, true);
+            setBatch((prev) =>
+              !isStale() && prev
+                ? {
+                    ...prev,
+                    stageLabel: meta?.shortStage ?? stageLabel,
+                    plyDone: done,
+                    plyTotal: total,
+                    percent: maxBatchPct,
+                  }
+                : prev
+            );
+          },
         });
         if (isStale()) return;
         addAnalyzedGame(analyzed);
@@ -539,13 +585,31 @@ export const App: React.FC = () => {
         if (err instanceof AnalysisCancelledError || isStale()) return;
         failed++;
       }
-      setBatch((prev) => (!isStale() && prev ? { ...prev, done: prev.done + 1 } : prev));
+      const nextDone = i + 1;
+      maxBatchPct = computeBatchProgressPercent(
+        nextDone,
+        queue.length,
+        0,
+        maxBatchPct,
+        nextDone < queue.length
+      );
+      setBatch((prev) =>
+        !isStale() && prev
+          ? {
+              ...prev,
+              done: nextDone,
+              plyDone: undefined,
+              plyTotal: undefined,
+              percent: maxBatchPct,
+            }
+          : prev
+      );
     }
 
     if (isStale()) return;
     batchCancelRef.current = false;
     batchPauseRef.current = false;
-    setBatch((prev) => (prev ? { ...prev, active: false, paused: false, currentLabel: '' } : prev));
+    setBatch((prev) => (prev ? { ...prev, active: false, paused: false, currentLabel: '', percent: 100 } : prev));
     window.setTimeout(() => setBatch((prev) => (prev && !prev.active ? null : prev)), 900);
 
     setNotice({
@@ -602,16 +666,51 @@ export const App: React.FC = () => {
         throw new Error(`No standard ${platformLabel(platform)} games found for "${target}" to scout.`);
       }
       const analyzed: AnalyzedGame[] = [];
+      let maxScoutPct = 4;
       for (let i = 0; i < candidates.length; i++) {
         if (isStale()) return;
-        setScout((prev) => (prev ? { ...prev, progress: { done: i, total: candidates.length } } : prev));
+        maxScoutPct = computeBatchProgressPercent(i, candidates.length, 0, maxScoutPct, true);
+        setScout((prev) =>
+          prev ? { ...prev, progress: { done: i, total: candidates.length, percent: maxScoutPct } } : prev
+        );
         const result = await analyzeGameToReview(candidates[i], 10, {
           persist: false,
           shouldCancel: isStale,
+          onProgress: (done, total, _stage, meta) => {
+            if (isStale()) return;
+            const frac = meta?.gameFraction ?? (total > 0 ? done / total : 0);
+            maxScoutPct = computeBatchProgressPercent(i, candidates.length, frac, maxScoutPct, true);
+            setScout((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    progress: {
+                      done: i,
+                      total: candidates.length,
+                      percent: maxScoutPct,
+                      plyDone: done,
+                      plyTotal: total,
+                    },
+                  }
+                : prev
+            );
+          },
         });
         if (isStale()) return;
         analyzed.push(result);
-        setScout((prev) => (prev ? { ...prev, games: [...analyzed], progress: { done: i + 1, total: candidates.length } } : prev));
+        const nextDone = i + 1;
+        maxScoutPct = computeBatchProgressPercent(
+          nextDone,
+          candidates.length,
+          0,
+          maxScoutPct,
+          nextDone < candidates.length
+        );
+        setScout((prev) =>
+          prev
+            ? { ...prev, games: [...analyzed], progress: { done: nextDone, total: candidates.length, percent: maxScoutPct } }
+            : prev
+        );
       }
       if (isStale()) return;
       setScout((prev) => (prev ? { ...prev, status: 'ready' } : prev));
@@ -809,6 +908,60 @@ export const App: React.FC = () => {
             <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message" className="shrink-0 opacity-70 hover:opacity-100">
               <X className="h-3.5 w-3.5" />
             </button>
+          </div>
+        )}
+
+        {batch?.active && tab !== 'games' && (
+          <div className="mb-3 glass-card overflow-hidden border-teal-400/30 px-3 py-2">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setTab('games')}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                {batch.paused ? (
+                  <Pause className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                ) : (
+                  <span className="radar-sweep h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className="truncate font-semibold text-teal-200">
+                  {batch.paused ? 'Batch paused' : `Batch ${Math.min(batch.done + 1, batch.total)}/${batch.total}`}
+                  {batch.currentLabel ? ` · ${batch.currentLabel}` : ''}
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="font-mono text-[11px] font-bold tabular-nums text-brilly">{batch.percent}%</span>
+                <button
+                  type="button"
+                  onClick={toggleBatchPause}
+                  aria-label={batch.paused ? 'Resume batch analysis' : 'Pause batch analysis'}
+                  className="rounded-lg border border-amber-500/35 bg-amber-500/15 p-1 text-amber-200"
+                >
+                  {batch.paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelBatch}
+                  aria-label="Cancel batch analysis"
+                  className="rounded-lg border border-red-500/35 bg-red-500/15 p-1 text-red-300"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            <div
+              className="mt-1.5 tractor-beam-track h-1.5 w-full"
+              role="progressbar"
+              aria-label="Batch analysis progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={batch.percent}
+            >
+              <div
+                className={`tractor-beam-fill ${batch.paused ? 'opacity-60' : ''}`}
+                style={{ width: `${Math.max(2, Math.min(100, batch.percent))}%` }}
+              />
+            </div>
           </div>
         )}
 

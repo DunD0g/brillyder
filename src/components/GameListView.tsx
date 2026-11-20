@@ -25,6 +25,10 @@ export interface BatchState {
   total: number;
   done: number;
   currentLabel: string;
+  stageLabel?: string;
+  plyDone?: number;
+  plyTotal?: number;
+  percent: number;
 }
 
 interface Props {
@@ -169,52 +173,91 @@ export const GameListView: React.FC<Props> = ({
       </section>
 
       <section className="glass-card overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 p-3">
-          <div>
+        <div className="flex flex-col gap-2.5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
-              <Layers className="h-4 w-4 text-cyan-400" /> Batch analyze
-              <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-400">{unanalyzed} queued</span>
+              <Layers className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="truncate">Batch analyze</span>
+              <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-400">{unanalyzed} queued</span>
             </div>
-            <p className="mt-0.5 text-[11px] text-slate-400">Next 5 unanalyzed games, back-to-back with pause and cancel.</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-slate-400">Next 5 unanalyzed games, back-to-back with pause and cancel.</p>
           </div>
           {!batch?.active ? (
             <button
               type="button"
               onClick={onBatchAnalyze}
               disabled={unanalyzed === 0 || loading}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-[11px] font-bold text-emerald-200 disabled:opacity-40"
+              className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-[11px] font-bold text-emerald-200 transition hover:bg-emerald-500/25 active:scale-[0.98] disabled:opacity-40 sm:w-auto"
             >
-              <Play className="h-3.5 w-3.5" /> Batch next 5
+              <Play className="h-3.5 w-3.5 shrink-0" /> Batch next 5
             </button>
           ) : (
-            <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:shrink-0 sm:items-center">
               <button
                 type="button"
                 onClick={onBatchPauseToggle}
-                className="inline-flex items-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/15 px-2.5 py-2 text-[11px] font-bold text-amber-200"
+                className="inline-flex items-center justify-center gap-1 rounded-xl border border-amber-500/35 bg-amber-500/15 px-2.5 py-2 text-[11px] font-bold text-amber-200 transition hover:bg-amber-500/25 active:scale-[0.98]"
               >
-                {batch.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />} {batch.paused ? 'Resume' : 'Pause'}
+                {batch.paused ? <Play className="h-3.5 w-3.5 shrink-0" /> : <Pause className="h-3.5 w-3.5 shrink-0" />}
+                <span>{batch.paused ? 'Resume' : 'Pause'}</span>
               </button>
               <button
                 type="button"
                 onClick={onBatchCancel}
-                className="inline-flex items-center gap-1 rounded-xl border border-red-500/35 bg-red-500/15 px-2.5 py-2 text-[11px] font-bold text-red-300"
+                className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-500/35 bg-red-500/15 px-2.5 py-2 text-[11px] font-bold text-red-300 transition hover:bg-red-500/25 active:scale-[0.98]"
               >
-                <X className="h-3.5 w-3.5" /> Cancel
+                <X className="h-3.5 w-3.5 shrink-0" />
+                <span>Cancel</span>
               </button>
             </div>
           )}
         </div>
         {batch?.active && (
-          <div className="border-t border-slate-800 px-3 py-2.5">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-200">
-                <Sparkles className="h-3.5 w-3.5" /> {batch.paused ? 'Paused' : batch.currentLabel || 'Preparing…'}
-              </span>
-              <span className="font-mono text-slate-400">{batch.done}/{batch.total}</span>
+          <div className="border-t border-slate-800/80 bg-slate-950/35 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                {batch.paused ? (
+                  <Pause className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                ) : (
+                  <span className="radar-sweep h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className={`truncate font-semibold ${batch.paused ? 'text-amber-200' : 'text-teal-200'}`}>
+                  {batch.paused
+                    ? `Paused · ${batch.currentLabel || 'Waiting…'}`
+                    : batch.currentLabel || 'Preparing engine…'}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                <span className="rounded bg-slate-800/90 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+                  {Math.min(batch.done + 1, batch.total)}/{batch.total}
+                </span>
+                <span className="font-bold text-brilly">{batch.percent}%</span>
+              </div>
             </div>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800">
-              <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300" style={{ width: `${Math.round((batch.done / Math.max(1, batch.total)) * 100)}%` }} />
+            <div
+              className="mt-2 tractor-beam-track h-2.5 w-full"
+              role="progressbar"
+              aria-label="Batch analysis progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={batch.percent}
+            >
+              <div
+                className={`tractor-beam-fill ${batch.paused ? 'opacity-60' : ''}`}
+                style={{ width: `${Math.max(2, Math.min(100, batch.percent))}%` }}
+              />
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+              <span className="min-w-0 truncate font-medium">
+                {batch.paused
+                  ? 'Paused — tap Resume to continue'
+                  : batch.stageLabel || 'Initializing Stockfish WASM…'}
+              </span>
+              <span className="shrink-0 font-mono tabular-nums text-slate-400">
+                {typeof batch.plyDone === 'number' && typeof batch.plyTotal === 'number' && batch.plyTotal > 0
+                  ? `${batch.plyDone}/${batch.plyTotal} pos`
+                  : `${batch.done}/${batch.total} done`}
+              </span>
             </div>
           </div>
         )}

@@ -59,7 +59,7 @@ interface Props {
   game: LichessGameRecord;
   analyzed: AnalyzedGame | null;
   analyzing: boolean;
-  progress: { done: number; total: number; stageLabel?: string } | null;
+  progress: { done: number; total: number; stageLabel?: string; percent?: number } | null;
   depthPreset: AnalysisDepthPreset;
   onDepthPresetChange: (d: AnalysisDepthPreset) => void;
   onStartAnalysis: () => void;
@@ -812,20 +812,36 @@ export const AnalysisView: React.FC<Props> = ({
         <span className="shrink-0 text-[10px] text-slate-500">{game.timeControlLabel} · {game.resultString} · {game.openingEco}</span>
       </div>
 
-      {analyzing && progress && (
-        <div className="glass-card border-teal-400/35 p-2.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-2 font-semibold text-teal-200">
-              <span className="radar-sweep h-4 w-4 shrink-0" />
-              {progress.stageLabel || `Stockfish WASM · Two-Pass D${depthPreset}`}
-            </span>
-            <span className="font-mono text-slate-300">{progress.done}/{progress.total}</span>
+      {analyzing && progress && (() => {
+        const pct = Math.max(
+          2,
+          Math.min(100, progress.percent ?? Math.round((progress.done / Math.max(1, progress.total)) * 100))
+        );
+        return (
+          <div className="glass-card border-teal-400/35 p-2.5">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <div className="flex min-w-0 flex-1 items-center gap-2 font-semibold text-teal-200">
+                <span className="radar-sweep h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{progress.stageLabel || `Stockfish WASM · Two-Pass D${depthPreset}`}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                <span className="text-slate-400">{progress.done}/{progress.total}</span>
+                <span className="font-bold text-brilly">{pct}%</span>
+              </div>
+            </div>
+            <div
+              className="mt-1.5 tractor-beam-track h-2 w-full"
+              role="progressbar"
+              aria-label="Game analysis progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={pct}
+            >
+              <div className="tractor-beam-fill" style={{ width: `${pct}%` }} />
+            </div>
           </div>
-          <div className="mt-1.5 tractor-beam-track h-2">
-            <div className="tractor-beam-fill" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(420px,500px)] xl:gap-5">
         <section className="min-w-0">

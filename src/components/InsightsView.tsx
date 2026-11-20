@@ -182,22 +182,43 @@ export const InsightsView: React.FC<Props> = ({
           </button>
         </form>
 
-        {scout?.status === 'loading' && (
-          <div className="mt-2.5 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-2.5">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="inline-flex items-center gap-2 font-semibold text-teal-200">
-                <span className="radar-sweep h-4 w-4 shrink-0" /> Scouting @{scout.username}… Stockfish D10
-              </span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-slate-400">{scout.progress ? `${scout.progress.done}/${scout.progress.total}` : 'fetching'}</span>
-                <button type="button" onClick={onCancelScout} className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-rose-300">Cancel</button>
+        {scout?.status === 'loading' && (() => {
+          const pct = Math.max(
+            4,
+            Math.min(
+              100,
+              scout.progress?.percent ??
+                (scout.progress ? Math.round((scout.progress.done / Math.max(1, scout.progress.total)) * 100) : 8)
+            )
+          );
+          return (
+            <div className="mt-2.5 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-2.5">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <div className="flex min-w-0 flex-1 items-center gap-2 font-semibold text-teal-200">
+                  <span className="radar-sweep h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">Scouting @{scout.username}… D10</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5 font-mono tabular-nums">
+                  <span className="text-[10px] text-slate-400">
+                    {scout.progress ? `${Math.min(scout.progress.done + 1, scout.progress.total)}/${scout.progress.total}` : 'fetching'}
+                  </span>
+                  <span className="font-bold text-brilly">{pct}%</span>
+                  <button type="button" onClick={onCancelScout} className="rounded bg-slate-800 px-1.5 py-0.5 font-sans text-[10px] font-bold text-rose-300">Cancel</button>
+                </div>
+              </div>
+              <div
+                className="mt-1.5 tractor-beam-track h-2 w-full"
+                role="progressbar"
+                aria-label="Opponent scouting progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+              >
+                <div className="tractor-beam-fill" style={{ width: `${pct}%` }} />
               </div>
             </div>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
-              <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-cyan-400 transition-all" style={{ width: `${scout.progress ? Math.round((scout.progress.done / Math.max(1, scout.progress.total)) * 100) : 8}%` }} />
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {scout?.status === 'error' && (
           <div className="mt-2.5 flex items-start gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11px] text-rose-200">

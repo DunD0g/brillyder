@@ -334,7 +334,7 @@ export interface ScoutState {
   platform: GamePlatform;
   status: 'loading' | 'ready' | 'error';
   games: AnalyzedGame[];
-  progress: { done: number; total: number } | null;
+  progress: { done: number; total: number; percent?: number; plyDone?: number; plyTotal?: number } | null;
   error: string | null;
 }
 
