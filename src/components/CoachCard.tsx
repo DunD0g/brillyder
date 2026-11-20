@@ -152,7 +152,7 @@ export const CoachCard: React.FC<Props> = ({
                   {line.evalDisplay}
                 </span>
                 <span className={`truncate ${idx === 0 ? 'text-emerald-200 font-bold' : 'text-slate-400'}`}>
-                  {line.pvSan.join(' ')}
+                  {line.pvSan.length > 0 ? line.pvSan.join(' ') : line.san}
                 </span>
               </div>
             ))}

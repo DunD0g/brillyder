@@ -37,7 +37,8 @@ export const VariationExplorer: React.FC<Props> = ({ active, baseLabel, fen, eva
     );
   }
 
-  const lines = evalResult?.lines ?? [];
+  const freshEval = evalResult && evalResult.fen === fen ? evalResult : null;
+  const lines = freshEval?.lines ?? [];
   return (
     <div className="glass-card border-fuchsia-400/25 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -55,7 +56,7 @@ export const VariationExplorer: React.FC<Props> = ({ active, baseLabel, fen, eva
       <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
         <span>Branch from {baseLabel}</span>
         <span className="inline-flex items-center gap-1 font-mono">
-          {loading ? <><Loader2 className="w-3 h-3 animate-spin text-fuchsia-300" /> thinking</> : evalResult ? `D${evalResult.depth} · MultiPV 3` : 'waiting'}
+          {loading ? <><Loader2 className="w-3 h-3 animate-spin text-fuchsia-300" /> thinking</> : freshEval ? `D${freshEval.depth} · MultiPV 3` : 'waiting'}
         </span>
       </div>
 

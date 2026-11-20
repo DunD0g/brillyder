@@ -2,12 +2,20 @@ import { Chess } from 'chess.js';
 import type { EngineEval, EngineScore, MultiPvLine, PlayerColor } from '../types/chess';
 import { buildEngineScore } from '../utils/chessMath';
 
+export class EngineCancelledError extends Error {
+  constructor(message = 'Stockfish search cancelled') {
+    super(message);
+    this.name = 'EngineCancelledError';
+  }
+}
+
 interface PendingJob {
   cancelled: boolean;
   resolve: (bestMove: string) => void;
   reject: (err: Error) => void;
   onLine: (line: string) => void;
   timeoutId?: number;
+  hardTimeoutId?: number;
 }
 
 class StockfishEngineService {
@@ -35,12 +43,8 @@ class StockfishEngineService {
         worker.onerror = (ev) => {
           window.clearTimeout(bootTimeout);
           const msg = ev.message || 'Could not load ./stockfish.js or ./stockfish.wasm';
-          if (this.activeJob) {
-            this.activeJob.reject(new Error(msg));
-            this.activeJob = null;
-          }
           reject(new Error(msg));
-          this.dispose();
+          this.dispose(new Error(msg));
         };
 
         worker.onmessage = (ev: MessageEvent<string>) => {
@@ -67,8 +71,13 @@ class StockfishEngineService {
                 const best = parts[1] && parts[1] !== '(none)' ? parts[1] : '';
                 const job = this.activeJob;
                 this.activeJob = null;
-                if (job.timeoutId) window.clearTimeout(job.timeoutId);
-                job.resolve(job.cancelled ? '' : best);
+                if (job.timeoutId !== undefined) window.clearTimeout(job.timeoutId);
+                if (job.hardTimeoutId !== undefined) window.clearTimeout(job.hardTimeoutId);
+                if (job.cancelled) {
+                  job.reject(new EngineCancelledError());
+                } else {
+                  job.resolve(best);
+                }
               }
             }
           }
@@ -88,15 +97,59 @@ class StockfishEngineService {
     return next;
   }
 
-  private runUciSearch(commands: string[], onLine: (l: string) => void, timeoutMs: number): Promise<string> {
+  private runUciSearch(
+    buildCommands: () => string[],
+    onLine: (l: string) => void,
+    timeoutMs: number,
+    signal?: AbortSignal
+  ): Promise<string> {
     return this.enqueue(async () => {
+      if (signal?.aborted) throw new EngineCancelledError();
       await this.init();
+      if (signal?.aborted) throw new EngineCancelledError();
       if (!this.worker) throw new Error('Stockfish worker unavailable.');
+      const commands = buildCommands();
       return new Promise<string>((resolve, reject) => {
         const job: PendingJob = { cancelled: false, resolve, reject, onLine };
+
+        const onAbort = () => {
+          if (this.activeJob === job && !job.cancelled) {
+            job.cancelled = true;
+            this.worker?.postMessage('stop');
+            job.hardTimeoutId = window.setTimeout(() => {
+              if (this.activeJob === job) {
+                this.dispose(new EngineCancelledError());
+              }
+            }, 1400);
+          }
+        };
+
+        if (signal) {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        const cleanupResolve = (best: string) => {
+          if (signal) signal.removeEventListener('abort', onAbort);
+          resolve(best);
+        };
+        const cleanupReject = (err: Error) => {
+          if (signal) signal.removeEventListener('abort', onAbort);
+          reject(err);
+        };
+        job.resolve = cleanupResolve;
+        job.reject = cleanupReject;
+
         job.timeoutId = window.setTimeout(() => {
-          if (this.activeJob === job && this.worker) this.worker.postMessage('stop');
+          if (this.activeJob === job && this.worker) {
+            this.worker.postMessage('stop');
+            job.hardTimeoutId = window.setTimeout(() => {
+              if (this.activeJob === job) {
+                this.dispose(new EngineCancelledError('Stockfish search timed out'));
+              }
+            }, 1800);
+          }
         }, timeoutMs);
+
         this.activeJob = job;
         for (const cmd of commands) this.worker?.postMessage(cmd);
       });
@@ -114,7 +167,7 @@ class StockfishEngineService {
           // Only dispose the worker if this exact job is still active; a new
           // search may have replaced it while we were waiting for "bestmove".
           if (this.activeJob !== job || Date.now() - start > 1400) {
-            if (this.activeJob === job) this.dispose();
+            if (this.activeJob === job) this.dispose(new EngineCancelledError());
             resolve();
             return;
           }
@@ -125,7 +178,10 @@ class StockfishEngineService {
     }
   }
 
-  async analyzePosition(fen: string, opts: { depth?: number; multiPv?: number; timeoutMs?: number } = {}): Promise<EngineEval> {
+  async analyzePosition(
+    fen: string,
+    opts: { depth?: number; multiPv?: number; timeoutMs?: number; signal?: AbortSignal } = {}
+  ): Promise<EngineEval> {
     const depth = opts.depth ?? 14;
     const multiPv = opts.multiPv ?? 2;
     const timeoutMs = opts.timeoutMs ?? (depth >= 18 ? 24000 : 14000);
@@ -140,46 +196,107 @@ class StockfishEngineService {
     }
 
     const sign = chess.turn() === 'w' ? 1 : -1;
-    const lineMap = new Map<number, { depth: number; score: EngineScore; pv: string[]; exact: boolean }>();
-    const cmds: string[] = [];
+    // Track exact lines per depth so aspiration bounds never clobber exact PVs
+    // and MultiPV 1/2/3 come from a consistent search depth whenever possible.
+    const exactByDepth = new Map<number, Map<number, { score: EngineScore; pv: string[] }>>();
+    const deepestExact = new Map<number, { depth: number; score: EngineScore; pv: string[] }>();
+    const fallbackBound = new Map<number, { depth: number; score: EngineScore; pv: string[] }>();
 
-    if (this.lastLimitStrength !== false) { cmds.push('setoption name UCI_LimitStrength value false'); this.lastLimitStrength = false; }
-    if (this.lastSkill !== 20) { cmds.push('setoption name Skill Level value 20'); this.lastSkill = 20; }
-    if (this.lastMultiPv !== multiPv) { cmds.push(`setoption name MultiPV value ${multiPv}`); this.lastMultiPv = multiPv; }
-    cmds.push(`position fen ${fen}`, `go depth ${depth}`);
+    const bestFromEnd = await this.runUciSearch(
+      () => {
+        const cmds: string[] = [];
+        if (this.lastLimitStrength !== false) {
+          cmds.push('setoption name UCI_LimitStrength value false');
+          this.lastLimitStrength = false;
+        }
+        if (this.lastSkill !== 20) {
+          cmds.push('setoption name Skill Level value 20');
+          this.lastSkill = 20;
+        }
+        if (this.lastMultiPv !== multiPv) {
+          cmds.push(`setoption name MultiPV value ${multiPv}`);
+          this.lastMultiPv = multiPv;
+        }
+        cmds.push(`position fen ${fen}`, `go depth ${depth}`);
+        return cmds;
+      },
+      (line) => {
+        if (!line.startsWith('info ') || !line.includes(' score ')) return;
+        const isBound = line.includes('lowerbound') || line.includes('upperbound');
+        const dMatch = line.match(/\bdepth\s+(\d+)/);
+        const parsedDepth = dMatch ? parseInt(dMatch[1], 10) : 0;
+        const mpvMatch = line.match(/\bmultipv\s+(\d+)/);
+        const mpv = mpvMatch ? parseInt(mpvMatch[1], 10) : 1;
+        const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
+        const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
+        const pvMatch = line.match(/\bpv\s+(.+)$/);
+        const pvMoves = pvMatch ? pvMatch[1].trim().split(/\s+/) : [];
 
-    const bestFromEnd = await this.runUciSearch(cmds, (line) => {
-      if (!line.startsWith('info ') || !line.includes(' score ')) return;
-      const isBound = line.includes('lowerbound') || line.includes('upperbound');
-      const dMatch = line.match(/\bdepth\s+(\d+)/);
-      const parsedDepth = dMatch ? parseInt(dMatch[1], 10) : 0;
-      const mpvMatch = line.match(/\bmultipv\s+(\d+)/);
-      const mpv = mpvMatch ? parseInt(mpvMatch[1], 10) : 1;
-      const mateMatch = line.match(/\bscore\s+mate\s+(-?\d+)/);
-      const cpMatch = line.match(/\bscore\s+cp\s+(-?\d+)/);
-      const pvMatch = line.match(/\bpv\s+(.+)$/);
-      const pvMoves = pvMatch ? pvMatch[1].trim().split(/\s+/) : [];
+        let score: EngineScore;
+        if (mateMatch) score = buildEngineScore(0, parseInt(mateMatch[1], 10) * sign);
+        else if (cpMatch) score = buildEngineScore(parseInt(cpMatch[1], 10) * sign, null);
+        else return;
 
-      let score: EngineScore;
-      if (mateMatch) score = buildEngineScore(0, parseInt(mateMatch[1], 10) * sign);
-      else if (cpMatch) score = buildEngineScore(parseInt(cpMatch[1], 10) * sign, null);
-      else return;
+        if (!isBound) {
+          let depthSlot = exactByDepth.get(parsedDepth);
+          if (!depthSlot) {
+            depthSlot = new Map();
+            exactByDepth.set(parsedDepth, depthSlot);
+          }
+          depthSlot.set(mpv, { score, pv: pvMoves });
 
-      const prev = lineMap.get(mpv);
-      if (!prev || parsedDepth > prev.depth || (parsedDepth === prev.depth && (!isBound || !prev.exact))) {
-        lineMap.set(mpv, { depth: parsedDepth, score, pv: pvMoves, exact: !isBound });
+          const prev = deepestExact.get(mpv);
+          if (!prev || parsedDepth >= prev.depth) {
+            deepestExact.set(mpv, { depth: parsedDepth, score, pv: pvMoves });
+          }
+        } else {
+          const prev = fallbackBound.get(mpv);
+          if (!prev || parsedDepth >= prev.depth) {
+            fallbackBound.set(mpv, { depth: parsedDepth, score, pv: pvMoves });
+          }
+        }
+      },
+      timeoutMs,
+      opts.signal
+    );
+
+    const legalCount = chess.moves().length;
+    const expectedSlots = Math.min(multiPv, Math.max(1, legalCount));
+
+    // Prefer the highest depth that has a complete exact MultiPV set
+    let selectedDepth = 0;
+    let selectedMap: Map<number, { score: EngineScore; pv: string[] }> | null = null;
+    for (const [d, slot] of exactByDepth.entries()) {
+      if (slot.size >= expectedSlots && d >= selectedDepth) {
+        selectedDepth = d;
+        selectedMap = slot;
       }
-    }, timeoutMs);
+    }
 
-    const lines: MultiPvLine[] = Array.from(lineMap.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([multipv, d]) => ({ multipv, bestMoveUci: d.pv[0] ?? bestFromEnd, pv: d.pv, score: d.score }));
+    const lines: MultiPvLine[] = [];
+    if (selectedMap) {
+      for (const [multipv, entry] of Array.from(selectedMap.entries()).sort((a, b) => a[0] - b[0])) {
+        const moveUci = entry.pv[0] ?? (multipv === 1 ? bestFromEnd : '');
+        if (!moveUci) continue;
+        lines.push({ multipv, bestMoveUci: moveUci, pv: entry.pv, score: entry.score });
+      }
+    } else {
+      const merged = deepestExact.size > 0 ? deepestExact : fallbackBound;
+      const seenMoves = new Set<string>();
+      for (const [multipv, entry] of Array.from(merged.entries()).sort((a, b) => a[0] - b[0])) {
+        const moveUci = entry.pv[0] ?? (multipv === 1 ? bestFromEnd : '');
+        if (!moveUci || seenMoves.has(moveUci)) continue;
+        seenMoves.add(moveUci);
+        selectedDepth = Math.max(selectedDepth, entry.depth);
+        lines.push({ multipv: lines.length + 1, bestMoveUci: moveUci, pv: entry.pv, score: entry.score });
+      }
+    }
 
     const primary = lines[0];
     const bestMoveUci = primary?.bestMoveUci || bestFromEnd;
     return {
       fen,
-      depth,
+      depth: selectedDepth || depth,
       bestMoveUci,
       pv: primary?.pv ?? (bestMoveUci ? [bestMoveUci] : []),
       score: primary?.score ?? buildEngineScore(0, null),
@@ -187,26 +304,61 @@ class StockfishEngineService {
     };
   }
 
-  async getBotMove(fen: string, targetElo: number): Promise<string> {
-    const cmds: string[] = [];
-    if (this.lastMultiPv !== 1) { cmds.push('setoption name MultiPV value 1'); this.lastMultiPv = 1; }
-    if (targetElo < 1320) {
-      if (this.lastLimitStrength !== false) { cmds.push('setoption name UCI_LimitStrength value false'); this.lastLimitStrength = false; }
-      if (this.lastSkill !== 2) { cmds.push('setoption name Skill Level value 2'); this.lastSkill = 2; }
-      cmds.push(`position fen ${fen}`, 'go depth 5 movetime 250');
-    } else {
-      const elo = Math.min(3190, Math.max(1320, Math.round(targetElo)));
-      if (this.lastLimitStrength !== true) { cmds.push('setoption name UCI_LimitStrength value true'); this.lastLimitStrength = true; }
-      if (this.lastElo !== elo) { cmds.push(`setoption name UCI_Elo value ${elo}`); this.lastElo = elo; }
-      cmds.push(`position fen ${fen}`, 'go movetime 550');
-    }
-    return this.runUciSearch(cmds, () => undefined, 5000);
+  async getBotMove(fen: string, targetElo: number, signal?: AbortSignal): Promise<string> {
+    return this.runUciSearch(
+      () => {
+        const cmds: string[] = [];
+        if (this.lastMultiPv !== 1) {
+          cmds.push('setoption name MultiPV value 1');
+          this.lastMultiPv = 1;
+        }
+        if (targetElo < 1320) {
+          if (this.lastLimitStrength !== false) {
+            cmds.push('setoption name UCI_LimitStrength value false');
+            this.lastLimitStrength = false;
+          }
+          if (this.lastSkill !== 2) {
+            cmds.push('setoption name Skill Level value 2');
+            this.lastSkill = 2;
+          }
+          cmds.push(`position fen ${fen}`, 'go depth 5 movetime 250');
+        } else {
+          const elo = Math.min(3190, Math.max(1320, Math.round(targetElo)));
+          if (this.lastSkill !== 20) {
+            cmds.push('setoption name Skill Level value 20');
+            this.lastSkill = 20;
+          }
+          if (this.lastLimitStrength !== true) {
+            cmds.push('setoption name UCI_LimitStrength value true');
+            this.lastLimitStrength = true;
+          }
+          if (this.lastElo !== elo) {
+            cmds.push(`setoption name UCI_Elo value ${elo}`);
+            this.lastElo = elo;
+          }
+          cmds.push(`position fen ${fen}`, 'go movetime 550');
+        }
+        return cmds;
+      },
+      () => undefined,
+      5000,
+      signal
+    );
   }
 
-  dispose(): void {
-    if (this.worker) { this.worker.terminate(); this.worker = null; }
-    this.initPromise = null;
+  dispose(reason?: Error): void {
+    const pending = this.activeJob;
     this.activeJob = null;
+    if (pending) {
+      if (pending.timeoutId !== undefined) window.clearTimeout(pending.timeoutId);
+      if (pending.hardTimeoutId !== undefined) window.clearTimeout(pending.hardTimeoutId);
+      pending.reject(reason ?? new EngineCancelledError('Stockfish worker disposed'));
+    }
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    this.initPromise = null;
     this.lastMultiPv = 0;
     this.lastLimitStrength = null;
     this.lastElo = 0;

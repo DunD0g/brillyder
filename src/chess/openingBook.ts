@@ -280,8 +280,7 @@ export function buildOpeningReport(
 
 export function isBookPly(plyIndex: number, sanPrefix: string[], lichessOpeningPly?: number, winLoss = 0): boolean {
   if (plyIndex >= 16 || winLoss > 8) return false;
-  const match = lookupOpeningByMoves(sanPrefix);
-  if (match && plyIndex < match.matchedPlies) return true;
+  if (sanPrefix.length > 0 && walkBook(sanPrefix).depth === sanPrefix.length) return true;
   if (lichessOpeningPly && plyIndex < Math.min(lichessOpeningPly, 14) && winLoss <= 6) return true;
   return false;
 }

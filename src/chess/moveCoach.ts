@@ -1,6 +1,6 @@
-import { Chess } from 'chess.js';
+import { Chess, type Square } from 'chess.js';
 import type { CoachingExplanation, EngineScore, MoveClassification, PlayerColor } from '../types/chess';
-import { uciToSquares } from '../utils/chessMath';
+import { getMoverWinPercent, uciToSquares } from '../utils/chessMath';
 import {
   detectBackRankThreat,
   detectDeflection,
@@ -9,6 +9,7 @@ import {
   detectPinOrSkewer,
   detectShortMate,
   findHangingPieces,
+  legalCaptureGainOnSquare,
   PIECE_NAMES,
   PIECE_VAL,
 } from './tacticalMotifs';
@@ -52,6 +53,9 @@ export function generateMoveExplanation(params: {
   const oppColor: PlayerColor = color === 'w' ? 'b' : 'w';
   const chessBefore = new Chess(beforeFen);
   const chessAfter = new Chess(afterFen);
+  const moverWinBefore = getMoverWinPercent(evalBefore, color);
+  const moverWinAfter = getMoverWinPercent(evalAfter, color);
+  const matchesBest = uci === bestMoveUci;
 
   if (classification === 'book') {
     return {
@@ -74,14 +78,19 @@ export function generateMoveExplanation(params: {
     };
   }
 
-  if (classification === 'great' || isClutchSave) {
+  const showClutchOrGreat =
+    classification === 'great' ||
+    (isClutchSave && (classification === 'best' || classification === 'excellent'));
+
+  if (showClutchOrGreat) {
     const fork = detectForkOnMove(chessBefore, uci, color);
     const pin = detectPinOrSkewer(chessBefore, uci, color);
     const disc = detectDiscoveredAttack(chessBefore, uci, color);
+    const tonePrefix = moverWinAfter >= 65 ? 'Only winning move' : 'Critical resource';
     if (fork) {
       return {
         headline: `${isClutchSave ? 'Clutch Save!' : 'Great Move!'} ${san}`,
-        detail: `Only winning move — launches a ${PIECE_NAMES[fork.piece]} fork on ${fork.targetSquare} hitting ${fork.victims.slice(0, 2).join(' and ')}.`,
+        detail: `${tonePrefix} — launches a ${PIECE_NAMES[fork.piece]} fork on ${fork.targetSquare} hitting ${fork.victims.slice(0, 2).join(' and ')}.`,
         tacticalTag: 'Fork',
       };
     }
@@ -99,11 +108,17 @@ export function generateMoveExplanation(params: {
         tacticalTag: 'Discovered Attack',
       };
     }
+    const positionGoal =
+      moverWinBefore >= 65
+        ? 'to keep a winning advantage'
+        : moverWinBefore >= 40
+          ? 'to hold the position'
+          : 'to stay in the fight';
     return {
       headline: isClutchSave ? `Clutch Save! ${san}` : `Great Move! ${san}`,
       detail: secondBestGapPawns >= 2
-        ? `Only move to hold the position (next best alternative drops ${secondBestGapPawns.toFixed(1)} pawns).`
-        : 'The only move that preserves your edge; alternatives lose substantial ground.',
+        ? `Only move ${positionGoal} (next best alternative drops ${secondBestGapPawns.toFixed(1)} pawns).`
+        : `The only move ${positionGoal}; alternatives lose substantial ground.`,
       tacticalTag: 'Only Move Save',
     };
   }
@@ -139,7 +154,9 @@ export function generateMoveExplanation(params: {
     return {
       headline: classification === 'best' ? `Best Move — ${san}` : `Good Move — ${san}`,
       detail: classification === 'best'
-        ? `Matches Stockfish's top choice (${evalAfter.display}).`
+        ? matchesBest
+          ? `Matches Stockfish's top choice (${evalAfter.display}).`
+          : `Virtually equal to Stockfish's top choice ${bestMoveSan} (${evalAfter.display}).`
         : `Solid move; ${bestMoveSan || san} was slightly sharper.`,
       tacticalTag: classification === 'best' ? 'Engine Top' : 'Accurate',
     };
@@ -148,22 +165,24 @@ export function generateMoveExplanation(params: {
   // Errors: Inaccuracy, Mistake, Blunder
   const prefix = classification === 'blunder' ? 'Blunder' : classification === 'mistake' ? 'Mistake' : 'Inaccuracy';
 
-  // 1. Missed short forced mate (Mate in 1-3)
+  // 1. Missed forced mate (Mate in 1-3 vs longer Forced Mate)
   const hadShortMate = detectShortMate(evalBefore, color);
-  const stillHasMate = evalAfter.isCheckmate || detectShortMate(evalAfter, color) !== null;
-  const moverHadMate = evalBefore.mateWhite !== null && ((color === 'w' && evalBefore.mateWhite > 0) || (color === 'b' && evalBefore.mateWhite < 0));
-  const moverHasMate = evalAfter.isCheckmate || (evalAfter.mateWhite !== null && ((color === 'w' && evalAfter.mateWhite > 0) || (color === 'b' && evalAfter.mateWhite < 0)));
-  if ((hadShortMate !== null && !stillHasMate) || (moverHadMate && !moverHasMate)) {
+  const stillHasShortMate = evalAfter.isCheckmate || detectShortMate(evalAfter, color) !== null;
+  const moverHadMate = evalBefore.mateWhite !== null && evalBefore.mateWhite !== 0 && ((color === 'w' && evalBefore.mateWhite > 0) || (color === 'b' && evalBefore.mateWhite < 0));
+  const moverHasMate = evalAfter.isCheckmate || (evalAfter.mateWhite !== null && evalAfter.mateWhite !== 0 && ((color === 'w' && evalAfter.mateWhite > 0) || (color === 'b' && evalAfter.mateWhite < 0)));
+  if ((hadShortMate !== null && !stillHasShortMate) || (moverHadMate && !moverHasMate)) {
+    const isShort = hadShortMate !== null;
     return {
-      headline: `${prefix}: Missed ${hadShortMate ? `Mate in ${hadShortMate}` : 'Forced Mate'}`,
+      headline: `${prefix}: Missed ${isShort ? `Mate in ${hadShortMate}` : 'Forced Mate'}`,
       detail: `${bestMoveSan} forced checkmate, whereas ${san} lets the opponent escape.`,
-      tacticalTag: 'Mate in 1–3',
+      tacticalTag: isShort ? 'Mate in 1–3' : 'Forced Mate',
     };
   }
 
   // 2. Walked into opponent forced mate / Back-Rank
-  const oppGotMate = evalAfter.mateWhite !== null && ((color === 'w' && evalAfter.mateWhite < 0) || (color === 'b' && evalAfter.mateWhite > 0));
+  const oppGotMate = evalAfter.mateWhite !== null && evalAfter.mateWhite !== 0 && ((color === 'w' && evalAfter.mateWhite < 0) || (color === 'b' && evalAfter.mateWhite > 0));
   if (oppGotMate) {
+    const oppShortMate = detectShortMate(evalAfter, oppColor);
     const brSq = threatMoveUci ? detectBackRankThreat(chessAfter, threatMoveUci, oppColor) : null;
     if (brSq) {
       return {
@@ -173,9 +192,9 @@ export function generateMoveExplanation(params: {
       };
     }
     return {
-      headline: `${prefix}: Walks Into Forced Mate`,
+      headline: `${prefix}: Walks Into ${oppShortMate ? `Mate in ${oppShortMate}` : 'Forced Mate'}`,
       detail: `${san} exposes your King to a mating net${threatMoveSan ? ` starting with ${threatMoveSan}` : ''}. ${bestMoveSan} stayed safe.`,
-      tacticalTag: 'Mate in 1–3',
+      tacticalTag: oppShortMate ? 'Mate in 1–3' : 'Forced Mate',
     };
   }
 
@@ -249,10 +268,21 @@ export function generateMoveExplanation(params: {
     };
   }
 
-  // 5. Left own piece hanging or dropped material
-  const beforeHanging = findHangingPieces(chessBefore, color).map((h) => h.square);
-  const afterHanging = findHangingPieces(chessAfter, color);
-  const newlyHanging = afterHanging.find((h) => !beforeHanging.includes(h.square)) || afterHanging[0];
+  // 5. Left own piece hanging or dropped material (excluding equal trades on the move's destination square!)
+  const parsedPlayed = uciToSquares(uci);
+  const capturedOnMove = parsedPlayed ? chessBefore.get(parsedPlayed.to) : null;
+  const capturedVal = capturedOnMove && capturedOnMove.color === oppColor ? PIECE_VAL[capturedOnMove.type] : 0;
+
+  const beforeHanging = new Set(findHangingPieces(chessBefore, color).map((h) => h.square));
+  const afterHanging = findHangingPieces(chessAfter, color).filter((h) => {
+    // If we just captured on this exact square (e.g. Bxf6 trading Bishop for Knight),
+    // only flag as hanging if the opponent wins net >= 2 material beyond what we just took!
+    if (parsedPlayed && h.square === parsedPlayed.to && capturedVal > 0) {
+      return h.netLoss - capturedVal >= 2;
+    }
+    return true;
+  });
+  const newlyHanging = afterHanging.find((h) => !beforeHanging.has(h.square)) || afterHanging[0];
   if (newlyHanging) {
     const pName = PIECE_NAMES[newlyHanging.piece];
     const reason = newlyHanging.undefended
@@ -265,16 +295,19 @@ export function generateMoveExplanation(params: {
     };
   }
 
-  // 6. Missed capturing opponent's free hanging piece
+  // 6. Missed capturing opponent's free hanging piece (verified via legal SEE)
   const parsedBest = uciToSquares(bestMoveUci);
   if (parsedBest) {
     const target = chessBefore.get(parsedBest.to);
-    if (target && target.color === oppColor && PIECE_VAL[target.type] >= 3 && chessBefore.attackers(parsedBest.to, oppColor).length === 0) {
-      return {
-        headline: `${prefix}: Missed Free ${PIECE_NAMES[target.type]} on ${parsedBest.to}`,
-        detail: `${bestMoveSan} won an undefended ${PIECE_NAMES[target.type]} instead of ${san}.`,
-        tacticalTag: 'Hanging Piece',
-      };
+    if (target && target.color === oppColor && PIECE_VAL[target.type] >= 3) {
+      const legalGain = legalCaptureGainOnSquare(chessBefore, parsedBest.to as Square, 4);
+      if (legalGain >= PIECE_VAL[target.type]) {
+        return {
+          headline: `${prefix}: Missed Free ${PIECE_NAMES[target.type]} on ${parsedBest.to}`,
+          detail: `${bestMoveSan} won an undefended ${PIECE_NAMES[target.type]} instead of ${san}.`,
+          tacticalTag: 'Hanging Piece',
+        };
+      }
     }
   }
 

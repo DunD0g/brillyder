@@ -4,10 +4,12 @@ import type { EngineScore, PlayerColor } from '../types/chess';
 const PIECE_VALUES: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
 export function clamp(val: number, min: number, max: number): number {
+  if (!Number.isFinite(val)) return min;
   return Math.max(min, Math.min(max, val));
 }
 
 export function cpToWinPercent(cp: number): number {
+  if (!Number.isFinite(cp)) return 50;
   const clampedCp = clamp(cp, -2500, 2500);
   return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * clampedCp)) - 1);
 }
@@ -28,7 +30,7 @@ export function buildEngineScore(
       display: '#',
     };
   }
-  if (mateWhite !== null) {
+  if (mateWhite !== null && Number.isFinite(mateWhite) && mateWhite !== 0) {
     const isWhiteWin = mateWhite > 0;
     const absMate = Math.abs(mateWhite);
     return {
@@ -38,15 +40,16 @@ export function buildEngineScore(
       display: `${isWhiteWin ? '' : '-'}M${absMate}`,
     };
   }
-  const winPercentWhite = cpToWinPercent(cpWhite);
-  const pawns = cpWhite / 100;
+  const safeCp = Number.isFinite(cpWhite) ? cpWhite : 0;
+  const winPercentWhite = cpToWinPercent(safeCp);
+  const pawns = safeCp / 100;
   const absPawns = Math.abs(pawns);
   const formatted = absPawns >= 10 ? `${pawns >= 0 ? '+' : '-'}${Math.round(absPawns)}` : `${pawns >= 0 ? '+' : ''}${pawns.toFixed(1)}`;
   return {
-    cpWhite,
+    cpWhite: safeCp,
     mateWhite: null,
     winPercentWhite,
-    display: Math.abs(cpWhite) < 8 ? '0.0' : formatted,
+    display: Math.abs(safeCp) < 8 ? '0.0' : formatted,
   };
 }
 
@@ -55,26 +58,26 @@ export function getMoverWinPercent(score: EngineScore, mover: PlayerColor): numb
 }
 
 export function calculateMoveAccuracy(winLoss: number): number {
-  if (winLoss <= 0.1) return 100;
+  if (!Number.isFinite(winLoss) || winLoss <= 0.1) return 100;
   const raw = 103.1668 * Math.exp(-0.04354 * winLoss) - 3.1669;
   return clamp(Number(raw.toFixed(1)), 0, 100);
 }
 
 export function calculateGameAccuracy(moveAccuracies: number[], winPercents: number[]): number {
-  if (moveAccuracies.length === 0) return 100;
+  if (moveAccuracies.length === 0) return 0;
   let weightedSum = 0;
   let weightTotal = 0;
   let harmonicDenom = 0;
   for (let i = 0; i < moveAccuracies.length; i++) {
-    const acc = moveAccuracies[i];
-    const wp = winPercents[i] ?? 50;
+    const acc = clamp(moveAccuracies[i], 0, 100);
+    const wp = clamp(winPercents[i] ?? 50, 0, 100);
     const weight = 0.5 + 0.5 * (1 - Math.abs(wp - 50) / 50);
     weightedSum += acc * weight;
     weightTotal += weight;
-    harmonicDenom += 1 / Math.max(12, acc);
+    harmonicDenom += 1 / Math.max(5, acc);
   }
-  const wMean = weightTotal > 0 ? weightedSum / weightTotal : 100;
-  const hMean = moveAccuracies.length / harmonicDenom;
+  const wMean = weightTotal > 0 ? weightedSum / weightTotal : 0;
+  const hMean = harmonicDenom > 0 ? moveAccuracies.length / harmonicDenom : 0;
   return Number(clamp(0.58 * wMean + 0.42 * hMean, 0, 100).toFixed(1));
 }
 
@@ -161,9 +164,11 @@ export function getMaterialBalance(fen: string): {
   return { whiteAdvantage: wPts - bPts, capturedByWhite, capturedByBlack };
 }
 
+const CLK_REGEX = /\[%clk\s+(\d+:\d+(?::\d+)?(?:\.\d+)?)\s*\]/;
+
 export function extractClockFromComment(comment: string | undefined): string | undefined {
   if (!comment) return undefined;
-  const match = comment.match(/\[%clk\s+(\d+:\d+(?::\d+(?:\.\d+)?)?)\]/);
+  const match = comment.match(CLK_REGEX);
   if (!match) return undefined;
   const parts = match[1].split(':');
   if (parts.length === 3) {
@@ -174,38 +179,73 @@ export function extractClockFromComment(comment: string | undefined): string | u
       ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
       : `${m}:${String(s).padStart(2, '0')}`;
   }
+  if (parts.length === 2) {
+    const m = parseInt(parts[0], 10);
+    const s = Math.floor(parseFloat(parts[1]));
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
   return match[1];
 }
 
 export function extractClockSeconds(comment: string | undefined): number | undefined {
   if (!comment) return undefined;
-  const match = comment.match(/\[%clk\s+(\d+:\d+(?::\d+(?:\.\d+)?)?)\]/);
+  const match = comment.match(CLK_REGEX);
   if (!match) return undefined;
   const parts = match[1].split(':').map((p) => parseFloat(p));
   if (parts.some((n) => !Number.isFinite(n))) return undefined;
-  if (parts.length === 3) return Math.round(parts[0] * 3600 + parts[1] * 60 + parts[2]);
-  if (parts.length === 2) return Math.round(parts[0] * 60 + parts[1]);
-  return undefined;
+  let total: number | undefined;
+  if (parts.length === 3) total = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) total = parts[0] * 60 + parts[1];
+  if (total === undefined) return undefined;
+  // Preserve 0.1s precision so 0:00:59.9 stays < 60 and sub-second Chess.com diffs stay accurate
+  return Math.round(total * 10) / 10;
 }
 
-export function parsePgnTimeControl(pgn: string): { baseSeconds: number | null; incrementSeconds: number } {
-  const match = pgn.match(/\[TimeControl\s+"(\d+)(?:\+(\d+))?"\]/);
-  if (!match) return { baseSeconds: null, incrementSeconds: 0 };
-  const base = parseInt(match[1], 10);
-  const inc = match[2] ? parseInt(match[2], 10) : 0;
-  return {
-    baseSeconds: Number.isFinite(base) ? base : null,
-    incrementSeconds: Number.isFinite(inc) ? inc : 0,
-  };
+export function parsePgnTimeControl(
+  pgn: string,
+  fallbackLabel?: string
+): { baseSeconds: number | null; incrementSeconds: number } {
+  const headerMatch = pgn.match(/\[TimeControl\s+"([^"]+)"\]/);
+  const raw = headerMatch?.[1]?.trim();
+  if (raw && raw !== '-' && raw !== '?') {
+    // Support standard "300+3", bare "600", or multi-stage OTB "40/5400+30:1800+30"
+    const firstStage = raw.split(':')[0] ?? raw;
+    const afterMoves = firstStage.includes('/') ? firstStage.split('/').pop() ?? '' : firstStage;
+    const tcMatch = afterMoves.match(/^(\d+)(?:\+(\d+))?$/);
+    if (tcMatch) {
+      const base = parseInt(tcMatch[1], 10);
+      const inc = tcMatch[2] ? parseInt(tcMatch[2], 10) : 0;
+      if (Number.isFinite(base)) {
+        return { baseSeconds: base, incrementSeconds: Number.isFinite(inc) ? inc : 0 };
+      }
+    }
+  }
+  if (fallbackLabel) {
+    const secMatch = fallbackLabel.match(/^(\d+)s(?:\+(\d+))?$/i);
+    if (secMatch) {
+      return { baseSeconds: parseInt(secMatch[1], 10), incrementSeconds: secMatch[2] ? parseInt(secMatch[2], 10) : 0 };
+    }
+    const minMatch = fallbackLabel.match(/^(\d+(?:\.\d+)?)\+(\d+)$/);
+    if (minMatch) {
+      return {
+        baseSeconds: Math.round(parseFloat(minMatch[1]) * 60),
+        incrementSeconds: parseInt(minMatch[2], 10),
+      };
+    }
+  }
+  return { baseSeconds: null, incrementSeconds: 0 };
 }
 
 export function computeMoveTimeSpent(
   prevClockSeconds: number | undefined,
   currentClockSeconds: number | undefined,
-  incrementSeconds = 0
+  incrementSeconds = 0,
+  isFirstMove = false
 ): number | undefined {
   if (prevClockSeconds === undefined || currentClockSeconds === undefined) return undefined;
-  const spent = prevClockSeconds - currentClockSeconds + incrementSeconds;
+  // On move 1, Lichess and Chess.com clocks have not yet added pre-move increment
+  const effectiveInc = isFirstMove ? 0 : incrementSeconds;
+  const spent = prevClockSeconds - currentClockSeconds + effectiveInc;
   return Math.max(0, Math.round(spent));
 }
 

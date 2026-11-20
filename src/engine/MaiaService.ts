@@ -4,6 +4,7 @@ import { stockfishService } from './StockfishService';
 
 export const MAIA_ENABLED_PREF_KEY = 'brillyder_maia_enabled';
 const MAIA_RATINGS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
+const FAILED_MODEL_TTL_MS = 5 * 60 * 1000;
 
 export interface MaiaAvailability {
   checked: boolean;
@@ -13,6 +14,72 @@ export interface MaiaAvailability {
 }
 
 const PIECE_ORDER: PieceSymbol[] = ['p', 'n', 'b', 'r', 'q', 'k'];
+const FILES = 'abcdefgh';
+
+/**
+ * Builds the canonical LC0 / Maia 1858-move policy lookup map:
+ * - Indices 0..1791: all queen-ray and knight moves ordered by (fromRank, fromFile) then (toRank, toFile).
+ *   Knight promotion shares the base rank-7 -> rank-8 move index per LC0's convention.
+ * - Indices 1792..1857: 66 explicit promotions on rank 7 -> 8 (left/straight/right x q, r, b).
+ */
+export function buildLc0PolicyMap(): Map<string, number> {
+  const map = new Map<string, number>();
+  let idx = 0;
+
+  for (let fr = 0; fr < 8; fr++) {
+    for (let ff = 0; ff < 8; ff++) {
+      const from = `${FILES[ff]}${fr + 1}`;
+      for (let tr = 0; tr < 8; tr++) {
+        for (let tf = 0; tf < 8; tf++) {
+          if (fr === tr && ff === tf) continue;
+          const dr = Math.abs(tr - fr);
+          const df = Math.abs(tf - ff);
+          const isQueenMove = dr === 0 || df === 0 || dr === df;
+          const isKnightMove = (dr === 2 && df === 1) || (dr === 1 && df === 2);
+          if (isQueenMove || isKnightMove) {
+            map.set(`${from}${FILES[tf]}${tr + 1}`, idx++);
+          }
+        }
+      }
+    }
+  }
+
+  for (let ff = 0; ff < 8; ff++) {
+    const from = `${FILES[ff]}7`;
+    for (const df of [-1, 0, 1]) {
+      const tf = ff + df;
+      if (tf < 0 || tf > 7) continue;
+      const to = `${FILES[tf]}8`;
+      for (const promo of ['q', 'r', 'b'] as const) {
+        map.set(`${from}${to}${promo}`, idx++);
+      }
+    }
+  }
+
+  return map;
+}
+
+const LC0_POLICY_MAP = buildLc0PolicyMap();
+
+/**
+ * Maps a legal UCI move into the canonical LC0 / Maia 0..1857 policy index
+ * (vertically flipped when Black is to move; knight promotions map to the base move).
+ */
+export function uciToLc0PolicyIndex(uci: string, flip: boolean): number {
+  if (!uci || uci.length < 4) return -1;
+  const fromFile = uci[0];
+  const fromRankRaw = parseInt(uci[1], 10);
+  const toFile = uci[2];
+  const toRankRaw = parseInt(uci[3], 10);
+  if (!Number.isFinite(fromRankRaw) || !Number.isFinite(toRankRaw)) return -1;
+
+  const fromRank = flip ? 9 - fromRankRaw : fromRankRaw;
+  const toRank = flip ? 9 - toRankRaw : toRankRaw;
+  const rawPromo = uci[4]?.toLowerCase();
+  const suffix = rawPromo && rawPromo !== 'n' ? rawPromo : '';
+  const canonical = `${fromFile}${fromRank}${toFile}${toRank}${suffix}`;
+  return LC0_POLICY_MAP.get(canonical) ?? -1;
+}
 
 /**
  * Encodes a chess position into the standard LC0/Maia 112x8x8 float32 tensor
@@ -41,7 +108,9 @@ export function encodeFenToMaiaPlanes(fen: string): Float32Array {
   }
 
   // Planes 104..107: castling rights
-  const castling = fen.split(' ')[2] ?? '-';
+  const fenParts = fen.split(' ');
+  const castling = fenParts[2] ?? '-';
+  const halfmoveClock = Math.max(0, parseInt(fenParts[4] ?? '0', 10) || 0);
   const setPlane = (p: number, val: number) => {
     const start = p * 64;
     planes.fill(val, start, start + 64);
@@ -58,30 +127,17 @@ export function encodeFenToMaiaPlanes(fen: string): Float32Array {
     if (castling.includes('K')) setPlane(107, 1);
   }
 
-  // Plane 108: side to move (1 for black), Plane 111: all-ones board boundary plane
+  // Plane 108: side to move (1 for black), Plane 109: rule50 counter, Plane 111: all-ones boundary plane
   if (turn === 'b') setPlane(108, 1);
+  if (halfmoveClock > 0) setPlane(109, Math.min(1, halfmoveClock / 100));
   setPlane(111, 1);
   return planes;
-}
-
-/**
- * Maps a legal UCI move to a deterministic 0..1857 policy index bucket.
- */
-function uciToPolicyIndex(uci: string, flip: boolean): number {
-  const fromFile = uci.charCodeAt(0) - 97;
-  const fromRankRaw = parseInt(uci[1], 10) - 1;
-  const toFile = uci.charCodeAt(2) - 97;
-  const toRankRaw = parseInt(uci[3], 10) - 1;
-  const fromRank = flip ? 7 - fromRankRaw : fromRankRaw;
-  const toRank = flip ? 7 - toRankRaw : toRankRaw;
-  const fromSq = fromRank * 8 + fromFile;
-  const toSq = toRank * 8 + toFile;
-  return (fromSq * 29 + toSq) % 1858;
 }
 
 class MaiaEngineService {
   private worker: Worker | null = null;
   private reqId = 0;
+  private failedModels = new Map<string, number>();
   private availability: MaiaAvailability = {
     checked: false,
     availableRatings: [],
@@ -103,7 +159,7 @@ class MaiaEngineService {
   }
 
   /**
-   * Probes `public/models/maia-*.onnx` cleanly (ignoring HTML SPA fallbacks).
+   * Probes `public/models/maia-*.onnx` cleanly in parallel (ignoring HTML SPA fallbacks).
    */
   async probeAvailableModels(): Promise<MaiaAvailability> {
     if (typeof window === 'undefined' || typeof fetch === 'undefined') {
@@ -111,19 +167,20 @@ class MaiaEngineService {
       return this.availability;
     }
 
-    const found: number[] = [];
-    for (const elo of MAIA_RATINGS) {
-      const url = new URL(`models/maia-${elo}.onnx`, document.baseURI).href;
-      try {
-        const res = await fetch(url, { method: 'HEAD' });
-        const ct = (res.headers.get('content-type') ?? '').toLowerCase();
-        if (res.ok && !ct.includes('text/html')) {
-          found.push(elo);
+    const checks = await Promise.all(
+      MAIA_RATINGS.map(async (elo) => {
+        const url = new URL(`models/maia-${elo}.onnx`, document.baseURI).href;
+        try {
+          const res = await fetch(url, { method: 'HEAD' });
+          const ct = (res.headers.get('content-type') ?? '').toLowerCase();
+          return res.ok && !ct.includes('text/html') ? elo : null;
+        } catch {
+          return null;
         }
-      } catch {
-        // model absent
-      }
-    }
+      })
+    );
+
+    const found = checks.filter((r): r is number => r !== null).sort((a, b) => a - b);
 
     this.availability = {
       checked: true,
@@ -143,22 +200,41 @@ class MaiaEngineService {
 
   private callWorker<T>(payload: Record<string, unknown>, timeoutMs = 6000): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const worker = this.ensureWorker();
+      let worker: Worker;
+      try {
+        worker = this.ensureWorker();
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error('Maia worker unavailable'));
+        return;
+      }
+
       const id = ++this.reqId;
-      const timer = window.setTimeout(() => {
+      const cleanup = () => {
+        window.clearTimeout(timer);
         worker.removeEventListener('message', onMsg);
+        worker.removeEventListener('error', onErr);
+      };
+
+      const timer = window.setTimeout(() => {
+        cleanup();
         reject(new Error('Maia ONNX worker timed out'));
       }, timeoutMs);
 
       const onMsg = (ev: MessageEvent) => {
         if (ev.data?.id !== id) return;
-        window.clearTimeout(timer);
-        worker.removeEventListener('message', onMsg);
+        cleanup();
         if (ev.data.type === 'error') reject(new Error(ev.data.error));
         else resolve(ev.data as T);
       };
 
+      const onErr = (ev: ErrorEvent) => {
+        cleanup();
+        this.dispose();
+        reject(new Error(ev.message || 'Maia worker crashed'));
+      };
+
       worker.addEventListener('message', onMsg);
+      worker.addEventListener('error', onErr);
       worker.postMessage({ ...payload, id });
     });
   }
@@ -174,6 +250,10 @@ class MaiaEngineService {
       Math.abs(r - targetElo) < Math.abs(best - targetElo) ? r : best
     );
     const modelUrl = new URL(`models/maia-${nearest}.onnx`, document.baseURI).href;
+    const failedAt = this.failedModels.get(modelUrl);
+    if (failedAt && Date.now() - failedAt < FAILED_MODEL_TTL_MS) {
+      return null;
+    }
 
     try {
       await this.callWorker({ type: 'load', modelUrl }, 12_000);
@@ -183,7 +263,7 @@ class MaiaEngineService {
       const flip = chess.turn() === 'b';
       const legalMoves = chess.moves({ verbose: true }).map((m) => {
         const uci = `${m.from}${m.to}${m.promotion ?? ''}`;
-        return { uci, index: uciToPolicyIndex(uci, flip) };
+        return { uci, index: uciToLc0PolicyIndex(uci, flip) };
       });
       if (legalMoves.length === 0) return null;
 
@@ -195,6 +275,7 @@ class MaiaEngineService {
       });
       return res.moveUci || null;
     } catch (err) {
+      this.failedModels.set(modelUrl, Date.now());
       this.availability = {
         ...this.availability,
         lastError: err instanceof Error ? err.message : 'Maia inference failed',
@@ -207,12 +288,16 @@ class MaiaEngineService {
    * Unified bot move entry point: tries Maia ONNX if opted-in & locally present,
    * otherwise falls back cleanly to rating-capped Stockfish WASM.
    */
-  async getSmartBotMove(fen: string, targetElo: number): Promise<{ moveUci: string; engine: 'maia' | 'stockfish' }> {
+  async getSmartBotMove(
+    fen: string,
+    targetElo: number,
+    signal?: AbortSignal
+  ): Promise<{ moveUci: string; engine: 'maia' | 'stockfish' }> {
     const maiaMove = await this.getMaiaMove(fen, targetElo);
     if (maiaMove) {
       return { moveUci: maiaMove, engine: 'maia' };
     }
-    const sfMove = await stockfishService.getBotMove(fen, targetElo);
+    const sfMove = await stockfishService.getBotMove(fen, targetElo, signal);
     return { moveUci: sfMove, engine: 'stockfish' };
   }
 

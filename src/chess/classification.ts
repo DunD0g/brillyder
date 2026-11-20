@@ -22,45 +22,27 @@ import {
 } from '../utils/chessMath';
 import { generateMoveExplanation } from './moveCoach';
 import { isBookPly, lookupOpeningByMoves } from './openingBook';
+import { detectShortMate, legalCaptureGainOnSquare } from './tacticalMotifs';
 
 const SEE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 1000 };
-const SEE_MAX_DEPTH = 8;
+const SEE_MAX_DEPTH = 6;
 const SACRIFICE_MIN_GAIN = 2;
 
-export const CLASSIFICATION_VERSION = 2;
+export const CLASSIFICATION_VERSION = 3;
 
 export function fenPositionKey(fen: string): string {
   return fen.split(' ').slice(0, 4).join(' ');
 }
 
 /**
- * Static exchange evaluation for one square. Returns the best net material gain
- * for the side to move if it starts capturing on `target`. Both sides may stop
- * at any point, and only legal captures are considered, so a king cannot take a
- * defended piece and pinned defenders cannot recapture.
- */
-function bestCaptureGain(chess: Chess, target: Square, depth: number): number {
-  if (depth <= 0) return 0;
-  const captures = chess.moves({ verbose: true }).filter((m) => m.to === target && m.captured);
-  if (captures.length === 0) return 0;
-
-  let best = 0;
-  for (const capture of captures) {
-    if (!capture.captured) continue;
-    const next = new Chess(chess.fen());
-    next.move({ from: capture.from, to: capture.to, promotion: capture.promotion });
-    const replyGain = bestCaptureGain(next, target, depth - 1);
-    const gain = SEE_VALUE[capture.captured] - replyGain;
-    if (gain > best) best = gain;
-  }
-  return best;
-}
-
-/**
- * A move is a sacrifice only when the opponent has a legal capture that wins at
- * least a minor piece's worth of material even after the best recapture, and the
- * mover did not already capture equal value on that square. A merely attacked
- * piece (e.g. a defended rook giving check) is not a sacrifice.
+ * A move is a sacrifice when:
+ * 1. Active sacrifice: the opponent has a legal capture on `toSquare` that wins
+ *    at least a minor piece's worth of material beyond what the mover captured
+ *    (and beyond any pawn promotion value gained on the move — so `bxa8=Q Kxa8`
+ *    is NOT falsely treated as a Queen sacrifice!), OR
+ * 2. Passive sacrifice: the mover leaves another friendly non-pawn piece en prise
+ *    (net legal capture gain >= SACRIFICE_MIN_GAIN beyond any material captured on this move)
+ *    to pursue a stronger tactical/mating initiative.
  */
 export function isSacrificeMove(
   _beforeFen: string,
@@ -68,14 +50,37 @@ export function isSacrificeMove(
   mover: PlayerColor,
   toSquare: string,
   movedPiece: PieceSymbol,
-  capturedPiece?: PieceSymbol
+  capturedPiece?: PieceSymbol,
+  promotionPiece?: PieceSymbol
 ): boolean {
-  if (movedPiece === 'k') return false;
   const after = new Chess(afterFen);
   if (after.turn() === mover) return false;
-  const opponentGain = bestCaptureGain(after, toSquare as Square, SEE_MAX_DEPTH);
+
   const capturedValue = capturedPiece ? SEE_VALUE[capturedPiece] : 0;
-  return opponentGain - capturedValue >= SACRIFICE_MIN_GAIN;
+  // On a pawn promotion (e.g. bxa8=Q), the mover only risked a pawn (1), not a queen (9)
+  const promoSurplus =
+    movedPiece === 'p' && promotionPiece ? Math.max(0, SEE_VALUE[promotionPiece] - SEE_VALUE.p) : 0;
+
+  // 1. Active sacrifice on destination square (kings cannot sacrifice themselves)
+  if (movedPiece !== 'k') {
+    const opponentGainOnDest = legalCaptureGainOnSquare(after, toSquare as Square, SEE_MAX_DEPTH);
+    const netRiskedOnDest = opponentGainOnDest - promoSurplus - capturedValue;
+    if (netRiskedOnDest >= SACRIFICE_MIN_GAIN) return true;
+  }
+
+  // 2. Passive sacrifice: leaving another friendly non-pawn piece legally capturable for >= 2 net material
+  for (const row of after.board()) {
+    for (const cell of row) {
+      if (!cell || cell.color !== mover || cell.type === 'k' || cell.type === 'p') continue;
+      if (cell.square === toSquare) continue;
+      const oppGain = legalCaptureGainOnSquare(after, cell.square, SEE_MAX_DEPTH);
+      if (oppGain - capturedValue >= SACRIFICE_MIN_GAIN) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export function classifyMove(params: {
@@ -90,23 +95,37 @@ export function classifyMove(params: {
   toSquare: string;
   movedPiece: PieceSymbol;
   capturedPiece?: PieceSymbol;
+  promotionPiece?: PieceSymbol;
   positionRepeated: boolean;
   moverWinBefore: number;
   moverWinAfter: number;
   secondBestGapWin: number;
   hasSecondLine: boolean;
   missedMate: boolean;
+  missedShortMate?: boolean;
   walkedIntoMate: boolean;
 }): MoveClassification {
+  const isTopMove = params.playedUci === params.bestMoveUci;
   const rawLoss = Math.max(0, params.moverWinBefore - params.moverWinAfter);
-  const winLoss = params.playedUci === params.bestMoveUci ? 0 : rawLoss;
+  const winLoss = isTopMove ? 0 : rawLoss;
 
   if (isBookPly(params.plyIndex, params.sanPrefix, params.lichessOpeningPly, winLoss)) return 'book';
-  if (params.walkedIntoMate || (params.missedMate && winLoss > 12) || winLoss > 30) return 'blunder';
+
+  // Never blame Stockfish's #1 best move for walking into forced mate (horizon/depth effect)
+  const walkedIntoMateError = params.walkedIntoMate && !isTopMove;
+  if (walkedIntoMateError || (params.missedMate && winLoss > 12) || winLoss > 30) return 'blunder';
+
+  // Missing a forced Mate in 1–3 should never be praised as Best/Great/Brilliant
+  if (params.missedShortMate && !isTopMove) {
+    if (winLoss > 4) return 'mistake';
+    return 'inaccuracy';
+  }
+
   if (winLoss > 18) return 'mistake';
   if (winLoss > 10) return 'inaccuracy';
 
   const brilliant =
+    isTopMove &&
     winLoss <= 2 &&
     !params.missedMate &&
     !params.positionRepeated &&
@@ -114,11 +133,28 @@ export function classifyMove(params: {
     params.moverWinBefore < 94 &&
     params.hasSecondLine &&
     params.secondBestGapWin >= 6 &&
-    isSacrificeMove(params.beforeFen, params.afterFen, params.moverColor, params.toSquare, params.movedPiece, params.capturedPiece);
+    isSacrificeMove(
+      params.beforeFen,
+      params.afterFen,
+      params.moverColor,
+      params.toSquare,
+      params.movedPiece,
+      params.capturedPiece,
+      params.promotionPiece
+    );
 
   if (brilliant) return 'brilliant';
-  if (winLoss <= 2 && params.hasSecondLine && params.secondBestGapWin > 10 && params.moverWinBefore < 95) return 'great';
-  if (params.playedUci === params.bestMoveUci || winLoss <= 2) return 'best';
+  if (
+    isTopMove &&
+    winLoss <= 2 &&
+    !params.missedMate &&
+    params.hasSecondLine &&
+    params.secondBestGapWin > 10 &&
+    params.moverWinBefore < 95
+  ) {
+    return 'great';
+  }
+  if (isTopMove || winLoss <= 2) return 'best';
   return 'excellent';
 }
 
@@ -133,6 +169,15 @@ export function computePlayerStats(
     brilliant: 0, great: 0, best: 0, excellent: 0, inaccuracy: 0, mistake: 0, blunder: 0, book: 0,
   };
   const sidePlies = plies.filter((p) => p.color === color);
+  if (sidePlies.length === 0) {
+    return {
+      accuracy: 0,
+      estimatedElo: playerRating ?? opponentRating ?? 1500,
+      counts,
+      avgWinLoss: 0,
+    };
+  }
+
   const accs: number[] = [];
   const winPcts: number[] = [];
   let lossSum = 0;
@@ -144,13 +189,64 @@ export function computePlayerStats(
   }
   const accuracy = calculateGameAccuracy(accs, winPcts);
   const resultScore: 1 | 0.5 | 0 =
-    resultString === '1/2-1/2' ? 0.5 : (color === 'w' && resultString === '1-0') || (color === 'b' && resultString === '0-1') ? 1 : 0;
+    resultString === '1/2-1/2' || resultString === '*'
+      ? 0.5
+      : (color === 'w' && resultString === '1-0') || (color === 'b' && resultString === '0-1')
+        ? 1
+        : 0;
   return {
     accuracy,
     estimatedElo: estimateGameElo(playerRating, opponentRating, accuracy, resultScore),
     counts,
-    avgWinLoss: sidePlies.length > 0 ? Number((lossSum / sidePlies.length).toFixed(1)) : 0,
+    avgWinLoss: Number((lossSum / sidePlies.length).toFixed(1)),
   };
+}
+
+/**
+ * Strips parenthesized RAV variations ONLY outside PGN header tags `[...]`
+ * and brace comments `{...}` so headers like `[Event "Blitz (3+0)"]` stay intact.
+ */
+function stripPgnVariationsSafely(pgn: string): string {
+  let out = '';
+  let inHeader = false;
+  let inHeaderQuote = false;
+  let inBrace = false;
+  let parenDepth = 0;
+
+  for (let i = 0; i < pgn.length; i++) {
+    const ch = pgn[i];
+    if (inBrace) {
+      if (parenDepth === 0) out += ch;
+      if (ch === '}') inBrace = false;
+      continue;
+    }
+    if (inHeader) {
+      out += ch;
+      if (ch === '"' && pgn[i - 1] !== '\\') inHeaderQuote = !inHeaderQuote;
+      else if (ch === ']' && !inHeaderQuote) inHeader = false;
+      continue;
+    }
+    if (ch === '[' && parenDepth === 0) {
+      inHeader = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '{') {
+      inBrace = true;
+      if (parenDepth === 0) out += ch;
+      continue;
+    }
+    if (ch === '(') {
+      parenDepth++;
+      continue;
+    }
+    if (ch === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (parenDepth === 0) out += ch;
+  }
+  return out;
 }
 
 export function loadPgnSafely(pgn: string): Chess {
@@ -159,14 +255,7 @@ export function loadPgnSafely(pgn: string): Chess {
     chess.loadPgn(pgn);
     return chess;
   } catch {
-    let stripped = '';
-    let depth = 0;
-    for (const ch of pgn) {
-      if (ch === '(') depth++;
-      else if (ch === ')') depth = Math.max(0, depth - 1);
-      else if (depth === 0) stripped += ch;
-    }
-    chess.loadPgn(stripped);
+    chess.loadPgn(stripPgnVariationsSafely(pgn));
     return chess;
   }
 }
@@ -180,7 +269,7 @@ export function buildAnalyzedGame(
   const chess = loadPgnSafely(game.pgn);
   const commentsMap = new Map<string, string>();
   for (const entry of chess.getComments()) commentsMap.set(entry.fen, entry.comment);
-  const timeControl = parsePgnTimeControl(game.pgn);
+  const timeControl = parsePgnTimeControl(game.pgn, game.timeControlLabel);
 
   const moves = chess.history({ verbose: true });
   const sanList = moves.map((m) => m.san);
@@ -227,9 +316,25 @@ export function buildAnalyzedGame(
     const cp2 = line2 ? Math.max(-1200, Math.min(1200, line2.score.cpWhite * sign)) : 0;
     const secondBestGapPawns = line1 && line2 ? Number((Math.max(0, cp1 - cp2) / 100).toFixed(2)) : 0;
 
-    const moverHadMate = evalBefore.score.mateWhite !== null && ((color === 'w' && evalBefore.score.mateWhite > 0) || (color === 'b' && evalBefore.score.mateWhite < 0));
-    const moverHasMate = evalAfter.score.isCheckmate || (evalAfter.score.mateWhite !== null && ((color === 'w' && evalAfter.score.mateWhite > 0) || (color === 'b' && evalAfter.score.mateWhite < 0)));
-    const oppHasMate = evalAfter.score.mateWhite !== null && ((color === 'w' && evalAfter.score.mateWhite < 0) || (color === 'b' && evalAfter.score.mateWhite > 0));
+    const moverHadMate =
+      evalBefore.score.mateWhite !== null &&
+      evalBefore.score.mateWhite !== 0 &&
+      ((color === 'w' && evalBefore.score.mateWhite > 0) || (color === 'b' && evalBefore.score.mateWhite < 0));
+    const moverHasMate =
+      evalAfter.score.isCheckmate ||
+      (evalAfter.score.mateWhite !== null &&
+        evalAfter.score.mateWhite !== 0 &&
+        ((color === 'w' && evalAfter.score.mateWhite > 0) || (color === 'b' && evalAfter.score.mateWhite < 0)));
+    const oppHadMate =
+      evalBefore.score.mateWhite !== null &&
+      evalBefore.score.mateWhite !== 0 &&
+      ((color === 'w' && evalBefore.score.mateWhite < 0) || (color === 'b' && evalBefore.score.mateWhite > 0));
+    const oppHasMate =
+      evalAfter.score.mateWhite !== null &&
+      evalAfter.score.mateWhite !== 0 &&
+      ((color === 'w' && evalAfter.score.mateWhite < 0) || (color === 'b' && evalAfter.score.mateWhite > 0));
+    const hadShortMate = detectShortMate(evalBefore.score, color) !== null;
+    const stillShortMate = evalAfter.score.isCheckmate || detectShortMate(evalAfter.score, color) !== null;
 
     const afterPositionKey = fenPositionKey(mv.after);
     const positionRepeated = seenPositions.has(afterPositionKey);
@@ -247,19 +352,27 @@ export function buildAnalyzedGame(
       toSquare: mv.to,
       movedPiece: mv.piece,
       capturedPiece: mv.captured,
+      promotionPiece: mv.promotion,
       positionRepeated,
       moverWinBefore,
       moverWinAfter,
       secondBestGapWin,
       hasSecondLine,
       missedMate: moverHadMate && !moverHasMate,
-      walkedIntoMate: oppHasMate && moverWinBefore > 15,
+      missedShortMate: hadShortMate && !stillShortMate,
+      walkedIntoMate: oppHasMate && !oppHadMate && moverWinBefore > 15,
     });
 
+    const moveNumber = Math.floor(i / 2) + 1;
     const clockText = extractClockFromComment(commentsMap.get(mv.after));
     const clockSeconds = extractClockSeconds(commentsMap.get(mv.after));
     const prevClock = lastClockByColor[color];
-    const timeSpentSeconds = computeMoveTimeSpent(prevClock, clockSeconds, timeControl.incrementSeconds);
+    const timeSpentSeconds = computeMoveTimeSpent(
+      prevClock,
+      clockSeconds,
+      timeControl.incrementSeconds,
+      moveNumber === 1
+    );
     if (clockSeconds !== undefined) lastClockByColor[color] = clockSeconds;
 
     let clockTag: 'impulse' | 'time-trouble' | undefined;
@@ -278,9 +391,12 @@ export function buildAnalyzedGame(
     const isCriticalMoment = hasSecondLine && secondBestGapPawns >= 2.0;
     const isClutchSave =
       isCriticalMoment &&
+      playedUci === bestMoveUci &&
+      !positionRepeated &&
       winLoss <= 2 &&
+      moverWinAfter >= 30 &&
       moverWinBefore < 88 &&
-      classification !== 'book' &&
+      (classification === 'best' || classification === 'great' || classification === 'brilliant') &&
       (moverWinBefore <= 62 || (clockSeconds !== undefined && clockSeconds <= 90));
 
     const accuracy = classification === 'book' ? 100 : calculateMoveAccuracy(winLoss);
@@ -309,7 +425,7 @@ export function buildAnalyzedGame(
 
     plies.push({
       ply: i + 1,
-      moveNumber: Math.floor(i / 2) + 1,
+      moveNumber,
       color,
       san: mv.san,
       uci: playedUci,
@@ -359,10 +475,8 @@ export function buildAnalyzedGame(
 }
 
 /**
- * Re-checks saved brilliant moves against the current sacrifice/repetition
- * rules. Older reviews were produced by a heuristic that could tag a merely
- * attacked piece as brilliant, so those classifications are downgraded until
- * the game is re-analyzed.
+ * Re-checks saved brilliant & clutch classifications against the current sacrifice,
+ * promotion, repetition, and viability rules so older cached reviews upgrade cleanly.
  */
 export function refreshBrilliantClassifications(analyzed: AnalyzedGame): AnalyzedGame {
   if ((analyzed.classificationVersion ?? 0) >= CLASSIFICATION_VERSION) return analyzed;
@@ -374,21 +488,61 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
     const positionKey = fenPositionKey(ply.afterFen);
     const repeated = seenPositions.has(positionKey);
     seenPositions.add(positionKey);
-    if (ply.classification !== 'brilliant') return ply;
-
-    const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
-    const sacrifice = movedPiece
-      ? isSacrificeMove(ply.beforeFen, ply.afterFen, ply.color, ply.to, movedPiece, ply.captured as PieceSymbol | undefined)
-      : false;
-    if (sacrifice && !repeated) return ply;
 
     const moverWinBefore = getMoverWinPercent(ply.evalBefore, ply.color);
-    const classification: MoveClassification =
-      ply.winLoss <= 2 && ply.secondBestGapWin > 10 && moverWinBefore < 95
-        ? 'great'
-        : ply.uci === ply.bestMoveUci || ply.winLoss <= 2
-          ? 'best'
-          : 'excellent';
+    const moverWinAfter = getMoverWinPercent(ply.evalAfter, ply.color);
+    let classification = ply.classification;
+    let isClutchSave = ply.isClutchSave;
+    let changed = false;
+
+    if (classification === 'brilliant') {
+      const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
+      const sacrifice = movedPiece
+        ? isSacrificeMove(
+            ply.beforeFen,
+            ply.afterFen,
+            ply.color,
+            ply.to,
+            movedPiece,
+            ply.captured as PieceSymbol | undefined,
+            ply.promotion as PieceSymbol | undefined
+          )
+        : false;
+      const validBrilliant =
+        sacrifice &&
+        !repeated &&
+        ply.uci === ply.bestMoveUci &&
+        ply.winLoss <= 2 &&
+        moverWinAfter >= 45 &&
+        moverWinBefore < 94 &&
+        ply.secondBestGapWin >= 6;
+
+      if (!validBrilliant) {
+        classification =
+          ply.uci === ply.bestMoveUci && ply.winLoss <= 2 && ply.secondBestGapWin > 10 && moverWinBefore < 95
+            ? 'great'
+            : ply.uci === ply.bestMoveUci || ply.winLoss <= 2
+              ? 'best'
+              : 'excellent';
+        changed = true;
+      }
+    }
+
+    if (isClutchSave) {
+      const validClutch =
+        !repeated &&
+        ply.uci === ply.bestMoveUci &&
+        moverWinAfter >= 30 &&
+        moverWinBefore < 88 &&
+        (classification === 'best' || classification === 'great' || classification === 'brilliant');
+      if (!validClutch) {
+        isClutchSave = false;
+        changed = true;
+      }
+    }
+
+    if (!changed) return ply;
+
     const coaching = generateMoveExplanation({
       beforeFen: ply.beforeFen,
       afterFen: ply.afterFen,
@@ -398,12 +552,15 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
       bestMoveUci: ply.bestMoveUci,
       bestMoveSan: ply.bestMoveSan,
       threatMoveUci: ply.threatMoveUci,
+      threatMoveSan: ply.threatMoveSan,
       evalBefore: ply.evalBefore,
       evalAfter: ply.evalAfter,
+      secondBestGapPawns: ply.secondBestGapPawns,
+      isClutchSave,
       classification,
       openingName: analyzed.openingLineDetected || analyzed.game.openingName,
     });
-    return { ...ply, classification, coaching };
+    return { ...ply, classification, isClutchSave, coaching };
   });
 
   return {
