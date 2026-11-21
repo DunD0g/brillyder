@@ -1,5 +1,5 @@
 import type { AnalyzedGame, EngineScore, PlayerColor } from '../types/chess';
-import { resolveUserColor, resultForUserStrict } from '../utils/player';
+import { resolveUserColor, resultForUserStrict, type UserHandleSpec } from '../utils/player';
 
 export const ADVANTAGE_THRESHOLD_CP = 250; // +2.5 pawns (or -2.5 as Black)
 export const CONVERSION_WIN_CP = 800; // +8.0 pawns win lock
@@ -40,7 +40,7 @@ export function userPerspectiveCp(score: EngineScore, userColor: PlayerColor): n
  */
 export function extractBlownLeadPositions(
   analyzedGames: AnalyzedGame[],
-  username: string
+  username: UserHandleSpec
 ): BlownLeadPosition[] {
   const results: BlownLeadPosition[] = [];
 

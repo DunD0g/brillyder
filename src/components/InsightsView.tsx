@@ -24,6 +24,7 @@ import {
 import type { AnalyzedGame, ColourSplit, GameHighlight, GamePlatform, ScoutState } from '../types/chess';
 import { computeMultiGameInsights } from '../services/insightsAggregator';
 import { PLATFORM_META, platformLabel, scopeAnalyzedGamesForPlatform } from '../services/gameSource';
+import type { UserHandleSpec } from '../utils/player';
 import { useVibe } from '../utils/vibeCopy';
 import type { TrainSection } from './MistakeTrainerView';
 import { ActivityTrendChart } from './ActivityTrendChart';
@@ -32,6 +33,7 @@ import { TimeTroubleCard } from './TimeTroubleCard';
 interface Props {
   analyzedGames: AnalyzedGame[];
   username: string;
+  userHandles?: UserHandleSpec;
   platform: GamePlatform;
   scout: ScoutState | null;
   onPlatformChange: (platform: GamePlatform) => void;
@@ -57,6 +59,7 @@ const AXIS_HINTS: Record<string, string> = {
 export const InsightsView: React.FC<Props> = ({
   analyzedGames,
   username,
+  userHandles,
   platform,
   scout,
   onPlatformChange,
@@ -75,7 +78,7 @@ export const InsightsView: React.FC<Props> = ({
   const scopedGames = useMemo(() => scopeAnalyzedGamesForPlatform(analyzedGames, platform), [analyzedGames, platform]);
   const scoutActive = scout?.status === 'ready' && scout.games.length > 0;
   const activeGames = scoutActive ? scout.games : scopedGames;
-  const activeUsername = scoutActive ? scout.username : username;
+  const activeUsername: UserHandleSpec = scoutActive ? scout.username : (userHandles ?? username);
   const insights = useMemo(() => computeMultiGameInsights(activeGames, activeUsername), [activeGames, activeUsername]);
   const bestGame = insights.bestGames[0] ?? null;
   const streakVisible = insights.currentStreak.count >= 2 && insights.currentStreak.kind !== 'none';

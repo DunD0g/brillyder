@@ -15,6 +15,7 @@ import type { FsrsOpeningCard, OpeningCourse, OpeningLine, Side } from '../types
 import { hydrateCourseCards, hydrateLineCards, isCardDue } from '../lib/fsrsOpening';
 import { addPatchedLineToCourse, type RepertoireGap } from '../services/repertoireCoverage';
 import { useVibe } from '../utils/vibeCopy';
+import type { UserHandleSpec } from '../utils/player';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { MothershipCard } from './openings/MothershipCard';
 import { GuidedWalkthrough } from './openings/GuidedWalkthrough';
@@ -29,7 +30,7 @@ interface Props {
   courses: OpeningCourse[];
   fsrsCards: FsrsOpeningCard[];
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   boardTheme: BoardThemeId;
   explorerPrefs: ExplorerPrefSettings;
   onSaveCourse: (course: OpeningCourse, newCards?: FsrsOpeningCard[]) => Promise<void>;

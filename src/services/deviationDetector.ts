@@ -2,7 +2,7 @@ import { Chess } from 'chess.js';
 import type { AnalyzedGame, PlayerColor } from '../types/chess';
 import type { OpeningCourse, Side } from '../types/openings';
 import { buildOpeningCardId, normalizeFenKey } from '../lib/fsrsOpening';
-import { resolveUserColor, resultForUserStrict } from '../utils/player';
+import { resolveUserColor, resultForUserStrict, type UserHandleSpec } from '../utils/player';
 
 export interface RepertoireMoveTarget {
   courseId: string;
@@ -256,7 +256,7 @@ export function detectRepertoireDeviation(params: {
  */
 export function buildOpeningReportCards(
   analyzedGames: AnalyzedGame[],
-  username: string,
+  username: UserHandleSpec,
   courses: OpeningCourse[]
 ): MultiGameOpeningRow[] {
   // Precompute repertoire lookup graphs ONCE per side instead of rebuilding inside the game loop

@@ -3,10 +3,11 @@ import { ArrowUpRight, BarChart2, Flame } from 'lucide-react';
 import type { AnalyzedGame } from '../../types/chess';
 import type { OpeningCourse } from '../../types/openings';
 import { buildOpeningReportCards } from '../../services/deviationDetector';
+import type { UserHandleSpec } from '../../utils/player';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   courses: OpeningCourse[];
   onOpenGame: (gameId: string, ply: number) => void;
 }

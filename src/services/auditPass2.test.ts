@@ -301,4 +301,22 @@ describe('Pass 2 — Stats, Vault, Tablebase, Sync, Daily Coach & Streak integri
     const s2 = recordDrillSolve(day2);
     expect(s2.current).toBe(s1.current + 1);
   });
+
+  it('resolves distinct Lichess and Chess.com handles per game platform accurately', () => {
+    const lichessGame = makeGame('dual-1', {
+      source: 'lichess',
+      userColor: 'w',
+      white: { name: 'RivalA' },
+      black: { name: 'LichessLuke' },
+    });
+    const chessComGame = makeGame('dual-2', {
+      source: 'chesscom',
+      userColor: 'b',
+      white: { name: 'ChessComLuke' },
+      black: { name: 'RivalB' },
+    });
+    const handles = { lichess: 'LichessLuke', chesscom: 'ChessComLuke' };
+    expect(resolveUserColor(lichessGame.game, handles)).toBe('b');
+    expect(resolveUserColor(chessComGame.game, handles)).toBe('w');
+  });
 });

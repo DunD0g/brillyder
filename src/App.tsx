@@ -392,8 +392,8 @@ export const App: React.FC = () => {
   }, [allCourses, handleSaveCourse]);
 
   const mistakeDeck = useMemo(
-    () => buildMistakeDeck(analyzedGamesList, username),
-    [analyzedGamesList, username]
+    () => buildMistakeDeck(analyzedGamesList, usernames),
+    [analyzedGamesList, usernames]
   );
 
   const handleSaveWoodpeckerCycle = useCallback(async (cycle: WoodpeckerCycleRecord) => {
@@ -464,8 +464,8 @@ export const App: React.FC = () => {
   }, [reloadFromIndexedDb]);
 
   const vault = useMemo(
-    () => buildBrillyVault(analyzedGamesList, username),
-    [analyzedGamesList, username]
+    () => buildBrillyVault(analyzedGamesList, usernames),
+    [analyzedGamesList, usernames]
   );
 
   const addAnalyzedGame = useCallback((analyzed: AnalyzedGame) => {
@@ -1077,7 +1077,7 @@ export const App: React.FC = () => {
           selectedGame ? (() => {
             const localAnalyzed = analyzedMap.get(selectedGame.id) ?? null;
             const scoutAnalyzed = !localAnalyzed ? scout?.games.find((g) => g.id === selectedGame.id) ?? null : null;
-            const effectiveUsername = !localAnalyzed && scoutAnalyzed && scout ? scout.username : username;
+            const effectiveUsername = !localAnalyzed && scoutAnalyzed && scout ? scout.username : usernames;
             return (
               <AnalysisView
                 game={selectedGame}
@@ -1124,7 +1124,7 @@ export const App: React.FC = () => {
             courses={allCourses}
             fsrsCards={fsrsCards}
             analyzedGames={analyzedGamesList}
-            username={username}
+            username={usernames}
             boardTheme={boardTheme}
             explorerPrefs={explorerPrefs}
             onSaveCourse={handleSaveCourse}
@@ -1138,7 +1138,7 @@ export const App: React.FC = () => {
         {tab === 'train' && (
           <MistakeTrainerView
             analyzedGames={analyzedGamesList}
-            username={username}
+            username={usernames}
             boardTheme={boardTheme}
             courses={allCourses}
             fsrsCards={fsrsCards}
@@ -1163,6 +1163,7 @@ export const App: React.FC = () => {
           <InsightsView
             analyzedGames={analyzedGamesList}
             username={username}
+            userHandles={usernames}
             platform={platform}
             scout={scout}
             onPlatformChange={handlePlatformChange}

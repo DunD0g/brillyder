@@ -30,7 +30,7 @@ import type { OpeningCourse } from '../types/openings';
 import { detectRepertoireDeviation, type RepertoireDeviation } from '../services/deviationDetector';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { buildEngineScore, getMaterialBalance, getMoverWinPercent, uciToSquares } from '../utils/chessMath';
-import { resolveUserColor } from '../utils/player';
+import { resolveUserColor, type UserHandleSpec } from '../utils/player';
 import { appendSandboxMoves, jumpSandboxEdge, stepSandboxNav, type SandboxNavMove } from '../utils/sandboxNav';
 import { soundManager } from '../utils/sound';
 import { useVibe } from '../utils/vibeCopy';
@@ -59,7 +59,7 @@ import { AlienCelebration, type CelebrationKind } from './AlienCelebration';
 
 interface Props {
   game: LichessGameRecord;
-  username?: string;
+  username?: UserHandleSpec;
   analyzed: AnalyzedGame | null;
   analyzing: boolean;
   progress: { done: number; total: number; stageLabel?: string; percent?: number } | null;

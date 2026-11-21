@@ -34,6 +34,7 @@ import {
 } from '../services/mistakeDeck';
 import { isSacrificeMove } from '../chess/classification';
 import { getMoverWinPercent, uciToSquares } from '../utils/chessMath';
+import type { UserHandleSpec } from '../utils/player';
 import { stockfishService } from '../engine/StockfishService';
 import { soundManager } from '../utils/sound';
 import { useVibe } from '../utils/vibeCopy';
@@ -51,7 +52,7 @@ export type TrainSection = 'daily' | 'woodpecker' | 'conversion' | 'deck';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   boardTheme: BoardThemeId;
   courses: OpeningCourse[];
   fsrsCards: FsrsOpeningCard[];
@@ -131,7 +132,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
   const [pendingPromo, setPendingPromo] = useState<{ from: Square; to: Square } | null>(null);
   const [celebration, setCelebration] = useState<{ trigger: number; message: string } | null>(null);
   const [dailyDoneDate, setDailyDoneDate] = useState(() => loadDailyDone());
-  const [rushBest, setRushBest] = useState(() => loadRushBest());
+  const [rushBest, setRushBest] = useState(() => Math.max(loadRushBest('blitz'), loadRushBest('survival')));
   const resetTimerRef = useRef<number | null>(null);
   const puzzleRunRef = useRef(0);
   const boardRef = useRef<HTMLDivElement | null>(null);
@@ -141,7 +142,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
     setProgress(loadMistakeProgress());
     setStreak(loadDrillStreak());
     setDailyDoneDate(loadDailyDone());
-    setRushBest(loadRushBest());
+    setRushBest(Math.max(loadRushBest('blitz'), loadRushBest('survival')));
   }, [storageRevision]);
 
   const solvedCount = deck.filter((p) => progress[p.id]?.solved).length;
@@ -328,7 +329,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
   };
 
   const handleRushFinished = () => {
-    setRushBest(loadRushBest());
+    setRushBest(Math.max(loadRushBest('blitz'), loadRushBest('survival')));
   };
 
   const solvedPct = deck.length > 0 ? Math.round((solvedCount / deck.length) * 100) : 0;
@@ -520,7 +521,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
           onClick={() => setMode('rush')}
           className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/10 px-3 py-2 text-[11px] font-black text-fuchsia-200 transition hover:bg-fuchsia-500/20"
         >
-          <Zap className="h-3.5 w-3.5" /> Launch Puzzle Rush (3 strikes)
+          <Zap className="h-3.5 w-3.5" /> Launch Puzzle Rush (3-Min Blitz · 3-Strikes)
           <span className="rounded bg-fuchsia-400/20 px-1.5 py-0.5 font-mono text-[9px] text-fuchsia-100">best {rushBest}</span>
         </button>
       </section>

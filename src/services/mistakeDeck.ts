@@ -6,16 +6,19 @@ import type {
   MistakePuzzle,
 } from '../types/chess';
 import { getPref, setPref } from '../storage/gameDb';
-import { resolveUserColor } from '../utils/player';
+import { resolveUserColor, type UserHandleSpec } from '../utils/player';
+
+export type PuzzleRushMode = 'blitz' | 'survival';
 
 const PROGRESS_KEY = 'brillyder_mistake_progress';
 const STREAK_KEY = 'brillyder_mistake_streak';
 const RUSH_BEST_KEY = 'brillyder_rush_best';
+const RUSH_SURVIVAL_BEST_KEY = 'brillyder_rush_survival_best';
 const DAILY_DONE_KEY = 'brillyder_daily_done';
 
 const SEVERITY: Record<MistakeClassification, number> = { blunder: 0, mistake: 1, inaccuracy: 2 };
 
-export function buildMistakeDeck(games: AnalyzedGame[], username: string): MistakePuzzle[] {
+export function buildMistakeDeck(games: AnalyzedGame[], username: UserHandleSpec): MistakePuzzle[] {
   const puzzles: MistakePuzzle[] = [];
   for (const analyzed of games) {
     const color = resolveUserColor(analyzed.game, username);
@@ -140,12 +143,13 @@ export function markDailyDone(): string {
   return key;
 }
 
-export function loadRushBest(): number {
-  return getPref<number>(RUSH_BEST_KEY, 0);
+export function loadRushBest(mode: PuzzleRushMode = 'blitz'): number {
+  return getPref<number>(mode === 'survival' ? RUSH_SURVIVAL_BEST_KEY : RUSH_BEST_KEY, 0);
 }
 
-export function saveRushBest(score: number): number {
-  const best = Math.max(loadRushBest(), score);
-  setPref(RUSH_BEST_KEY, best);
+export function saveRushBest(score: number, mode: PuzzleRushMode = 'blitz'): number {
+  const key = mode === 'survival' ? RUSH_SURVIVAL_BEST_KEY : RUSH_BEST_KEY;
+  const best = Math.max(loadRushBest(mode), score);
+  setPref(key, best);
   return best;
 }

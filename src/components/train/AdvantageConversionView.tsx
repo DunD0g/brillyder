@@ -25,13 +25,14 @@ import {
   type TablebaseResult,
 } from '../../services/tablebaseApi';
 import { uciToSquares } from '../../utils/chessMath';
+import type { UserHandleSpec } from '../../utils/player';
 import { soundManager } from '../../utils/sound';
 import { useVibe } from '../../utils/vibeCopy';
 import { ChessgroundBoard } from '../ChessgroundBoard';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   boardTheme: BoardThemeId;
   convertedIds: string[];
   focusedPosition?: BlownLeadPosition | null;

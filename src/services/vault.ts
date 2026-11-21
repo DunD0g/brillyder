@@ -1,6 +1,6 @@
 import type { AnalyzedGame, BrillyVaultEntry, BrillyVaultStats } from '../types/chess';
 import { getMoverWinPercent } from '../utils/chessMath';
-import { resolveUserColor, resultForUserStrict } from '../utils/player';
+import { resolveUserColor, resultForUserStrict, type UserHandleSpec } from '../utils/player';
 
 function positionKey(fen: string): string {
   return fen.split(' ').slice(0, 4).join(' ');
@@ -8,7 +8,7 @@ function positionKey(fen: string): string {
 
 export function buildBrillyVault(
   games: AnalyzedGame[],
-  username = ''
+  username: UserHandleSpec = ''
 ): { entries: BrillyVaultEntry[]; stats: BrillyVaultStats } {
   const entries: BrillyVaultEntry[] = [];
   let clutchSaves = 0;

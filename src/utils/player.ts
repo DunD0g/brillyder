@@ -1,27 +1,48 @@
-import type { LichessGameRecord, PlayerColor } from '../types/chess';
+import type { GamePlatform, LichessGameRecord, PlayerColor } from '../types/chess';
+
+export type UserHandleMap = Partial<Record<GamePlatform, string>>;
+export type UserHandleSpec = string | UserHandleMap;
+
+function candidateHandlesForGame(game: LichessGameRecord, user: UserHandleSpec): string[] {
+  if (typeof user === 'string') {
+    const trimmed = user.trim().toLowerCase();
+    return trimmed ? [trimmed] : [];
+  }
+  const isChessCom =
+    game.source === 'chesscom' ||
+    (game.source === 'pgn' && Boolean(game.url?.includes('chess.com')));
+  const primary = (isChessCom ? user.chesscom : user.lichess)?.trim().toLowerCase() ?? '';
+  const secondary = (isChessCom ? user.lichess : user.chesscom)?.trim().toLowerCase() ?? '';
+  const handles: string[] = [];
+  if (primary) handles.push(primary);
+  if (secondary && secondary !== primary) handles.push(secondary);
+  return handles;
+}
 
 /**
- * Resolves the user's color in a game. Always matches the active `username`
- * against white/black player names first (case-insensitive, trimmed), falling
- * back to baked-in `game.userColor` only when `username` is empty or unmatched.
+ * Resolves the user's color in a game. Always matches the platform-appropriate
+ * handle (or single username string) against white/black player names first
+ * (case-insensitive, trimmed), falling back to baked-in `game.userColor` only
+ * when unmatched.
  */
-export function resolveUserColor(game: LichessGameRecord, username: string): PlayerColor {
-  const low = username.trim().toLowerCase();
-  if (low) {
-    if (game.white.name.trim().toLowerCase() === low) return 'w';
-    if (game.black.name.trim().toLowerCase() === low) return 'b';
+export function resolveUserColor(game: LichessGameRecord, user: UserHandleSpec): PlayerColor {
+  const white = game.white.name.trim().toLowerCase();
+  const black = game.black.name.trim().toLowerCase();
+  for (const handle of candidateHandlesForGame(game, user)) {
+    if (white === handle) return 'w';
+    if (black === handle) return 'b';
   }
   if (game.userColor) return game.userColor;
   return 'w';
 }
 
-export function isUserGame(game: LichessGameRecord, username: string): boolean {
-  const low = username.trim().toLowerCase();
-  if (!low) return false;
-  return (
-    game.white.name.trim().toLowerCase() === low ||
-    game.black.name.trim().toLowerCase() === low
-  );
+export function isUserGame(game: LichessGameRecord, user: UserHandleSpec): boolean {
+  const white = game.white.name.trim().toLowerCase();
+  const black = game.black.name.trim().toLowerCase();
+  for (const handle of candidateHandlesForGame(game, user)) {
+    if (white === handle || black === handle) return true;
+  }
+  return false;
 }
 
 /**

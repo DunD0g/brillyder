@@ -17,7 +17,7 @@ import type {
   TwentyGameCheckpoints,
 } from '../types/chess';
 import { clamp, computeMoveTimeSpent, parsePgnTimeControl } from '../utils/chessMath';
-import { resultForUserStrict, resolveUserColor } from '../utils/player';
+import { resultForUserStrict, resolveUserColor, type UserHandleSpec } from '../utils/player';
 import { classifyEndgameCategory } from '../chess/tacticalMotifs';
 import { ADVANTAGE_THRESHOLD_CP, userPerspectiveCp } from './advantageConversion';
 
@@ -136,7 +136,7 @@ function resolveClockMetricsForGame(ag: AnalyzedGame, uc: PlayerColor): {
   return { impulseBlunders, timeTroubleBlunders, spentSum, spentCount, hasClockData };
 }
 
-function computeCheckpointSlice(games: AnalyzedGame[], username: string): CheckpointMetrics {
+function computeCheckpointSlice(games: AnalyzedGame[], username: UserHandleSpec): CheckpointMetrics {
   let eval10Sum = 0;
   let eval10Count = 0;
   let impulseTotal = 0;
@@ -186,7 +186,7 @@ function computeCheckpointSlice(games: AnalyzedGame[], username: string): Checkp
   };
 }
 
-export function computeMultiGameInsights(games: AnalyzedGame[], username: string): MultiGameInsights {
+export function computeMultiGameInsights(games: AnalyzedGame[], username: UserHandleSpec): MultiGameInsights {
   if (games.length === 0) {
     return {
       gamesCount: 0,

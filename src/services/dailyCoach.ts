@@ -2,6 +2,7 @@ import type { AnalyzedGame, MistakeProgressRecord, MistakePuzzle, PlayerColor } 
 import type { FsrsOpeningCard, OpeningCourse, WoodpeckerCycleRecord } from '../types/openings';
 import { hydrateCourseCards, isCardDue } from '../lib/fsrsOpening';
 import { extractBlownLeadPositions, type BlownLeadPosition } from './advantageConversion';
+import type { UserHandleSpec } from '../utils/player';
 import {
   getCooldownRemainingMs,
   isWoodpeckerCycleMastered,
@@ -142,7 +143,7 @@ export function buildDailyWorkoutPlan(params: {
   fsrsCards: FsrsOpeningCard[];
   deck: MistakePuzzle[];
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   activeCycle: WoodpeckerCycleRecord | null;
   convertedIds?: string[];
   mistakeProgress?: Record<string, MistakeProgressRecord>;

@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Chess, type Square } from 'chess.js';
+import { Chess, type PieceSymbol, type Square } from 'chess.js';
 import {
   ArrowRight,
   CheckCircle2,
   Flame,
   GraduationCap,
+  Heart,
   Play,
   RotateCcw,
+  Shield,
   Sparkles,
   Target,
   Timer,
@@ -15,7 +17,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { BoardThemeId, MistakePuzzle } from '../types/chess';
-import { loadRushBest, saveRushBest } from '../services/mistakeDeck';
+import { loadRushBest, saveRushBest, type PuzzleRushMode } from '../services/mistakeDeck';
 import { soundManager } from '../utils/sound';
 import { ChessgroundBoard } from './ChessgroundBoard';
 
@@ -32,6 +34,7 @@ type RushPhase = 'ready' | 'running' | 'finished';
 type MoveStatus = 'idle' | 'wrong' | 'correct';
 
 const RUSH_SECONDS = 180;
+const MAX_STRIKES = 3;
 
 function shuffle<T>(items: T[]): T[] {
   const copy = items.slice();
@@ -48,11 +51,13 @@ function formatClock(seconds: number): string {
 }
 
 export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSolved, onWrong, onFinished }) => {
+  const [rushMode, setRushMode] = useState<PuzzleRushMode>('blitz');
   const [phase, setPhase] = useState<RushPhase>('ready');
   const [queue, setQueue] = useState<MistakePuzzle[]>([]);
   const [index, setIndex] = useState(0);
   const [fen, setFen] = useState('');
   const [lastMove, setLastMove] = useState<[string, string] | undefined>();
+  const [pendingPromo, setPendingPromo] = useState<{ from: Square; to: Square } | null>(null);
   const [status, setStatus] = useState<MoveStatus>('idle');
   const [score, setScore] = useState(0);
   const [solved, setSolved] = useState(0);
@@ -60,7 +65,7 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
   const [combo, setCombo] = useState(0);
   const [bestCombo, setBestCombo] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(RUSH_SECONDS);
-  const [best, setBest] = useState(() => loadRushBest());
+  const [best, setBest] = useState(() => loadRushBest('blitz'));
   const [isNewBest, setIsNewBest] = useState(false);
   const endsAtRef = useRef(0);
   const runBestRef = useRef(0);
@@ -69,7 +74,12 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
   const finishedHandledRef = useRef(false);
 
   const current = queue[index] ?? null;
-  const interactive = phase === 'running' && status === 'idle' && Boolean(current);
+  const interactive = phase === 'running' && status === 'idle' && Boolean(current) && !pendingPromo;
+  const strikesLeft = Math.max(0, MAX_STRIKES - misses);
+
+  useEffect(() => {
+    setBest(loadRushBest(rushMode));
+  }, [rushMode]);
 
   const clearAdvanceTimer = () => {
     if (advanceTimerRef.current) {
@@ -81,7 +91,7 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
   useEffect(() => () => clearAdvanceTimer(), []);
 
   useEffect(() => {
-    if (phase !== 'running') return;
+    if (phase !== 'running' || rushMode !== 'blitz') return;
     const tick = () => {
       const left = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
       setSecondsLeft(left);
@@ -90,32 +100,37 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
     tick();
     const timer = window.setInterval(tick, 200);
     return () => window.clearInterval(timer);
-  }, [phase]);
+  }, [phase, rushMode]);
 
   useEffect(() => {
     if (phase !== 'finished' || finishedHandledRef.current) return;
     finishedHandledRef.current = true;
     clearAdvanceTimer();
+    setPendingPromo(null);
     const isRecord = score > runBestRef.current;
-    const nextBest = saveRushBest(score);
+    const nextBest = saveRushBest(score, rushMode);
     setBest(nextBest);
     setIsNewBest(isRecord);
     setStatus('idle');
     onFinished(score);
-  }, [phase, score, onFinished]);
+  }, [phase, score, rushMode, onFinished]);
 
-  const start = () => {
+  const start = (modeOverride?: PuzzleRushMode) => {
     if (puzzles.length === 0) return;
+    const activeMode = modeOverride ?? rushMode;
+    if (modeOverride) setRushMode(modeOverride);
     clearAdvanceTimer();
     runGenerationRef.current += 1;
     finishedHandledRef.current = false;
-    runBestRef.current = loadRushBest();
+    runBestRef.current = loadRushBest(activeMode);
+    setBest(runBestRef.current);
     setIsNewBest(false);
     const nextQueue = shuffle(puzzles);
     setQueue(nextQueue);
     setIndex(0);
     setFen(nextQueue[0].beforeFen);
     setLastMove(undefined);
+    setPendingPromo(null);
     setStatus('idle');
     setScore(0);
     setSolved(0);
@@ -131,6 +146,7 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
   const nextPuzzle = () => {
     clearAdvanceTimer();
     if (queue.length === 0) return;
+    setPendingPromo(null);
     const nextIndex = index + 1;
     if (nextIndex >= queue.length) {
       const reshuffled = shuffle(puzzles);
@@ -146,18 +162,18 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
   };
 
   const skip = () => {
-    if (phase !== 'running' || !current) return;
+    if (phase !== 'running' || !current || rushMode === 'survival') return;
     runGenerationRef.current += 1;
     setCombo(0);
     nextPuzzle();
   };
 
-  const handleMove = (from: Square, to: Square) => {
+  const executeMove = (from: Square, to: Square, promotion?: PieceSymbol) => {
     if (!current || phase !== 'running' || status !== 'idle') return;
     const chess = new Chess(fen);
     let move;
     try {
-      move = chess.move({ from, to, promotion: 'q' });
+      move = chess.move({ from, to, promotion });
     } catch {
       return;
     }
@@ -186,9 +202,23 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
 
     soundManager.playError();
     setCombo(0);
-    setMisses((m) => m + 1);
+    const nextMisses = misses + 1;
+    setMisses(nextMisses);
     setStatus('wrong');
     onWrong(current);
+
+    if (rushMode === 'survival') {
+      advanceTimerRef.current = window.setTimeout(() => {
+        if (runGenerationRef.current !== generation) return;
+        if (nextMisses >= MAX_STRIKES) {
+          setPhase('finished');
+        } else {
+          nextPuzzle();
+        }
+      }, 950);
+      return;
+    }
+
     advanceTimerRef.current = window.setTimeout(() => {
       if (runGenerationRef.current !== generation) return;
       setFen(current.beforeFen);
@@ -197,55 +227,135 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
     }, 620);
   };
 
-  const timerPct = Math.max(0, Math.min(100, (secondsLeft / RUSH_SECONDS) * 100));
+  const handleMove = (from: Square, to: Square) => {
+    if (!current || phase !== 'running' || status !== 'idle') return;
+    const legal = new Chess(fen).moves({ square: from, verbose: true }).filter((m) => m.to === to);
+    if (legal.length === 0) return;
+    if (legal.some((m) => Boolean(m.promotion))) {
+      setPendingPromo({ from, to });
+      return;
+    }
+    executeMove(from, to);
+  };
+
+  const timerPct =
+    rushMode === 'blitz'
+      ? Math.max(0, Math.min(100, (secondsLeft / RUSH_SECONDS) * 100))
+      : Math.max(0, Math.min(100, (strikesLeft / MAX_STRIKES) * 100));
 
   const rushHeader = (
     <section className="glass-card glass-card-strong overflow-hidden p-3.5">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-fuchsia-300">
-            <Zap className="h-4 w-4" /> Puzzle rush
+            <Zap className="h-4 w-4" /> Puzzle rush · {rushMode === 'blitz' ? '3-Min Blitz' : '3-Strikes Survival'}
           </div>
-          <h1 className="mt-1 text-lg font-extrabold text-white">Three minutes. Every move counts.</h1>
-          <p className="mt-0.5 text-[11px] text-slate-400">Solve your own mistakes at speed. Wrong moves reset the position and break your combo.</p>
+          <h1 className="mt-1 text-lg font-extrabold text-white">
+            {rushMode === 'blitz' ? 'Three minutes. Every move counts.' : 'Three strikes. No clock. Pure accuracy.'}
+          </h1>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {rushMode === 'blitz'
+              ? 'Solve your own mistakes at speed. Wrong moves reset the position and break your combo.'
+              : 'Take your time and calculate carefully. Three wrong moves end the run.'}
+          </p>
         </div>
-        <button type="button" onClick={onExit} className="shrink-0 rounded-lg border border-slate-700 bg-slate-800/80 px-2 py-1 text-[10px] font-bold text-slate-300">
+        <button type="button" onClick={onExit} className="shrink-0 rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-[10px] font-bold text-slate-300">
           Exit
         </button>
       </div>
       <div className="mt-3 grid grid-cols-4 gap-1.5">
-        <RushStat icon={<Timer className="h-3 w-3 text-cyan-300" />} label="Clock" value={formatClock(secondsLeft)} tone="text-cyan-300" />
+        {rushMode === 'blitz' ? (
+          <RushStat icon={<Timer className="h-3 w-3 text-cyan-300" />} label="Clock" value={formatClock(secondsLeft)} tone="text-cyan-300" />
+        ) : (
+          <RushStat
+            icon={<Heart className="h-3 w-3 text-rose-400" />}
+            label="Lives"
+            value={`${'♥'.repeat(strikesLeft)}${'♡'.repeat(MAX_STRIKES - strikesLeft)}`}
+            tone={strikesLeft <= 1 ? 'text-rose-400' : 'text-rose-300'}
+          />
+        )}
         <RushStat icon={<Trophy className="h-3 w-3 text-amber-300" />} label="Score" value={String(score)} tone="text-amber-300" />
         <RushStat icon={<Flame className="h-3 w-3 text-orange-300" />} label="Combo" value={`${combo}x`} tone="text-orange-300" />
         <RushStat icon={<Sparkles className="h-3 w-3 text-fuchsia-300" />} label="Best" value={String(best)} tone="text-fuchsia-300" />
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
-        <div className={`h-full rounded-full transition-all duration-200 ${secondsLeft <= 20 ? 'bg-gradient-to-r from-rose-500 to-orange-400' : 'bg-gradient-to-r from-fuchsia-400 to-cyan-400'}`} style={{ width: `${timerPct}%` }} />
+        <div
+          className={`h-full rounded-full transition-all duration-200 ${
+            (rushMode === 'blitz' && secondsLeft <= 20) || (rushMode === 'survival' && strikesLeft <= 1)
+              ? 'bg-gradient-to-r from-rose-500 to-orange-400'
+              : 'bg-gradient-to-r from-fuchsia-400 to-cyan-400'
+          }`}
+          style={{ width: `${timerPct}%` }}
+        />
       </div>
     </section>
   );
 
   if (phase === 'ready') {
+    const blitzBest = loadRushBest('blitz');
+    const survivalBest = loadRushBest('survival');
     return (
       <div className="space-y-3 pb-24">
         {rushHeader}
-        <section className="glass-card p-6 text-center">
+        <section className="glass-card p-5 text-center sm:p-6">
           <Target className="mx-auto h-10 w-10 text-fuchsia-300" />
-          <h2 className="mt-2 text-base font-extrabold text-slate-100">Ready for the rush?</h2>
+          <h2 className="mt-2 text-base font-extrabold text-slate-100">Choose your rush format</h2>
           <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-400">
-            {puzzles.length} puzzles from your own games. Tap a piece, then tap a highlighted square. The clock starts immediately.
+            {puzzles.length} puzzles from your own games. Pick a mode below to begin.
           </p>
-          <div className="mx-auto mt-3 grid max-w-md grid-cols-3 gap-1.5 text-[10px]">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-2"><div className="font-black text-cyan-300">3:00</div><div className="text-slate-500">on the clock</div></div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-2"><div className="font-black text-amber-300">+1</div><div className="text-slate-500">per solve</div></div>
-            <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-2"><div className="font-black text-orange-300">Combo</div><div className="text-slate-500">build a streak</div></div>
+
+          <div className="mx-auto mt-4 grid max-w-md grid-cols-2 gap-2 text-left">
+            <button
+              type="button"
+              onClick={() => setRushMode('blitz')}
+              className={`rounded-xl border p-3 transition ${
+                rushMode === 'blitz'
+                  ? 'border-fuchsia-400/60 bg-fuchsia-500/15'
+                  : 'border-slate-800 bg-slate-950/50 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-white">
+                  <Timer className="h-3.5 w-3.5 text-cyan-300" /> 3-Min Blitz
+                </span>
+                <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-fuchsia-200">
+                  best {blitzBest}
+                </span>
+              </div>
+              <p className="mt-1 text-[10px] leading-snug text-slate-400">
+                Race the 3:00 clock. Misses reset the position and break combo.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRushMode('survival')}
+              className={`rounded-xl border p-3 transition ${
+                rushMode === 'survival'
+                  ? 'border-rose-400/60 bg-rose-500/15'
+                  : 'border-slate-800 bg-slate-950/50 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-white">
+                  <Shield className="h-3.5 w-3.5 text-rose-300" /> 3-Strikes
+                </span>
+                <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-rose-200">
+                  best {survivalBest}
+                </span>
+              </div>
+              <p className="mt-1 text-[10px] leading-snug text-slate-400">
+                Untimed survival. Three wrong moves end the run.
+              </p>
+            </button>
           </div>
+
           <button
             type="button"
-            onClick={start}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-400 to-cyan-400 px-4 py-2.5 text-xs font-black text-slate-950"
+            onClick={() => start(rushMode)}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-400 to-cyan-400 px-5 py-2.5 text-xs font-black text-slate-950"
           >
-            <Play className="h-4 w-4" /> Start rush
+            <Play className="h-4 w-4" /> Start {rushMode === 'blitz' ? '3-Min Blitz' : '3-Strikes Survival'}
           </button>
         </section>
       </div>
@@ -273,8 +383,15 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
             Accuracy <span className="font-mono font-bold text-cyan-300">{accuracy}%</span> · every miss is a pattern to review in the mistake deck.
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <button type="button" onClick={start} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-400 to-cyan-400 px-4 py-2.5 text-xs font-black text-slate-950">
+            <button type="button" onClick={() => start(rushMode)} className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-fuchsia-400 to-cyan-400 px-4 py-2.5 text-xs font-black text-slate-950">
               <RotateCcw className="h-4 w-4" /> Run it back
+            </button>
+            <button
+              type="button"
+              onClick={() => setPhase('ready')}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/10 px-4 py-2.5 text-xs font-bold text-fuchsia-200"
+            >
+              Switch mode
             </button>
             <button type="button" onClick={onExit} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2.5 text-xs font-bold text-slate-200">
               <GraduationCap className="h-4 w-4" /> Back to practice
@@ -312,16 +429,38 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
                     interactive={interactive}
                     turnColor={current.color}
                     lastMove={lastMove}
-                    bestMoveUci={status === 'correct' ? current.bestMoveUci : undefined}
-                    showBestArrow={status === 'correct'}
+                    bestMoveUci={status === 'correct' || (rushMode === 'survival' && status === 'wrong') ? current.bestMoveUci : undefined}
+                    showBestArrow={status === 'correct' || (rushMode === 'survival' && status === 'wrong')}
                     showPlayedArrow={false}
                     theme={boardTheme}
                     onUserMove={handleMove}
                   />
+                  {pendingPromo && (
+                    <div className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-slate-950/75 backdrop-blur-sm">
+                      <div className="flex gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-3">
+                        {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => {
+                              const promo = pendingPromo;
+                              setPendingPromo(null);
+                              executeMove(promo.from, promo.to, p);
+                            }}
+                            className="h-11 w-11 rounded-xl border border-slate-700 bg-slate-800 text-lg text-white"
+                          >
+                            {p === 'q' ? '♕' : p === 'r' ? '♖' : p === 'b' ? '♗' : '♘'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {status === 'wrong' && (
                     <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
                       <span className="rounded-full border border-rose-400/40 bg-rose-950/85 px-3 py-1 text-[10px] font-bold text-rose-200 backdrop-blur">
-                        Not the best — resetting…
+                        {rushMode === 'survival'
+                          ? `Strike ${misses}/${MAX_STRIKES} — best was ${current.bestMoveSan}`
+                          : 'Not the best — resetting…'}
                       </span>
                     </div>
                   )}
@@ -335,17 +474,19 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
                 </div>
 
                 <div className="mt-1.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={skip}
-                    className="flex-1 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-[11px] font-bold text-slate-300"
-                  >
-                    Skip this one <ArrowRight className="inline h-3 w-3" />
-                  </button>
+                  {rushMode === 'blitz' && (
+                    <button
+                      type="button"
+                      onClick={skip}
+                      className="flex-1 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-[11px] font-bold text-slate-300"
+                    >
+                      Skip this one <ArrowRight className="inline h-3 w-3" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPhase('finished')}
-                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] font-bold text-rose-200"
+                    className={`${rushMode === 'survival' ? 'flex-1 ' : ''}rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] font-bold text-rose-200`}
                   >
                     End rush
                   </button>
@@ -358,10 +499,12 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
         <aside className="min-w-0 space-y-2.5">
           <div className="glass-card p-3.5">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
-              <Zap className="h-4 w-4 text-fuchsia-400" /> Rush mode
+              <Zap className="h-4 w-4 text-fuchsia-400" /> {rushMode === 'blitz' ? '3-Min Blitz' : '3-Strikes Survival'}
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-              Only Stockfish’s top move scores. Find the idea, tap the piece, tap the target square. Wrong moves cost time, not points.
+              {rushMode === 'blitz'
+                ? 'Only Stockfish’s top move scores. Find the idea fast — wrong moves cost time, not lives.'
+                : 'No clock, 3 lives. Play Stockfish’s best move on the first try — three misses end the run.'}
             </p>
             {current && (
               <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950/45 p-2 text-[10px]">

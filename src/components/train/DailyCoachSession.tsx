@@ -36,6 +36,7 @@ import {
 } from '../../lib/fsrsOpening';
 import { stockfishService } from '../../engine/StockfishService';
 import { getMoverWinPercent, uciToSquares } from '../../utils/chessMath';
+import type { UserHandleSpec } from '../../utils/player';
 import { soundManager } from '../../utils/sound';
 import { useVibe } from '../../utils/vibeCopy';
 import { ChessgroundBoard } from '../ChessgroundBoard';
@@ -45,7 +46,7 @@ type StageNum = 1 | 2 | 3 | 4 | 5; // 5 = session complete!
 
 interface Props {
   analyzedGames: AnalyzedGame[];
-  username: string;
+  username: UserHandleSpec;
   deck: MistakePuzzle[];
   courses: OpeningCourse[];
   fsrsCards: FsrsOpeningCard[];
