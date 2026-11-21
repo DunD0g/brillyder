@@ -141,3 +141,27 @@
 ### Verified
 - `npm test`: **15 test files, 71 tests passed** (including `classification.test.ts` and `auditPass2.test.ts`).
 - `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly.
+
+---
+
+## v2.1 — Multi-Move Tactics, Expanded Repertoires, Puzzle Rush Modes & Code-Splitting
+**Status:** Completed & Verified
+
+### Built
+- **Dual-Platform Handle Resolution & Brilly Vault `!!` Count (`017b127`, `739fb70`):**
+  - Kept the Brilly Vault headline count strictly to user `!!` Brilliant moves while retaining Clutch Saves, Traps Punished, and Clean Sweeps in their own stat tiles and tabs.
+  - Extended `resolveUserColor` (`UserHandleSpec`) so Lichess and Chess.com games automatically match each platform's saved handle across Vault, Insights, Mistake Deck, Conversion, and Opening Reports.
+- **Puzzle Rush Modes (`739fb70`):**
+  - Added **3-Min Blitz** and **3-Strikes Survival** modes in `PuzzleRush.tsx` with separate persisted personal bests (`loadRushBest`/`saveRushBest`), strike indicators, best-move arrow feedback on survival misses, and a pawn promotion picker.
+- **Multi-Move Tactical Puzzles (`01dd338`):**
+  - Added `src/utils/puzzleSequence.ts` (+ tests) extracting legal 2–3 move forcing tactical & forced-mate sequences directly from stored Stockfish `bestPvSan` lines, wired into `MistakeTrainerView`, `WoodpeckerCycleView`, and `DailyCoachSession` with animated opponent replies, `Move X/Y` step badges, step-aware hints, and Stockfish alternative acceptance.
+- **Repertoire Line Manager & 4 Extra Starter Courses (`1c89d86`):**
+  - Added `LineEditorPanel.tsx`, `src/services/repertoireLines.ts` (+ tests), and `deleteFsrsCardsByLine` in `brillyDb.ts` to add, edit, or delete individual lines inside any course (with live `chess.js` SAN validation and 2-tap starter course Reset).
+  - Added 4 new `chess.js`-verified starter courses to `src/data/starterCourses.json`: **Italian Game**, **Queen's Gambit**, **Accelerated Dragon Sicilian**, and **French Defense** (8 starter courses total: 4 White, 4 Black).
+- **Bundle Code-Splitting & Faster Mobile Startup:**
+  - Converted heavy tabs (`AnalysisView`, `OpeningsView`, `MistakeTrainerView`, `InsightsView`) and modals (`BrillyVaultModal`, `GravityCheckModal`) to `React.lazy` + `<Suspense>` in `App.tsx`, and configured vendor/data `manualChunks` in `vite.config.ts`.
+  - Bumped `public/sw.js` to `brillyder-v16`.
+
+### Verified
+- `npm test`: **17 test files, 96 tests passed** (including all 33 `starterCourses.test.ts` chess.js legality checks, `puzzleSequence.test.ts`, and `repertoireLines.test.ts`).
+- `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly with zero oversized chunk warnings.

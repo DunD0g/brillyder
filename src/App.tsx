@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   BookOpen,
@@ -71,14 +71,35 @@ import {
 } from './lib/fsrsOpening';
 import { addPatchedLineToCourse } from './services/repertoireCoverage';
 import type { RepertoireDeviation } from './services/deviationDetector';
-import { AnalysisView } from './components/AnalysisView';
 import { GameListView, type BatchState } from './components/GameListView';
-import { InsightsView } from './components/InsightsView';
-import { BrillyVaultModal } from './components/BrillyVaultModal';
-import { OpeningsView } from './components/OpeningsView';
-import { MistakeTrainerView, type TrainSection } from './components/MistakeTrainerView';
-import { GravityCheckModal } from './components/train/GravityCheckModal';
+import type { TrainSection } from './components/MistakeTrainerView';
 import { SettingsMenu, type ExplorerPrefSettings } from './components/SettingsMenu';
+
+const AnalysisView = lazy(() =>
+  import('./components/AnalysisView').then((m) => ({ default: m.AnalysisView }))
+);
+const OpeningsView = lazy(() =>
+  import('./components/OpeningsView').then((m) => ({ default: m.OpeningsView }))
+);
+const MistakeTrainerView = lazy(() =>
+  import('./components/MistakeTrainerView').then((m) => ({ default: m.MistakeTrainerView }))
+);
+const InsightsView = lazy(() =>
+  import('./components/InsightsView').then((m) => ({ default: m.InsightsView }))
+);
+const BrillyVaultModal = lazy(() =>
+  import('./components/BrillyVaultModal').then((m) => ({ default: m.BrillyVaultModal }))
+);
+const GravityCheckModal = lazy(() =>
+  import('./components/train/GravityCheckModal').then((m) => ({ default: m.GravityCheckModal }))
+);
+
+const TabLoadingCard: React.FC = () => (
+  <div className="glass-card mx-auto flex max-w-md items-center justify-center gap-2.5 p-8 text-xs font-bold text-teal-200">
+    <span className="radar-sweep h-4 w-4 shrink-0" aria-hidden="true" />
+    Loading cockpit module…
+  </div>
+);
 
 type ActiveTab = 'games' | 'analyze' | 'openings' | 'train' | 'insights';
 
@@ -1105,27 +1126,29 @@ export const App: React.FC = () => {
             const scoutAnalyzed = !localAnalyzed ? scout?.games.find((g) => g.id === selectedGame.id) ?? null : null;
             const effectiveUsername = !localAnalyzed && scoutAnalyzed && scout ? scout.username : usernames;
             return (
-              <AnalysisView
-                game={selectedGame}
-                username={effectiveUsername}
-                analyzed={localAnalyzed ?? scoutAnalyzed}
-                analyzing={analyzing}
-                progress={progress}
-                depthPreset={depthPreset}
-                onDepthPresetChange={handleDepthChange}
-                onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
-                onCancelAnalysis={cancelAnalysis}
-                onBackToGames={() => setTab('games')}
-                onOpenInsights={() => setTab('insights')}
-                onOpenVault={() => setVaultOpen(true)}
-                initialJump={initialJump}
-                boardTheme={boardTheme}
-                celebrationsEnabled={celebrationsEnabled}
-                courses={allCourses}
-                explorerPrefs={explorerPrefs}
-                onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
-                onPatchDeviationGap={handlePatchDeviationGap}
-              />
+              <Suspense fallback={<TabLoadingCard />}>
+                <AnalysisView
+                  game={selectedGame}
+                  username={effectiveUsername}
+                  analyzed={localAnalyzed ?? scoutAnalyzed}
+                  analyzing={analyzing}
+                  progress={progress}
+                  depthPreset={depthPreset}
+                  onDepthPresetChange={handleDepthChange}
+                  onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
+                  onCancelAnalysis={cancelAnalysis}
+                  onBackToGames={() => setTab('games')}
+                  onOpenInsights={() => setTab('insights')}
+                  onOpenVault={() => setVaultOpen(true)}
+                  initialJump={initialJump}
+                  boardTheme={boardTheme}
+                  celebrationsEnabled={celebrationsEnabled}
+                  courses={allCourses}
+                  explorerPrefs={explorerPrefs}
+                  onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
+                  onPatchDeviationGap={handlePatchDeviationGap}
+                />
+              </Suspense>
             );
           })() : (
             <div className="glass-card mx-auto max-w-lg p-8 text-center">
@@ -1146,64 +1169,70 @@ export const App: React.FC = () => {
         )}
 
         {tab === 'openings' && (
-          <OpeningsView
-            courses={allCourses}
-            modifiedStarterIds={modifiedStarterIds}
-            fsrsCards={fsrsCards}
-            analyzedGames={analyzedGamesList}
-            username={usernames}
-            boardTheme={boardTheme}
-            explorerPrefs={explorerPrefs}
-            onSaveCourse={handleSaveCourse}
-            onDeleteCourse={handleDeleteCourse}
-            onDeleteLine={handleDeleteLine}
-            onUnlockCards={upsertFsrsCards}
-            onCardReviewed={handleCardReviewed}
-            onOpenGame={openReviewedPly}
-          />
+          <Suspense fallback={<TabLoadingCard />}>
+            <OpeningsView
+              courses={allCourses}
+              modifiedStarterIds={modifiedStarterIds}
+              fsrsCards={fsrsCards}
+              analyzedGames={analyzedGamesList}
+              username={usernames}
+              boardTheme={boardTheme}
+              explorerPrefs={explorerPrefs}
+              onSaveCourse={handleSaveCourse}
+              onDeleteCourse={handleDeleteCourse}
+              onDeleteLine={handleDeleteLine}
+              onUnlockCards={upsertFsrsCards}
+              onCardReviewed={handleCardReviewed}
+              onOpenGame={openReviewedPly}
+            />
+          </Suspense>
         )}
 
         {tab === 'train' && (
-          <MistakeTrainerView
-            analyzedGames={analyzedGamesList}
-            username={usernames}
-            boardTheme={boardTheme}
-            courses={allCourses}
-            fsrsCards={fsrsCards}
-            woodpeckerCycles={woodpeckerCycles}
-            convertedIds={convertedIds}
-            initialSection={trainSection}
-            initialMotifFilter={trainMotif}
-            navToken={trainNavToken}
-            storageRevision={storageRevision}
-            onCardReviewed={handleCardReviewed}
-            onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
-            onMarkConverted={handleMarkConverted}
-            onUnlockStarterCards={handleUnlockAllStarterCards}
-            onOpenGravityCheck={() => setGravityCheckOpen(true)}
-            onDailySessionComplete={handleDailySessionComplete}
-            onOpenGame={openReviewedPly}
-            onOpenGames={() => setTab('games')}
-          />
+          <Suspense fallback={<TabLoadingCard />}>
+            <MistakeTrainerView
+              analyzedGames={analyzedGamesList}
+              username={usernames}
+              boardTheme={boardTheme}
+              courses={allCourses}
+              fsrsCards={fsrsCards}
+              woodpeckerCycles={woodpeckerCycles}
+              convertedIds={convertedIds}
+              initialSection={trainSection}
+              initialMotifFilter={trainMotif}
+              navToken={trainNavToken}
+              storageRevision={storageRevision}
+              onCardReviewed={handleCardReviewed}
+              onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
+              onMarkConverted={handleMarkConverted}
+              onUnlockStarterCards={handleUnlockAllStarterCards}
+              onOpenGravityCheck={() => setGravityCheckOpen(true)}
+              onDailySessionComplete={handleDailySessionComplete}
+              onOpenGame={openReviewedPly}
+              onOpenGames={() => setTab('games')}
+            />
+          </Suspense>
         )}
 
         {tab === 'insights' && (
-          <InsightsView
-            analyzedGames={analyzedGamesList}
-            username={username}
-            userHandles={usernames}
-            platform={platform}
-            scout={scout}
-            onPlatformChange={handlePlatformChange}
-            onScout={(name) => void runScout(name)}
-            onCancelScout={cancelScout}
-            onClearScout={() => setScout(null)}
-            onOpenGames={() => setTab('games')}
-            onOpenOpenings={() => setTab('openings')}
-            onOpenGravityCheck={() => setGravityCheckOpen(true)}
-            onOpenTrainer={(section, motif) => openTrainerFocus(section ?? 'daily', motif)}
-            onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
-          />
+          <Suspense fallback={<TabLoadingCard />}>
+            <InsightsView
+              analyzedGames={analyzedGamesList}
+              username={username}
+              userHandles={usernames}
+              platform={platform}
+              scout={scout}
+              onPlatformChange={handlePlatformChange}
+              onScout={(name) => void runScout(name)}
+              onCancelScout={cancelScout}
+              onClearScout={() => setScout(null)}
+              onOpenGames={() => setTab('games')}
+              onOpenOpenings={() => setTab('openings')}
+              onOpenGravityCheck={() => setGravityCheckOpen(true)}
+              onOpenTrainer={(section, motif) => openTrainerFocus(section ?? 'daily', motif)}
+              onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
+            />
+          </Suspense>
         )}
       </main>
 
@@ -1231,34 +1260,42 @@ export const App: React.FC = () => {
           </nav>
         )}
 
-        <BrillyVaultModal
-          open={vaultOpen}
-          onClose={closeVault}
-          entries={vault.entries}
-          stats={vault.stats}
-          username={username}
-          boardTheme={boardTheme}
-          onOpenEntry={(entry) => openReviewedPly(entry.gameId, entry.ply)}
-          onOpenGames={() => setTab('games')}
-        />
+        {vaultOpen && (
+          <Suspense fallback={null}>
+            <BrillyVaultModal
+              open={vaultOpen}
+              onClose={closeVault}
+              entries={vault.entries}
+              stats={vault.stats}
+              username={username}
+              boardTheme={boardTheme}
+              onOpenEntry={(entry) => openReviewedPly(entry.gameId, entry.ply)}
+              onOpenGames={() => setTab('games')}
+            />
+          </Suspense>
+        )}
 
-        <GravityCheckModal
-          open={gravityCheckOpen}
-          onClose={closeGravityCheck}
-          deck={mistakeDeck}
-          fsrsCards={fsrsCards}
-          courses={allCourses}
-          boardTheme={boardTheme}
-          onCardReviewed={handleCardReviewed}
-          onCompleted={(summary) => {
-            void saveTrainingLog({
-              id: `gravity_${Date.now()}`,
-              kind: 'gravity-check',
-              updatedAt: Date.now(),
-              data: summary,
-            });
-          }}
-        />
+        {gravityCheckOpen && (
+          <Suspense fallback={null}>
+            <GravityCheckModal
+              open={gravityCheckOpen}
+              onClose={closeGravityCheck}
+              deck={mistakeDeck}
+              fsrsCards={fsrsCards}
+              courses={allCourses}
+              boardTheme={boardTheme}
+              onCardReviewed={handleCardReviewed}
+              onCompleted={(summary) => {
+                void saveTrainingLog({
+                  id: `gravity_${Date.now()}`,
+                  kind: 'gravity-check',
+                  updatedAt: Date.now(),
+                  data: summary,
+                });
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     </VibeProvider>
   );
