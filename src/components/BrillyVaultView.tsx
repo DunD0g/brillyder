@@ -137,9 +137,9 @@ export const BrillyVaultView: React.FC<Props> = ({
           </div>
           <div className="shrink-0 text-right">
             <div className="bg-gradient-to-br from-teal-300 to-purple-300 bg-clip-text text-4xl font-black leading-none text-transparent">
-              {stats.totalHighlights}
+              {stats.userMoves}
             </div>
-            <div className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">highlights</div>
+            <div className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">brilliant !!</div>
           </div>
         </div>
 

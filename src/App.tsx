@@ -885,11 +885,11 @@ export const App: React.FC = () => {
                 type="button"
                 onClick={() => setVaultOpen(true)}
                 className="inline-flex items-center gap-1 rounded-xl border border-teal-400/35 bg-teal-400/10 px-2 py-1.5 text-teal-200 transition hover:border-teal-300/60 hover:bg-teal-400/20"
-                aria-label={`Open Brilly Vault: ${vault.stats.totalHighlights} highlights (${vault.stats.total} brilliant)`}
+                aria-label={`Open Brilly Vault: ${vault.stats.userMoves} brilliant move${vault.stats.userMoves === 1 ? '' : 's'}`}
                 title="Open Brilly Vault modal"
               >
                 <Gem className="h-3.5 w-3.5 text-brilly" />
-                <span className="font-mono text-xs font-black tabular-nums">{vault.stats.totalHighlights}</span>
+                <span className="font-mono text-xs font-black tabular-nums">{vault.stats.userMoves}</span>
                 <span className="hidden text-[10px] font-bold sm:inline">Vault</span>
               </button>
 

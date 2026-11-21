@@ -62,7 +62,7 @@ export const BrillyVaultModal: React.FC<Props> = ({
             <div>
               <div className="text-xs font-black uppercase tracking-[0.16em] text-teal-300">Brilly Vault</div>
               <div className="text-[10px] text-slate-400">
-                {stats.totalHighlights} highlights · {stats.total} !! · {stats.clutchSaves} clutch · {stats.cleanSweeps} sweeps
+                {stats.userMoves} !! brilliant · {stats.clutchSaves} clutch · {stats.trapsPunished} traps · {stats.cleanSweeps} sweeps
               </div>
             </div>
           </div>
