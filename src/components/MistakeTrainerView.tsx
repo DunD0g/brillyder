@@ -34,6 +34,11 @@ import {
 } from '../services/mistakeDeck';
 import { isSacrificeMove } from '../chess/classification';
 import { getMoverWinPercent, uciToSquares } from '../utils/chessMath';
+import {
+  buildPuzzleSolutionLine,
+  formatSolutionLineSan,
+  userMoveCountForLine,
+} from '../utils/puzzleSequence';
 import type { UserHandleSpec } from '../utils/player';
 import { stockfishService } from '../engine/StockfishService';
 import { soundManager } from '../utils/sound';
@@ -72,7 +77,7 @@ interface Props {
   onOpenGames: () => void;
 }
 
-type DrillStatus = 'idle' | 'evaluating' | 'wrong' | 'solved' | 'revealed';
+type DrillStatus = 'idle' | 'evaluating' | 'replying' | 'wrong' | 'solved' | 'revealed';
 type DeckFilter = 'unsolved' | 'all' | 'mastered';
 type DeckPhaseFilter = 'all' | 'opening' | 'middlegame' | 'endgame';
 
@@ -125,6 +130,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
   }, [initialMotifFilter, navToken]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fen, setFen] = useState('');
+  const [stepIndex, setStepIndex] = useState(0);
   const [status, setStatus] = useState<DrillStatus>('idle');
   const [feedback, setFeedback] = useState('');
   const [hintLevel, setHintLevel] = useState(0);
@@ -149,6 +155,22 @@ export const MistakeTrainerView: React.FC<Props> = ({
   const unsolvedCount = deck.length - solvedCount;
   const selected = deck.find((p) => p.id === selectedId) ?? null;
   const dailyDone = dailyDoneDate === dateKey();
+
+  const solutionLine = useMemo(
+    () =>
+      selected
+        ? buildPuzzleSolutionLine({
+            beforeFen: selected.beforeFen,
+            bestMoveUci: selected.bestMoveUci,
+            bestPvSan: selected.bestPvSan,
+            tacticalTag: selected.tacticalTag,
+          })
+        : [],
+    [selected]
+  );
+  const expectedStep = solutionLine[stepIndex] ?? solutionLine[0] ?? null;
+  const totalUserMoves = userMoveCountForLine(solutionLine);
+  const currentUserMoveNum = Math.min(totalUserMoves, Math.floor(stepIndex / 2) + 1);
 
   const matchingPool = useMemo(
     () =>
@@ -175,6 +197,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
     puzzleRunRef.current += 1;
     setSelectedId(puzzle.id);
     setFen(puzzle.beforeFen);
+    setStepIndex(0);
     setStatus('idle');
     setFeedback('');
     setHintLevel(0);
@@ -228,14 +251,44 @@ export const MistakeTrainerView: React.FC<Props> = ({
   };
 
   const attemptMove = async (from: Square, to: Square, promotion?: PieceSymbol) => {
-    if (!selected || status === 'solved' || status === 'revealed' || status === 'evaluating') return;
+    if (!selected || status !== 'idle') return;
     const generation = puzzleRunRef.current;
-    const c = new Chess(fen);
+    const stepFen = expectedStep?.beforeFen ?? selected.beforeFen;
+    const prevOppStep = stepIndex > 0 ? solutionLine[stepIndex - 1] : null;
+    const resetLastMove: [string, string] | null = prevOppStep ? [prevOppStep.from, prevOppStep.to] : null;
+    const c = new Chess(fen || stepFen);
     let mv;
     try { mv = c.move({ from, to, promotion }); } catch { return; }
     const uci = `${mv.from}${mv.to}${mv.promotion ?? ''}`;
-    if (uci === selected.bestMoveUci) {
-      solve(selected, c.fen(), mv.san, `Stockfish's top choice. Puzzle mastered.`, mv);
+    const expectedUci = expectedStep?.uci ?? selected.bestMoveUci;
+
+    if (uci === expectedUci || c.isCheckmate()) {
+      if (!c.isCheckmate() && stepIndex + 2 < solutionLine.length) {
+        const oppStep = solutionLine[stepIndex + 1];
+        if (mv.captured) soundManager.playCapture();
+        else if (mv.san.includes('+')) soundManager.playCheck();
+        else soundManager.playMove();
+        setFen(c.fen());
+        setLastMove([mv.from, mv.to]);
+        setStatus('replying');
+        setFeedback(`Nice! ${mv.san} — opponent responds…`);
+        if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = window.setTimeout(() => {
+          if (puzzleRunRef.current !== generation) return;
+          if (oppStep.isCapture) soundManager.playCapture();
+          else if (oppStep.isCheck) soundManager.playCheck();
+          else soundManager.playMove();
+          setFen(oppStep.afterFen);
+          setLastMove([oppStep.from, oppStep.to]);
+          setStepIndex(stepIndex + 2);
+          setHintLevel(0);
+          setStatus('idle');
+          setFeedback(`Opponent played ${oppStep.san}. Move ${Math.floor((stepIndex + 2) / 2) + 1}/${totalUserMoves} — finish the tactic!`);
+        }, 420);
+        return;
+      }
+      const lineSummary = totalUserMoves > 1 ? `Full ${totalUserMoves}-move tactic mastered (${formatSolutionLineSan(solutionLine)}).` : `Stockfish's top choice. Puzzle mastered.`;
+      solve(selected, c.fen(), mv.san, lineSummary, mv);
       return;
     }
 
@@ -262,16 +315,16 @@ export const MistakeTrainerView: React.FC<Props> = ({
         if (resetTimerRef.current) window.clearTimeout(resetTimerRef.current);
         resetTimerRef.current = window.setTimeout(() => {
           if (puzzleRunRef.current !== generation) return;
-          setFen(selected.beforeFen);
-          setLastMove(null);
+          setFen(stepFen);
+          setLastMove(resetLastMove);
           setStatus('idle');
         }, 1100);
       }
     } catch {
       if (puzzleRunRef.current !== generation) return;
       setStatus('idle');
-      setFen(selected.beforeFen);
-      setLastMove(null);
+      setFen(stepFen);
+      setLastMove(resetLastMove);
       setFeedback('Engine timed out. Tap a piece to try again.');
     }
   };
@@ -292,10 +345,12 @@ export const MistakeTrainerView: React.FC<Props> = ({
     }
     puzzleRunRef.current += 1;
     setPendingPromo(null);
-    const parsed = uciToSquares(selected.bestMoveUci);
+    const targetStep = expectedStep;
+    const parsed = uciToSquares(targetStep?.uci ?? selected.bestMoveUci);
     if (!parsed) return;
-    const c = new Chess(selected.beforeFen);
-    let after = selected.beforeFen;
+    const baseFen = targetStep?.beforeFen ?? selected.beforeFen;
+    const c = new Chess(baseFen);
+    let after = baseFen;
     try {
       const mv = c.move({ from: parsed.from, to: parsed.to, promotion: parsed.promotion });
       after = c.fen();
@@ -303,21 +358,24 @@ export const MistakeTrainerView: React.FC<Props> = ({
     } catch { /* ignore */ }
     setFen(after);
     setStatus('revealed');
-    setFeedback(`Best was ${selected.bestMoveSan}. ${selected.headline}`);
+    const lineText = totalUserMoves > 1 ? formatSolutionLineSan(solutionLine) : selected.bestMoveSan;
+    setFeedback(`Best line: ${lineText}. ${selected.headline}`);
     setProgress((prev) => recordAttempt(prev, selected.id, false));
   };
 
   const hintedPiece = useMemo(() => {
     if (!selected) return null;
-    const parsed = uciToSquares(selected.bestMoveUci);
+    const targetUci = expectedStep?.uci ?? selected.bestMoveUci;
+    const targetFen = expectedStep?.beforeFen ?? selected.beforeFen;
+    const parsed = uciToSquares(targetUci);
     if (!parsed) return null;
     try {
-      const piece = new Chess(selected.beforeFen).get(parsed.from);
+      const piece = new Chess(targetFen).get(parsed.from);
       return piece?.type ?? null;
     } catch {
       return null;
     }
-  }, [selected]);
+  }, [selected, expectedStep]);
 
   const handleRushSolved = (puzzle: MistakePuzzle) => {
     setProgress((prev) => recordAttempt(prev, puzzle.id, true));
@@ -569,7 +627,14 @@ export const MistakeTrainerView: React.FC<Props> = ({
                     <span className="truncate text-[11px] font-bold text-slate-200">{selected.playerName}</span>
                     <span className="text-[10px] text-slate-500">to move</span>
                   </div>
-                  <span className="shrink-0 font-mono text-[10px] text-slate-500">{selected.evalBefore.display}</span>
+                  <span className="shrink-0 flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
+                    {totalUserMoves > 1 && (
+                      <span className="rounded-full border border-teal-400/35 bg-teal-400/15 px-1.5 py-0.5 text-[9px] font-black text-teal-200">
+                        Move {currentUserMoveNum}/{totalUserMoves}
+                      </span>
+                    )}
+                    {selected.evalBefore.display}
+                  </span>
                 </div>
 
                 <div className="relative flex items-stretch gap-1.5">
@@ -581,7 +646,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
                       interactive={interactive}
                       turnColor={selected.color}
                       lastMove={lastMove ?? undefined}
-                      bestMoveUci={status === 'revealed' ? selected.bestMoveUci : undefined}
+                      bestMoveUci={status === 'revealed' ? (expectedStep?.uci ?? selected.bestMoveUci) : undefined}
                       showBestArrow={status === 'revealed'}
                       showPlayedArrow={false}
                       theme={boardTheme}
@@ -652,7 +717,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
                 {hintLevel > 0 && status !== 'solved' && status !== 'revealed' && (
                   <div className="mt-1.5 space-y-0.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-2.5 py-2 text-[10px] text-amber-100 lg:hidden">
                     <p><strong>Hint 1:</strong> {selected.tacticalTag} — look for a {hintedPiece ? PIECE_NAMES[hintedPiece] : 'piece'} move.</p>
-                    {hintLevel > 1 && <p><strong>Hint 2:</strong> The move starts on {uciToSquares(selected.bestMoveUci)?.from ?? 'the key square'} and is worth {selected.winLoss.toFixed(0)}% of win equity.</p>}
+                    {hintLevel > 1 && <p><strong>Hint 2:</strong> The move starts on {uciToSquares(expectedStep?.uci ?? selected.bestMoveUci)?.from ?? 'the key square'} and is worth {selected.winLoss.toFixed(0)}% of win equity.</p>}
                   </div>
                 )}
 
@@ -724,7 +789,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
               {hintLevel > 0 && status !== 'solved' && status !== 'revealed' && (
                 <div className="mt-2 hidden space-y-1 rounded-xl border border-amber-500/20 bg-amber-500/5 p-2 text-[11px] text-amber-100 lg:block">
                   <p><strong>Hint 1:</strong> {selected.tacticalTag} — look for a {hintedPiece ? PIECE_NAMES[hintedPiece] : 'piece'} move.</p>
-                  {hintLevel > 1 && <p><strong>Hint 2:</strong> The move starts on {uciToSquares(selected.bestMoveUci)?.from ?? 'the key square'} and is worth {selected.winLoss.toFixed(0)}% of win equity.</p>}
+                  {hintLevel > 1 && <p><strong>Hint 2:</strong> The move starts on {uciToSquares(expectedStep?.uci ?? selected.bestMoveUci)?.from ?? 'the key square'} and is worth {selected.winLoss.toFixed(0)}% of win equity.</p>}
                 </div>
               )}
             </div>

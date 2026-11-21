@@ -36,6 +36,11 @@ import {
 } from '../../lib/fsrsOpening';
 import { stockfishService } from '../../engine/StockfishService';
 import { getMoverWinPercent, uciToSquares } from '../../utils/chessMath';
+import {
+  buildPuzzleSolutionLine,
+  formatSolutionLineSan,
+  userMoveCountForLine,
+} from '../../utils/puzzleSequence';
 import type { UserHandleSpec } from '../../utils/player';
 import { soundManager } from '../../utils/sound';
 import { useVibe } from '../../utils/vibeCopy';
@@ -101,9 +106,10 @@ export const DailyCoachSession: React.FC<Props> = ({
   const [radarCleared, setRadarCleared] = useState(false);
   const [radarNote, setRadarNote] = useState('');
   const [fen, setFen] = useState('');
+  const [stepIndex, setStepIndex] = useState(0);
   const [lastMove, setLastMove] = useState<[string, string] | undefined>(undefined);
   const [customArrows, setCustomArrows] = useState<BoardArrow[] | undefined>(undefined);
-  const [status, setStatus] = useState<'idle' | 'checking' | 'solved' | 'wrong'>('idle');
+  const [status, setStatus] = useState<'idle' | 'checking' | 'replying' | 'solved' | 'wrong'>('idle');
   const [feedback, setFeedback] = useState('');
   const [wrongCount, setWrongCount] = useState(0);
   const [hintUsed, setHintUsed] = useState(false);
@@ -142,6 +148,22 @@ export const DailyCoachSession: React.FC<Props> = ({
   const activeStage4Puzzle = stage === 4 && !plan.stage4Conversion ? plan.stage4Puzzles[itemIndex] ?? null : null;
   const activePuzzle: MistakePuzzle | null = activeStage2Puzzle ?? activeStage3Puzzle ?? activeStage4Puzzle;
 
+  const solutionLine = useMemo(
+    () =>
+      activePuzzle
+        ? buildPuzzleSolutionLine({
+            beforeFen: activePuzzle.beforeFen,
+            bestMoveUci: activePuzzle.bestMoveUci,
+            bestPvSan: activePuzzle.bestPvSan,
+            tacticalTag: activePuzzle.tacticalTag,
+          })
+        : [],
+    [activePuzzle]
+  );
+  const expectedStep = solutionLine[stepIndex] ?? solutionLine[0] ?? null;
+  const totalUserMoves = userMoveCountForLine(solutionLine);
+  const currentUserMoveNum = Math.min(totalUserMoves, Math.floor(stepIndex / 2) + 1);
+
   const radarInfo = useMemo(
     () =>
       stage === 2 && activeStage2Puzzle
@@ -158,6 +180,7 @@ export const DailyCoachSession: React.FC<Props> = ({
   // Reset puzzle state ONLY on stage/item change — NEVER when toggling Radar Ping!
   useEffect(() => {
     genRef.current += 1;
+    setStepIndex(0);
     setStatus('idle');
     setFeedback('');
     setCustomArrows(undefined);
@@ -269,7 +292,10 @@ export const DailyCoachSession: React.FC<Props> = ({
     if (stage === 2 && radarPingEnabled && !radarCleared) return;
     soundManager.unlock();
     const gen = genRef.current;
-    const c = new Chess(fen);
+    const stepFen = expectedStep?.beforeFen ?? activePuzzle.beforeFen;
+    const prevOppStep = stepIndex > 0 ? solutionLine[stepIndex - 1] : null;
+    const resetLastMove: [string, string] | undefined = prevOppStep ? [prevOppStep.from, prevOppStep.to] : undefined;
+    const c = new Chess(fen || stepFen);
     let mv;
     try {
       mv = c.move({ from, to, promotion: 'q' });
@@ -277,6 +303,8 @@ export const DailyCoachSession: React.FC<Props> = ({
       return;
     }
     const uci = `${mv.from}${mv.to}${mv.promotion ?? ''}`;
+    const expectedUci = expectedStep?.uci ?? activePuzzle.bestMoveUci;
+
     const finishSolved = async (msg: string) => {
       soundManager.playSonarPing();
       setFen(c.fen());
@@ -302,8 +330,32 @@ export const DailyCoachSession: React.FC<Props> = ({
       }
     };
 
-    if (uci === activePuzzle.bestMoveUci || c.isCheckmate()) {
-      await finishSolved(`Spot on! ${mv.san} is the top move.`);
+    if (uci === expectedUci || c.isCheckmate()) {
+      if (!c.isCheckmate() && stepIndex + 2 < solutionLine.length) {
+        const oppStep = solutionLine[stepIndex + 1];
+        if (mv.captured) soundManager.playCapture();
+        else if (mv.san.includes('+')) soundManager.playCheck();
+        else soundManager.playMove();
+        setFen(c.fen());
+        setLastMove([mv.from, mv.to]);
+        setCustomArrows(undefined);
+        setStatus('replying');
+        setFeedback(`Good! ${mv.san} — opponent responds…`);
+        window.setTimeout(() => {
+          if (genRef.current !== gen) return;
+          if (oppStep.isCapture) soundManager.playCapture();
+          else if (oppStep.isCheck) soundManager.playCheck();
+          else soundManager.playMove();
+          setFen(oppStep.afterFen);
+          setLastMove([oppStep.from, oppStep.to]);
+          setStepIndex(stepIndex + 2);
+          setStatus('idle');
+          setFeedback(`Opponent played ${oppStep.san}. Move ${Math.floor((stepIndex + 2) / 2) + 1}/${totalUserMoves} — finish the tactic!`);
+        }, 420);
+        return;
+      }
+      const suffix = totalUserMoves > 1 ? ` (${formatSolutionLineSan(solutionLine)})` : '';
+      await finishSolved(`Spot on! ${mv.san} is the top move${suffix}.`);
       return;
     }
 
@@ -329,14 +381,15 @@ export const DailyCoachSession: React.FC<Props> = ({
         setFeedback(`${mv.san} drops ${loss.toFixed(0)}% equity (${res.score.display}). Try another move!`);
         window.setTimeout(() => {
           if (genRef.current !== gen) return;
-          setFen(activePuzzle.beforeFen);
-          setLastMove(undefined);
+          setFen(stepFen);
+          setLastMove(resetLastMove);
           setStatus('idle');
         }, 900);
       }
     } catch {
       if (genRef.current !== gen) return;
-      setFen(activePuzzle.beforeFen);
+      setFen(stepFen);
+      setLastMove(resetLastMove);
       setStatus('idle');
     }
   };
@@ -614,10 +667,17 @@ export const DailyCoachSession: React.FC<Props> = ({
           </div>
 
           <div className="glass-card p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1 rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">
-                <Target className="h-3 w-3" /> {activePuzzle.tacticalTag}
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">
+                  <Target className="h-3 w-3" /> {activePuzzle.tacticalTag}
+                </span>
+                {totalUserMoves > 1 && (
+                  <span className="rounded-full border border-teal-400/35 bg-teal-400/15 px-2 py-0.5 font-mono text-[9px] font-black text-teal-200">
+                    Move {currentUserMoveNum}/{totalUserMoves}
+                  </span>
+                )}
+              </div>
               <span className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400">
                 <Clock className="h-3 w-3" /> Played {activePuzzle.san} (-{activePuzzle.winLoss.toFixed(0)}%)
               </span>
@@ -659,7 +719,7 @@ export const DailyCoachSession: React.FC<Props> = ({
                   onClick={() => {
                     setHintUsed(true);
                     setRadarCleared(true);
-                    const sq = uciToSquares(activePuzzle.bestMoveUci);
+                    const sq = uciToSquares(expectedStep?.uci ?? activePuzzle.bestMoveUci);
                     if (sq) setCustomArrows([{ from: sq.from, to: sq.to, color: 'plan' }]);
                   }}
                   className="inline-flex items-center gap-1 rounded-xl border border-amber-400/35 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-200"

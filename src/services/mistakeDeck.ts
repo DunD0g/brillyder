@@ -39,6 +39,7 @@ export function buildMistakeDeck(games: AnalyzedGame[], username: UserHandleSpec
         san: ply.san,
         bestMoveSan: ply.bestMoveSan,
         bestMoveUci: ply.bestMoveUci,
+        bestPvSan: ply.bestPvSan,
         threatMoveUci: ply.threatMoveUci,
         classification: ply.classification,
         phase: ply.phase,

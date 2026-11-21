@@ -27,6 +27,11 @@ import {
 } from '../../services/woodpeckerCycles';
 import { stockfishService } from '../../engine/StockfishService';
 import { getMoverWinPercent, uciToSquares } from '../../utils/chessMath';
+import {
+  buildPuzzleSolutionLine,
+  formatSolutionLineSan,
+  userMoveCountForLine,
+} from '../../utils/puzzleSequence';
 import { soundManager } from '../../utils/sound';
 import { useVibe } from '../../utils/vibeCopy';
 import { ChessgroundBoard } from '../ChessgroundBoard';
@@ -52,10 +57,11 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
   const [radarCleared, setRadarCleared] = useState(false);
   const [radarFeedback, setRadarFeedback] = useState('');
   const [fen, setFen] = useState('');
+  const [stepIndex, setStepIndex] = useState(0);
   const [lastMove, setLastMove] = useState<[string, string] | undefined>(undefined);
   const [wrongCount, setWrongCount] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
-  const [status, setStatus] = useState<'idle' | 'checking' | 'solved' | 'revealed'>('idle');
+  const [status, setStatus] = useState<'idle' | 'checking' | 'replying' | 'solved' | 'revealed'>('idle');
   const [feedback, setFeedback] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
   const runRef = useRef(0);
@@ -92,6 +98,22 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
 
   const activePuzzle = pinnedPuzzle ?? nextCyclePuzzle;
 
+  const solutionLine = useMemo(
+    () =>
+      activePuzzle
+        ? buildPuzzleSolutionLine({
+            beforeFen: activePuzzle.beforeFen,
+            bestMoveUci: activePuzzle.bestMoveUci,
+            bestPvSan: activePuzzle.bestPvSan,
+            tacticalTag: activePuzzle.tacticalTag,
+          })
+        : [],
+    [activePuzzle]
+  );
+  const expectedStep = solutionLine[stepIndex] ?? solutionLine[0] ?? null;
+  const totalUserMoves = userMoveCountForLine(solutionLine);
+  const currentUserMoveNum = Math.min(totalUserMoves, Math.floor(stepIndex / 2) + 1);
+
   const radarInfo = useMemo(
     () =>
       activePuzzle
@@ -110,6 +132,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
     runRef.current += 1;
     if (!activePuzzle) return;
     setFen(activePuzzle.beforeFen);
+    setStepIndex(0);
     setLastMove(undefined);
     setWrongCount(0);
     setHintsUsed(0);
@@ -182,7 +205,10 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
     if (!activePuzzle || !activeCycle || status !== 'idle' || (radarPingEnabled && !radarCleared)) return;
     soundManager.unlock();
     const gen = runRef.current;
-    const c = new Chess(fen);
+    const stepFen = expectedStep?.beforeFen ?? activePuzzle.beforeFen;
+    const prevOppStep = stepIndex > 0 ? solutionLine[stepIndex - 1] : null;
+    const resetLastMove: [string, string] | undefined = prevOppStep ? [prevOppStep.from, prevOppStep.to] : undefined;
+    const c = new Chess(fen || stepFen);
     let mv;
     try {
       mv = c.move({ from, to, promotion: 'q' });
@@ -190,16 +216,41 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
       return;
     }
     const uci = `${mv.from}${mv.to}${mv.promotion ?? ''}`;
-    if (uci === activePuzzle.bestMoveUci || c.isCheckmate()) {
+    const expectedUci = expectedStep?.uci ?? activePuzzle.bestMoveUci;
+
+    if (uci === expectedUci || c.isCheckmate()) {
+      if (!c.isCheckmate() && stepIndex + 2 < solutionLine.length) {
+        const oppStep = solutionLine[stepIndex + 1];
+        if (mv.captured) soundManager.playCapture();
+        else if (mv.san.includes('+')) soundManager.playCheck();
+        else soundManager.playMove();
+        setFen(c.fen());
+        setLastMove([mv.from, mv.to]);
+        setStatus('replying');
+        setFeedback(`Good! ${mv.san} — opponent responds…`);
+        window.setTimeout(() => {
+          if (runRef.current !== gen) return;
+          if (oppStep.isCapture) soundManager.playCapture();
+          else if (oppStep.isCheck) soundManager.playCheck();
+          else soundManager.playMove();
+          setFen(oppStep.afterFen);
+          setLastMove([oppStep.from, oppStep.to]);
+          setStepIndex(stepIndex + 2);
+          setStatus('idle');
+          setFeedback(`Opponent played ${oppStep.san}. Move ${Math.floor((stepIndex + 2) / 2) + 1}/${totalUserMoves} — finish it!`);
+        }, 420);
+        return;
+      }
       soundManager.playSonarPing();
       setFen(c.fen());
       setLastMove([mv.from, mv.to]);
       setStatus('solved');
       const isFirstTry = wrongCount === 0 && hintsUsed === 0;
+      const lineSuffix = totalUserMoves > 1 ? ` (${formatSolutionLineSan(solutionLine)})` : '';
       setFeedback(
         isFirstTry
-          ? `First-Try Hit! ${mv.san} mastered.`
-          : `Solved with ${mv.san} (${wrongCount} retries, ${hintsUsed} hints).`
+          ? `First-Try Hit! ${mv.san} mastered${lineSuffix}.`
+          : `Solved with ${mv.san}${lineSuffix} (${wrongCount} retries, ${hintsUsed} hints).`
       );
       await completeCurrentPuzzle(true, wrongCount, hintsUsed);
       return;
@@ -228,15 +279,15 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
         setFeedback(`${mv.san} loses ${loss.toFixed(0)}% win equity. Resetting—try again!`);
         window.setTimeout(() => {
           if (runRef.current !== gen) return;
-          setFen(activePuzzle.beforeFen);
-          setLastMove(undefined);
+          setFen(stepFen);
+          setLastMove(resetLastMove);
           setStatus('idle');
         }, 900);
       }
     } catch {
       if (runRef.current !== gen) return;
-      setFen(activePuzzle.beforeFen);
-      setLastMove(undefined);
+      setFen(stepFen);
+      setLastMove(resetLastMove);
       setStatus('idle');
       setFeedback('Engine busy — try again.');
     }
@@ -244,9 +295,10 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
 
   const revealSolution = async () => {
     if (!activePuzzle || !activeCycle) return;
-    const sq = uciToSquares(activePuzzle.bestMoveUci);
+    runRef.current += 1;
+    const sq = uciToSquares(expectedStep?.uci ?? activePuzzle.bestMoveUci);
     if (sq) {
-      const c = new Chess(activePuzzle.beforeFen);
+      const c = new Chess(expectedStep?.beforeFen ?? activePuzzle.beforeFen);
       try {
         const mv = c.move({ from: sq.from, to: sq.to, promotion: sq.promotion });
         setFen(c.fen());
@@ -256,7 +308,8 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
       }
     }
     setStatus('revealed');
-    setFeedback(`Best was ${activePuzzle.bestMoveSan}. Recorded as miss for this cycle.`);
+    const lineText = totalUserMoves > 1 ? formatSolutionLineSan(solutionLine) : activePuzzle.bestMoveSan;
+    setFeedback(`Best line: ${lineText}. Recorded as miss for this cycle.`);
     await completeCurrentPuzzle(false, wrongCount + 1, hintsUsed + 1);
   };
 
@@ -292,7 +345,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
   const hintArrow: BoardArrow[] | undefined =
     hintsUsed > 0 && activePuzzle
       ? (() => {
-          const sq = uciToSquares(activePuzzle.bestMoveUci);
+          const sq = uciToSquares(expectedStep?.uci ?? activePuzzle.bestMoveUci);
           return sq ? [{ from: sq.from, to: sq.to, color: 'plan' as const }] : undefined;
         })()
       : undefined;
@@ -432,7 +485,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
               interactive={status === 'idle' && (!radarPingEnabled || radarCleared)}
               turnColor={activePuzzle.color}
               showBestArrow={status === 'revealed'}
-              bestMoveUci={status === 'revealed' ? activePuzzle.bestMoveUci : undefined}
+              bestMoveUci={status === 'revealed' ? (expectedStep?.uci ?? activePuzzle.bestMoveUci) : undefined}
               showPlayedArrow={false}
               customArrows={hintArrow}
               squareHighlights={radarHighlights}
@@ -443,10 +496,17 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
           </div>
 
           <div className="glass-card p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">
-                {activePuzzle.tacticalTag}
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">
+                  {activePuzzle.tacticalTag}
+                </span>
+                {totalUserMoves > 1 && (
+                  <span className="rounded-full border border-teal-400/35 bg-teal-400/15 px-2 py-0.5 font-mono text-[9px] font-black text-teal-200">
+                    Move {currentUserMoveNum}/{totalUserMoves}
+                  </span>
+                )}
+              </div>
               <span className="font-mono text-[10px] text-slate-400">
                 Game move: {activePuzzle.moveNumber}{activePuzzle.color === 'w' ? '.' : '…'}{activePuzzle.san}
               </span>
@@ -518,7 +578,9 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    runRef.current += 1;
                     setFen(activePuzzle.beforeFen);
+                    setStepIndex(0);
                     setLastMove(undefined);
                     setStatus('idle');
                     setFeedback('');

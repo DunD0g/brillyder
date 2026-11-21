@@ -394,6 +394,7 @@ export interface MistakePuzzle {
   san: string;
   bestMoveSan: string;
   bestMoveUci: string;
+  bestPvSan?: string[];
   threatMoveUci?: string;
   classification: MistakeClassification;
   phase: 'opening' | 'middlegame' | 'endgame';
