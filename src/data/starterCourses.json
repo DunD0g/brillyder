@@ -1254,5 +1254,1123 @@
         ]
       }
     ]
+  },
+  {
+    "id": "italian-game-core",
+    "name": "Italian Game",
+    "codename": "Solar Flare",
+    "side": "white",
+    "difficulty": "Beginner",
+    "tagline": "Classical 1.e4 development targeting f7 with rapid castling and sharp central breaks.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "Bc4",
+        "Bc5",
+        "c3",
+        "Nf6",
+        "d3",
+        "d6",
+        "O-O",
+        "O-O",
+        "Nbd2"
+      ],
+      "arrows": [
+        {
+          "from": "c4",
+          "to": "f7",
+          "color": "plan"
+        },
+        {
+          "from": "c3",
+          "to": "d4",
+          "color": "best"
+        },
+        {
+          "from": "d2",
+          "to": "f1",
+          "color": "outpost"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "f7",
+          "color": "threat"
+        },
+        {
+          "square": "d4",
+          "color": "plan"
+        },
+        {
+          "square": "c4",
+          "color": "outpost"
+        }
+      ],
+      "corePlans": [
+        "Target Black's weakest square f7 immediately with Bc4 and prepare c3 + d4 to seize the center.",
+        "Against 3...Nf6, strike aggressively with 4. Ng5 to test Black's Two Knights Defense immediately.",
+        "In quiet Giuoco Pianissimo lines, reroute Nbd2-f1-g3 to aim all pieces at Black's kingside."
+      ],
+      "goldenRules": [
+        "Always prepare d4 with c3 first—jumping 4. d4 too early allows clean trades.",
+        "Keep the c4 bishop alive via Bb3 if Black pushes ...a6 and ...Na5.",
+        "Castle kingside early so Re1 can support an eventual d4 center break."
+      ]
+    },
+    "lines": [
+      {
+        "id": "italian-giuoco-piano-center",
+        "title": "Giuoco Piano: c3 & d4 Center Break",
+        "subtitle": "Classic rapid center seizure against 3...Bc5",
+        "eco": "C54",
+        "frequencyNote": "Most common 1.e4 e5 club battleground",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bc4",
+          "Bc5",
+          "c3",
+          "Nf6",
+          "d4",
+          "exd4",
+          "cxd4",
+          "Bb4+",
+          "Bd2",
+          "Bxd2+",
+          "Nbxd2",
+          "d5",
+          "exd5",
+          "Nxd5"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "Play c3 to support a full d4 central push while building a b3 retreat square for your bishop.",
+            "cosmicCue": "Charge the central thruster before firing d4.",
+            "arrows": [
+              {
+                "from": "c3",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "Recapture cxd4! Now you have a massive d4+e4 pawn center attacking Black's c5 bishop with tempo.",
+            "arrows": [
+              {
+                "from": "c3",
+                "to": "d4",
+                "color": "best"
+              },
+              {
+                "from": "d4",
+                "to": "c5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nxd4",
+                "punishmentLine": [
+                  "Nxe4",
+                  "O-O",
+                  "d5"
+                ],
+                "reason": "Recapturing with the knight leaves e4 undefended—Black grabs a free central pawn with ...Nxe4!",
+                "arrows": [
+                  {
+                    "from": "f6",
+                    "to": "e4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "italian-fried-liver-attack",
+        "title": "Two Knights: 4. Ng5 Fried Liver Probe",
+        "subtitle": "Punish 3...Nf6 immediately with direct pressure on f7",
+        "eco": "C57",
+        "frequencyNote": "Scores over 60% for White below 1700 Elo",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bc4",
+          "Nf6",
+          "Ng5",
+          "d5",
+          "exd5",
+          "Na5",
+          "Bb5+",
+          "c6",
+          "dxc6",
+          "bxc6",
+          "Be2",
+          "h6",
+          "Nf3",
+          "e4",
+          "Ne5"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Launch Ng5! Black MUST know 4...d5 5. exd5 Na5, because greedy 5...Nxd5?? walks straight into Nxf7!",
+            "cosmicCue": "Lock onto the f7 reactor immediately.",
+            "arrows": [
+              {
+                "from": "g5",
+                "to": "f7",
+                "color": "best"
+              },
+              {
+                "from": "c4",
+                "to": "f7",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nxe5",
+                "punishmentLine": [
+                  "Nxe5",
+                  "d4",
+                  "Nxc4"
+                ],
+                "reason": "Grabbing e5 hangs your knight cleanly and lets Black win your c4 bishop too!",
+                "arrows": [
+                  {
+                    "from": "c6",
+                    "to": "e5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "plan": "Deliver Bb5+ with tempo! After 6...c6 7. dxc6 bxc6 8. Be2, you stay a clean pawn up with a solid kingside.",
+            "arrows": [
+              {
+                "from": "c4",
+                "to": "b5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "italian-hungarian-defense",
+        "title": "Against 3...Be7: Seize Space with d4",
+        "subtitle": "Claim a commanding center against Black's passive bishop",
+        "eco": "C50",
+        "frequencyNote": "Common cautious response to avoid Fried Liver",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bc4",
+          "Be7",
+          "d4",
+          "d6",
+          "d5",
+          "Nb8",
+          "Bd3",
+          "Nf6",
+          "c4",
+          "O-O",
+          "Nc3"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "Strike the center immediately with d4! Because Black's bishop is passive on e7, you don't need c3 first.",
+            "arrows": [
+              {
+                "from": "d2",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "plan": "Push d5 to kick the c6 knight all the way back to b8 and follow up with c4 for a massive space edge.",
+            "arrows": [
+              {
+                "from": "d4",
+                "to": "d5",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "queens-gambit-core",
+    "name": "Queen's Gambit",
+    "codename": "Iron Citadel",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Classical 1.d4 + 2.c4 central dominance, clean piece activity, and queenside minority attacks.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "d5",
+        "c4",
+        "e6",
+        "Nc3",
+        "Nf6",
+        "cxd5",
+        "exd5",
+        "Bg5",
+        "Be7",
+        "e3",
+        "c6",
+        "Bd3",
+        "O-O",
+        "Qc2"
+      ],
+      "arrows": [
+        {
+          "from": "c1",
+          "to": "g5",
+          "color": "best"
+        },
+        {
+          "from": "b2",
+          "to": "b5",
+          "color": "plan"
+        },
+        {
+          "from": "d3",
+          "to": "h7",
+          "color": "outpost"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d4",
+          "color": "plan"
+        },
+        {
+          "square": "c5",
+          "color": "outpost"
+        },
+        {
+          "square": "g5",
+          "color": "best"
+        }
+      ],
+      "corePlans": [
+        "Attack Black's d5 anchor immediately with 2. c4 to deflect it from the center.",
+        "In the Exchange QGD, pin with Bg5 before e3, castle, and launch the b2-b4-b5 minority attack.",
+        "If Black takes 2...dxc4, claim the whole center with 3. e4 and recapture c4 cleanly."
+      ],
+      "goldenRules": [
+        "Develop Bg5 BEFORE playing e3 in the Exchange QGD.",
+        "Never fear 2...dxc4—Black cannot safely hold the c4 pawn against e4 or e3+a4.",
+        "Against the Slav (...c6 ...dxc4), play 5. a4 to stop ...b5 cold."
+      ]
+    },
+    "lines": [
+      {
+        "id": "qgd-exchange-minority",
+        "title": "QGD Exchange: Pin & Minority Attack",
+        "subtitle": "Structured, easy-to-play middlegame plans against 2...e6",
+        "eco": "D35",
+        "frequencyNote": "One of the highest-scoring practical White systems",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "cxd5",
+          "exd5",
+          "Bg5",
+          "Be7",
+          "e3",
+          "c6",
+          "Bd3",
+          "Nbd7",
+          "Qc2",
+          "O-O",
+          "Nf3",
+          "Re8",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Pin the f6 knight with Bg5 BEFORE playing e3! Your dark-squared bishop stays active outside the pawn chain.",
+            "cosmicCue": "Deploy the bishop outside before closing the blast doors.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "g5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e3",
+                "punishmentLine": [
+                  "Be7",
+                  "Bd3",
+                  "O-O"
+                ],
+                "reason": "Playing e3 first entombs your c1 bishop—always put Bg5 on the board before e3!",
+                "arrows": [
+                  {
+                    "from": "c1",
+                    "to": "e3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Put Qc2 on the b1-h7 diagonal to eye h7 and discourage Black's ...Bf5.",
+            "arrows": [
+              {
+                "from": "c2",
+                "to": "h7",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "qga-center-seizure",
+        "title": "Queen's Gambit Accepted: 3. e4 Blitz",
+        "subtitle": "Punish 2...dxc4 by taking full central control",
+        "eco": "D20",
+        "frequencyNote": "Very common at 1000–1600 Elo",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "e4",
+          "Nf6",
+          "e5",
+          "Nd5",
+          "Bxc4",
+          "Nb6",
+          "Bb3",
+          "Nc6",
+          "Ne2",
+          "Bf5",
+          "Nbc3",
+          "e6",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "isCritical": true,
+            "plan": "Grab the center with 3. e4! You immediately threaten Bxc4 and dominate both central squares.",
+            "arrows": [
+              {
+                "from": "e2",
+                "to": "e4",
+                "color": "best"
+              },
+              {
+                "from": "f1",
+                "to": "c4",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Qa4+",
+                "punishmentLine": [
+                  "Nc6",
+                  "Qxc4",
+                  "Qxd4"
+                ],
+                "reason": "Early Qa4+ exposes your queen and drops the d4 pawn right away after ...Nc6 Qxc4 Qxd4!",
+                "arrows": [
+                  {
+                    "from": "d8",
+                    "to": "d4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "plan": "Regain the c4 pawn cleanly with tempo on the d5 knight while keeping a towering e5 space wedge.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "c4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "qgd-slav-a4-stop",
+        "title": "Slav Defense: Stop ...b5 with 5. a4",
+        "subtitle": "Prevent Black from clinging to the c4 pawn",
+        "eco": "D15",
+        "frequencyNote": "Key anti-Slav move order every d4 player needs",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "c6",
+          "Nf3",
+          "Nf6",
+          "Nc3",
+          "dxc4",
+          "a4",
+          "Bf5",
+          "e3",
+          "e6",
+          "Bxc4",
+          "Bb4",
+          "O-O",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Play 5. a4 immediately! This stops Black's ...b5 defense and guarantees you win back c4 with a strong center.",
+            "arrows": [
+              {
+                "from": "a2",
+                "to": "a4",
+                "color": "best"
+              },
+              {
+                "from": "a4",
+                "to": "b5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e3",
+                "punishmentLine": [
+                  "b5",
+                  "a4",
+                  "b4"
+                ],
+                "reason": "Forgetting 5. a4 lets Black play 5...b5! Now Black clings to the extra pawn and kicks your c3 knight.",
+                "arrows": [
+                  {
+                    "from": "b7",
+                    "to": "b5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sicilian-accelerated-dragon",
+    "name": "Accelerated Dragon Sicilian",
+    "codename": "Nebula Counter",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Sharp 1...c5 counterattack with a razor-sharp g7 dragon bishop and low-theory setups.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "c5",
+        "Nf3",
+        "Nc6",
+        "d4",
+        "cxd4",
+        "Nxd4",
+        "g6",
+        "Nc3",
+        "Bg7",
+        "Be3",
+        "Nf6",
+        "Bc4",
+        "O-O"
+      ],
+      "arrows": [
+        {
+          "from": "g7",
+          "to": "b2",
+          "color": "plan"
+        },
+        {
+          "from": "d7",
+          "to": "d5",
+          "color": "best"
+        },
+        {
+          "from": "a8",
+          "to": "c8",
+          "color": "outpost"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "g7",
+          "color": "outpost"
+        },
+        {
+          "square": "d5",
+          "color": "plan"
+        },
+        {
+          "square": "c4",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Fianchetto the dark-squared bishop on g7 to slice across the entire h8-a1 diagonal.",
+        "Keep your d-pawn on d7 initially so you can smash the center with ...d5 in ONE move when ready.",
+        "Use the half-open c-file with ...Rc8 and target White's c3 knight and e4 pawn."
+      ],
+      "goldenRules": [
+        "Play 4...g6 BEFORE ...d6 to sidestep the fierce Yugoslav Attack.",
+        "Against the Alapin (2. c3), immediately hit back with 2...d5!",
+        "Against the Bowdler Attack (2. Bc4), blunt the bishop with ...e6 and strike with ...d5."
+      ]
+    },
+    "lines": [
+      {
+        "id": "sicilian-acc-dragon-main",
+        "title": "Open Sicilian: Accelerated Dragon Mainline",
+        "subtitle": "Fast ...g6, ...Bg7, and kingside castling before White attacks",
+        "eco": "B35",
+        "frequencyNote": "Most dynamic way to fight 1.e4 without memorizing 25-move Najdorf traps",
+        "moves": [
+          "e4",
+          "c5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "cxd4",
+          "Nxd4",
+          "g6",
+          "Nc3",
+          "Bg7",
+          "Be3",
+          "Nf6",
+          "Bc4",
+          "O-O",
+          "Bb3",
+          "d6",
+          "f3",
+          "Bd7",
+          "Qd2",
+          "Rc8"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "isCritical": true,
+            "plan": "Fianchetto immediately with 4...g6! Your bishop will soon snipe the d4 knight and the entire long diagonal.",
+            "cosmicCue": "Power up the g7 dragon laser.",
+            "arrows": [
+              {
+                "from": "f8",
+                "to": "g7",
+                "color": "best"
+              },
+              {
+                "from": "g7",
+                "to": "d4",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e5",
+                "punishmentLine": [
+                  "Nb5",
+                  "d6",
+                  "N1c3"
+                ],
+                "reason": "Pushing 4...e5? creates a permanent dark-square hole on d5 and lets White's knight invade b5 immediately.",
+                "arrows": [
+                  {
+                    "from": "d4",
+                    "to": "b5",
+                    "color": "threat"
+                  },
+                  {
+                    "from": "b5",
+                    "to": "d6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 19,
+            "plan": "Claim the half-open c-file with ...Rc8 to launch counterplay against White's queenside.",
+            "arrows": [
+              {
+                "from": "a8",
+                "to": "c8",
+                "color": "best"
+              },
+              {
+                "from": "c8",
+                "to": "c3",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sicilian-alapin-d5",
+        "title": "Anti-Sicilian Alapin (2. c3): Hit Back with 2...d5",
+        "subtitle": "Equalize effortlessly against 2. c3",
+        "eco": "B22",
+        "frequencyNote": "Very common anti-Sicilian weapon at club level",
+        "moves": [
+          "e4",
+          "c5",
+          "c3",
+          "d5",
+          "exd5",
+          "Qxd5",
+          "d4",
+          "Nf6",
+          "Nf3",
+          "e6",
+          "Be2",
+          "Nc6",
+          "O-O",
+          "cxd4",
+          "cxd4",
+          "Be7"
+        ],
+        "annotations": [
+          {
+            "ply": 3,
+            "isCritical": true,
+            "plan": "Strike immediately with 2...d5! Because White's c3 pawn blocks Nc3, your queen sits safely on d5 after 3. exd5 Qxd5.",
+            "arrows": [
+              {
+                "from": "d7",
+                "to": "d5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nc6",
+                "punishmentLine": [
+                  "d4",
+                  "cxd4",
+                  "cxd4",
+                  "d5",
+                  "exd5",
+                  "Qxd5",
+                  "Nf3"
+                ],
+                "reason": "Allowing 3. d4 without contesting the center gives White a smooth classical center for free.",
+                "arrows": [
+                  {
+                    "from": "d2",
+                    "to": "d4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sicilian-bowdler-punish",
+        "title": "Bowdler Attack (2. Bc4): Blunt & Strike ...d5",
+        "subtitle": "Punish early Bc4 by building ...e6 and smashing the center with ...d5",
+        "eco": "B20",
+        "frequencyNote": "Extremely common below 1500 Elo",
+        "moves": [
+          "e4",
+          "c5",
+          "Bc4",
+          "e6",
+          "Nc3",
+          "a6",
+          "a4",
+          "Nc6",
+          "Nf3",
+          "Nf6",
+          "O-O",
+          "d5",
+          "exd5",
+          "exd5",
+          "Ba2",
+          "Be7"
+        ],
+        "annotations": [
+          {
+            "ply": 3,
+            "plan": "Play 2...e6 to slam the door on the c4 bishop and prepare a tempo-winning ...d5 advance.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e6",
+                "color": "best"
+              },
+              {
+                "from": "d7",
+                "to": "d5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Unleash ...d5! You hit the c4 bishop with tempo and claim a broad, comfortable center.",
+            "arrows": [
+              {
+                "from": "d7",
+                "to": "d5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "d6",
+                "punishmentLine": [
+                  "d4",
+                  "cxd4",
+                  "Nxd4",
+                  "Be7"
+                ],
+                "reason": "Playing passively with ...d6 misses your chance to hit the c4 bishop with tempo via ...d5!",
+                "arrows": [
+                  {
+                    "from": "d2",
+                    "to": "d4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "french-defense-core",
+    "name": "French Defense",
+    "codename": "Vanguard Chain",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Rock-solid 1...e6 counterpuncher—undermine White's d4 pawn chain with ...c5 and ...Qb6.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e6",
+        "d4",
+        "d5",
+        "e5",
+        "c5",
+        "c3",
+        "Nc6",
+        "Nf3",
+        "Qb6",
+        "a3",
+        "c4"
+      ],
+      "arrows": [
+        {
+          "from": "c5",
+          "to": "d4",
+          "color": "best"
+        },
+        {
+          "from": "b6",
+          "to": "d4",
+          "color": "plan"
+        },
+        {
+          "from": "b6",
+          "to": "b2",
+          "color": "threat"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d4",
+          "color": "threat"
+        },
+        {
+          "square": "c5",
+          "color": "plan"
+        },
+        {
+          "square": "b6",
+          "color": "outpost"
+        }
+      ],
+      "corePlans": [
+        "Always attack the base of White's d4-e5 pawn chain with ...c5 BEFORE developing the b8 knight.",
+        "Pile onto d4 and b2 simultaneously with ...Nc6 and ...Qb6 (often backed by ...Nh6-f5).",
+        "If White plays the Exchange (3. exd5 exd5), develop smoothly with ...Bd6, ...Ne7, ...O-O, and ...Bf5."
+      ],
+      "goldenRules": [
+        "Golden Rule #1 of the French: play ...c5 BEFORE ...Nc6—never block your own c-pawn!",
+        "Look for ...f6 later to demolish White's e5 spearhead once your pieces are ready.",
+        "Don't panic about your c8 bishop—trade it off via ...Bd7-b5 or activate it after ...f6."
+      ]
+    },
+    "lines": [
+      {
+        "id": "french-advance-c5-qb6",
+        "title": "Advance French: Destroy d4 with ...c5 & ...Qb6",
+        "subtitle": "Relentless pawn-chain counterattack against 3. e5",
+        "eco": "C02",
+        "frequencyNote": "White's #1 choice against the French at club level",
+        "moves": [
+          "e4",
+          "e6",
+          "d4",
+          "d5",
+          "e5",
+          "c5",
+          "c3",
+          "Nc6",
+          "Nf3",
+          "Qb6",
+          "a3",
+          "c4",
+          "Nbd2",
+          "Na5",
+          "Be2",
+          "Bd7",
+          "O-O",
+          "Ne7"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "isCritical": true,
+            "plan": "Immediately hit the base of White's pawn chain with 3...c5! Never put Nc6 in front of your c-pawn.",
+            "cosmicCue": "Strike the hull base at d4 before anything else.",
+            "arrows": [
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "best"
+              },
+              {
+                "from": "c5",
+                "to": "d4",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nc6",
+                "punishmentLine": [
+                  "Nf3",
+                  "f6",
+                  "Bb5",
+                  "Bd7"
+                ],
+                "reason": "Playing 3...Nc6? blocks your vital ...c5 pawn break and leaves you cramped with zero pressure on d4!",
+                "arrows": [
+                  {
+                    "from": "c7",
+                    "to": "c6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 9,
+            "plan": "Swing ...Qb6 to double up on d4 and hit b2—this pins White's dark-squared bishop to defending b2.",
+            "arrows": [
+              {
+                "from": "d8",
+                "to": "b6",
+                "color": "best"
+              },
+              {
+                "from": "b6",
+                "to": "d4",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "french-classical-steinitz",
+        "title": "Classical French (3. Nc3 Nf6): Steinitz Counterattack",
+        "subtitle": "Provoke 4. e5 and immediately smash the center with ...c5",
+        "eco": "C11",
+        "frequencyNote": "Main theoretical test against 1...e6",
+        "moves": [
+          "e4",
+          "e6",
+          "d4",
+          "d5",
+          "Nc3",
+          "Nf6",
+          "e5",
+          "Nfd7",
+          "f4",
+          "c5",
+          "Nf3",
+          "Nc6",
+          "Be3",
+          "cxd4",
+          "Nxd4",
+          "Bc5",
+          "Qd2",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "isCritical": true,
+            "plan": "Retreat 4...Nfd7! From d7 your knight supports both ...c5 and ...f6 breaks and keeps f6 clear for counterplay.",
+            "arrows": [
+              {
+                "from": "f6",
+                "to": "d7",
+                "color": "best"
+              },
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Ng8",
+                "punishmentLine": [
+                  "Nf3",
+                  "c5",
+                  "Bb5+",
+                  "Bd7"
+                ],
+                "reason": "Retreating all the way back to g8 wastes two tempi and gives White a free attack.",
+                "arrows": [
+                  {
+                    "from": "f6",
+                    "to": "g8",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 9,
+            "plan": "Smash the center with 5...c5! Now White's overextended d4-e5-f4 chain comes under heavy fire.",
+            "arrows": [
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "french-exchange-active",
+        "title": "Exchange French (3. exd5): Active ...Bd6 & ...Bf5",
+        "subtitle": "Never fall asleep in the Exchange—develop actively and claim equality",
+        "eco": "C01",
+        "frequencyNote": "Popular solid choice by White players trying to avoid theory",
+        "moves": [
+          "e4",
+          "e6",
+          "d4",
+          "d5",
+          "exd5",
+          "exd5",
+          "Nf3",
+          "Bd6",
+          "Bd3",
+          "Ne7",
+          "O-O",
+          "O-O",
+          "Re1",
+          "Bf5",
+          "Bxf5",
+          "Nxf5"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "Place 4...Bd6 on the active b8-h2 diagonal and pair it with ...Ne7 and ...Bf5 to neutralize White's light-squared bishop.",
+            "arrows": [
+              {
+                "from": "f8",
+                "to": "d6",
+                "color": "best"
+              },
+              {
+                "from": "c8",
+                "to": "f5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 13,
+            "plan": "Play ...Bf5! Trading off White's strong d3 bishop leaves you with effortless equality and a nice outpost on f5.",
+            "arrows": [
+              {
+                "from": "c8",
+                "to": "f5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 ]

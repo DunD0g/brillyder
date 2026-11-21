@@ -311,6 +311,18 @@ export async function deleteRepertoire(courseId: string): Promise<void> {
   await tx.done;
 }
 
+export async function deleteFsrsCardsByLine(courseId: string, lineId: string): Promise<void> {
+  const db = await getBrillyDb();
+  const tx = db.transaction('fsrs_cards', 'readwrite');
+  const cards = await tx.store.index('by-course').getAll(courseId);
+  for (const card of cards) {
+    if (card.lineId === lineId) {
+      await tx.store.delete(card.cardId);
+    }
+  }
+  await tx.done;
+}
+
 /* ---------- FSRS Opening Cards ---------- */
 
 export async function getAllFsrsCards(): Promise<FsrsOpeningCard[]> {

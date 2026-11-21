@@ -44,6 +44,7 @@ import {
   setPref,
 } from './storage/gameDb';
 import {
+  deleteFsrsCardsByLine,
   deleteRepertoire,
   getAllFsrsCards,
   getAllRepertoires,
@@ -56,6 +57,7 @@ import {
   saveWoodpeckerCycle,
   type BackupImportSummary,
 } from './storage/brillyDb';
+import { removeLineFromCourse } from './services/repertoireLines';
 import { stockfishService } from './engine/StockfishService';
 import { maiaService } from './engine/MaiaService';
 import { soundManager } from './utils/sound';
@@ -330,7 +332,12 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const handleSaveCourse = useCallback(async (course: OpeningCourse, newCards?: FsrsOpeningCard[]) => {
+  const modifiedStarterIds = useMemo(() => {
+    const starterIds = new Set(STARTER_COURSES.map((s) => s.id));
+    return new Set(customRepertoires.filter((c) => starterIds.has(c.id)).map((c) => c.id));
+  }, [customRepertoires]);
+
+  const handleSaveCourse = useCallback(async (course: OpeningCourse, newCards?: FsrsOpeningCard[], replacedLineId?: string) => {
     await saveRepertoire(course);
     setCustomRepertoires((prev) => {
       const idx = prev.findIndex((c) => c.id === course.id);
@@ -339,6 +346,10 @@ export const App: React.FC = () => {
       next[idx] = course;
       return next;
     });
+    if (replacedLineId) {
+      await deleteFsrsCardsByLine(course.id, replacedLineId);
+      setFsrsCards((prev) => prev.filter((c) => !(c.courseId === course.id && c.lineId === replacedLineId)));
+    }
     if (newCards && newCards.length > 0) {
       await upsertFsrsCards(newCards);
     }
@@ -348,6 +359,21 @@ export const App: React.FC = () => {
     await deleteRepertoire(courseId);
     setCustomRepertoires((prev) => prev.filter((c) => c.id !== courseId));
     setFsrsCards((prev) => prev.filter((c) => c.courseId !== courseId));
+  }, []);
+
+  const handleDeleteLine = useCallback(async (course: OpeningCourse, lineId: string) => {
+    const updated = removeLineFromCourse(course, lineId);
+    if (updated === course) return;
+    await saveRepertoire(updated);
+    await deleteFsrsCardsByLine(course.id, lineId);
+    setCustomRepertoires((prev) => {
+      const idx = prev.findIndex((c) => c.id === updated.id);
+      if (idx === -1) return [...prev, updated];
+      const next = [...prev];
+      next[idx] = updated;
+      return next;
+    });
+    setFsrsCards((prev) => prev.filter((c) => !(c.courseId === course.id && c.lineId === lineId)));
   }, []);
 
   const handleBoostDeviationToFsrs = useCallback(async (deviation: RepertoireDeviation) => {
@@ -1122,6 +1148,7 @@ export const App: React.FC = () => {
         {tab === 'openings' && (
           <OpeningsView
             courses={allCourses}
+            modifiedStarterIds={modifiedStarterIds}
             fsrsCards={fsrsCards}
             analyzedGames={analyzedGamesList}
             username={usernames}
@@ -1129,6 +1156,7 @@ export const App: React.FC = () => {
             explorerPrefs={explorerPrefs}
             onSaveCourse={handleSaveCourse}
             onDeleteCourse={handleDeleteCourse}
+            onDeleteLine={handleDeleteLine}
             onUnlockCards={upsertFsrsCards}
             onCardReviewed={handleCardReviewed}
             onOpenGame={openReviewedPly}

@@ -6,7 +6,10 @@ import {
   Compass,
   Layers,
   Orbit,
+  Pencil,
   Play,
+  Plus,
+  RotateCcw,
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
@@ -14,11 +17,13 @@ import type { AnalyzedGame, BoardThemeId } from '../types/chess';
 import type { FsrsOpeningCard, OpeningCourse, OpeningLine, Side } from '../types/openings';
 import { hydrateCourseCards, hydrateLineCards, isCardDue } from '../lib/fsrsOpening';
 import { addPatchedLineToCourse, type RepertoireGap } from '../services/repertoireCoverage';
+import { removeLineFromCourse, upsertLineInCourse } from '../services/repertoireLines';
 import { useVibe } from '../utils/vibeCopy';
 import type { UserHandleSpec } from '../utils/player';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { MothershipCard } from './openings/MothershipCard';
 import { GuidedWalkthrough } from './openings/GuidedWalkthrough';
+import { LineEditorPanel } from './openings/LineEditorPanel';
 import { OpeningDrillView } from './openings/OpeningDrillView';
 import { CoverageGapPanel } from './openings/CoverageGapPanel';
 import { ImportCourseModal } from './openings/ImportCourseModal';
@@ -28,13 +33,15 @@ type OpeningsSubTab = 'formation' | 'walkthrough' | 'drill' | 'coverage' | 'repo
 
 interface Props {
   courses: OpeningCourse[];
+  modifiedStarterIds?: Set<string>;
   fsrsCards: FsrsOpeningCard[];
   analyzedGames: AnalyzedGame[];
   username: UserHandleSpec;
   boardTheme: BoardThemeId;
   explorerPrefs: ExplorerPrefSettings;
-  onSaveCourse: (course: OpeningCourse, newCards?: FsrsOpeningCard[]) => Promise<void>;
+  onSaveCourse: (course: OpeningCourse, newCards?: FsrsOpeningCard[], replacedLineId?: string) => Promise<void>;
   onDeleteCourse: (courseId: string) => Promise<void>;
+  onDeleteLine?: (course: OpeningCourse, lineId: string) => Promise<void>;
   onUnlockCards: (cards: FsrsOpeningCard[]) => Promise<void>;
   onCardReviewed: (updated: FsrsOpeningCard) => Promise<void>;
   onOpenGame: (gameId: string, ply: number) => void;
@@ -42,6 +49,7 @@ interface Props {
 
 export const OpeningsView: React.FC<Props> = ({
   courses,
+  modifiedStarterIds,
   fsrsCards,
   analyzedGames,
   username,
@@ -49,6 +57,7 @@ export const OpeningsView: React.FC<Props> = ({
   explorerPrefs,
   onSaveCourse,
   onDeleteCourse,
+  onDeleteLine,
   onUnlockCards,
   onCardReviewed,
   onOpenGame,
@@ -61,6 +70,8 @@ export const OpeningsView: React.FC<Props> = ({
   const [drillFocusLineId, setDrillFocusLineId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [lineEditorMode, setLineEditorMode] = useState<'closed' | 'add' | 'edit'>('closed');
+  const [confirmDeleteLineId, setConfirmDeleteLineId] = useState<string | null>(null);
 
   const sideCourses = useMemo(
     () => courses.filter((c) => c.side === side),
@@ -142,6 +153,32 @@ export const OpeningsView: React.FC<Props> = ({
     setSubTab('walkthrough');
   };
 
+  const handleSaveEditedLine = async (line: OpeningLine, movesChanged: boolean) => {
+    if (!selectedCourse) return;
+    const updatedCourse = upsertLineInCourse(selectedCourse, line);
+    const cards = movesChanged
+      ? hydrateLineCards(updatedCourse.id, updatedCourse.side, line, undefined, { unlocked: true }).map((c) => ({
+          ...c,
+          unlocked: true,
+        }))
+      : undefined;
+    await onSaveCourse(updatedCourse, cards, movesChanged ? line.id : undefined);
+    setSelectedLineId(line.id);
+    setLineEditorMode('closed');
+  };
+
+  const handleConfirmDeleteLine = async (lineId: string) => {
+    if (!selectedCourse || selectedCourse.lines.length <= 1) return;
+    setConfirmDeleteLineId(null);
+    setLineEditorMode('closed');
+    if (onDeleteLine) {
+      await onDeleteLine(selectedCourse, lineId);
+    } else {
+      const updated = removeLineFromCourse(selectedCourse, lineId);
+      await onSaveCourse(updated);
+    }
+  };
+
   return (
     <div className="space-y-3 pb-24">
       {/* Studio Header */}
@@ -195,17 +232,20 @@ export const OpeningsView: React.FC<Props> = ({
             const unlockedCount = courseCards.filter((c) => c.unlocked).length;
             const dueCount = courseCards.filter((c) => isCardDue(c)).length;
             const isCustom = course.source === 'pgn' || course.source === 'lichess-study';
+            const isModifiedStarter = !isCustom && Boolean(modifiedStarterIds?.has(course.id));
             return (
               <div
                 key={course.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => { setSelectedCourseId(course.id); setDrillFocusLineId(null); }}
+                onClick={() => { setSelectedCourseId(course.id); setDrillFocusLineId(null); setLineEditorMode('closed'); setConfirmDeleteLineId(null); }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     setSelectedCourseId(course.id);
                     setDrillFocusLineId(null);
+                    setLineEditorMode('closed');
+                    setConfirmDeleteLineId(null);
                   }
                 }}
                 className={`group relative cursor-pointer rounded-xl border p-2.5 text-left transition ${
@@ -216,8 +256,13 @@ export const OpeningsView: React.FC<Props> = ({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[9px] font-black uppercase tracking-wider text-purple-300">
-                      {vibe === 'cosmic' ? course.codename : course.difficulty}
+                    <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider text-purple-300">
+                      <span>{vibe === 'cosmic' ? course.codename : course.difficulty}</span>
+                      {isModifiedStarter && (
+                        <span className="rounded bg-teal-400/15 px-1 py-0.5 text-[8px] font-bold text-teal-200">
+                          edited
+                        </span>
+                      )}
                     </div>
                     <div className="truncate text-xs font-extrabold text-white">{course.name}</div>
                   </div>
@@ -227,7 +272,7 @@ export const OpeningsView: React.FC<Props> = ({
                         {dueCount} due
                       </span>
                     )}
-                    {isCustom && (
+                    {(isCustom || isModifiedStarter) && (
                       confirmDeleteId === course.id ? (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                           <button
@@ -238,7 +283,7 @@ export const OpeningsView: React.FC<Props> = ({
                             }}
                             className="rounded-md border border-rose-500/50 bg-rose-500/20 px-1.5 py-0.5 text-[9px] font-extrabold text-rose-200 hover:bg-rose-500/30"
                           >
-                            Delete
+                            {isCustom ? 'Delete' : 'Reset'}
                           </button>
                           <button
                             type="button"
@@ -255,10 +300,11 @@ export const OpeningsView: React.FC<Props> = ({
                             e.stopPropagation();
                             setConfirmDeleteId(course.id);
                           }}
-                          aria-label={`Delete ${course.name}`}
+                          aria-label={isCustom ? `Delete ${course.name}` : `Reset ${course.name} to default`}
+                          title={isCustom ? 'Delete custom course' : 'Reset starter course to default'}
                           className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/15 hover:text-rose-300"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {isCustom ? <Trash2 className="h-3.5 w-3.5" /> : <RotateCcw className="h-3.5 w-3.5" />}
                         </button>
                       )
                     )}
@@ -317,7 +363,7 @@ export const OpeningsView: React.FC<Props> = ({
 
       {selectedCourse && subTab === 'walkthrough' && (
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {selectedCourse.lines.map((line) => {
               const active = selectedLine?.id === line.id;
               const unlocked = isLineUnlocked(selectedCourse, line);
@@ -325,7 +371,11 @@ export const OpeningsView: React.FC<Props> = ({
                 <button
                   key={line.id}
                   type="button"
-                  onClick={() => setSelectedLineId(line.id)}
+                  onClick={() => {
+                    setSelectedLineId(line.id);
+                    setLineEditorMode('closed');
+                    setConfirmDeleteLineId(null);
+                  }}
                   className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
                     active
                       ? 'border-teal-400/55 bg-teal-400/15 text-teal-100'
@@ -338,7 +388,71 @@ export const OpeningsView: React.FC<Props> = ({
                 </button>
               );
             })}
+
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDeleteLineId(null);
+                  setLineEditorMode((m) => (m === 'add' ? 'closed' : 'add'));
+                }}
+                className="inline-flex items-center gap-1 rounded-xl border border-teal-400/35 bg-teal-400/10 px-2.5 py-1.5 text-[10px] font-extrabold text-teal-200 transition hover:bg-teal-400/20"
+              >
+                <Plus className="h-3 w-3" /> Add line
+              </button>
+              {selectedLine && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDeleteLineId(null);
+                    setLineEditorMode((m) => (m === 'edit' ? 'closed' : 'edit'));
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-hull px-2.5 py-1.5 text-[10px] font-bold text-slate-200 transition hover:border-slate-500"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+              )}
+              {selectedLine && selectedCourse.lines.length > 1 && (
+                confirmDeleteLineId === selectedLine.id ? (
+                  <div className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void handleConfirmDeleteLine(selectedLine.id)}
+                      className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-2 py-1 text-[10px] font-extrabold text-rose-200 hover:bg-rose-500/30"
+                    >
+                      Remove line
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteLineId(null)}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteLineId(selectedLine.id)}
+                    aria-label={`Remove line ${selectedLine.title}`}
+                    className="inline-flex items-center gap-1 rounded-xl border border-rose-500/25 bg-rose-500/10 px-2 py-1.5 text-[10px] font-bold text-rose-200 transition hover:bg-rose-500/20"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )
+              )}
+            </div>
           </div>
+
+          {lineEditorMode !== 'closed' && (
+            <LineEditorPanel
+              key={`${selectedCourse.id}-${lineEditorMode}-${lineEditorMode === 'edit' ? selectedLine?.id : 'new'}`}
+              course={selectedCourse}
+              editingLine={lineEditorMode === 'edit' ? selectedLine : null}
+              onSave={handleSaveEditedLine}
+              onCancel={() => setLineEditorMode('closed')}
+            />
+          )}
 
           {selectedLine && (
             <GuidedWalkthrough
