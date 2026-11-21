@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Compass,
   Loader2,
@@ -50,14 +51,16 @@ export const CoverageGapPanel: React.FC<Props> = ({
   const [analyzingGap, setAnalyzingGap] = useState(false);
   const [patching, setPatching] = useState<string | null>(null);
   const [patchedNotice, setPatchedNotice] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const scanIdRef = useRef(0);
   const gapIdRef = useRef(0);
 
-  const runCoverageScan = async () => {
+  const runCoverageScan = async (preserveNotice = false) => {
     const id = scanIdRef.current + 1;
     scanIdRef.current = id;
     setLoading(true);
-    setPatchedNotice(null);
+    setScanError(null);
+    if (!preserveNotice) setPatchedNotice(null);
     setSelectedGap(null);
     setCandidates([]);
     try {
@@ -71,13 +74,21 @@ export const CoverageGapPanel: React.FC<Props> = ({
       if (res.uncoveredGaps.length > 0) {
         void inspectGap(res.uncoveredGaps[0]);
       }
+    } catch (err) {
+      if (scanIdRef.current === id) {
+        setScanError(err instanceof Error ? err.message : 'Coverage scan failed — tap Rescan to retry.');
+      }
     } finally {
       if (scanIdRef.current === id) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void runCoverageScan();
+    setPatchedNotice(null);
+  }, [course.id]);
+
+  useEffect(() => {
+    void runCoverageScan(true);
     return () => {
       scanIdRef.current += 1;
       gapIdRef.current += 1;
@@ -90,6 +101,7 @@ export const CoverageGapPanel: React.FC<Props> = ({
     gapIdRef.current = id;
     setSelectedGap(gap);
     setCandidates([]);
+    setScanError(null);
     setAnalyzingGap(true);
     try {
       const [sfRes, expRes] = await Promise.all([
@@ -127,6 +139,10 @@ export const CoverageGapPanel: React.FC<Props> = ({
         });
       }
       setCandidates(list);
+    } catch {
+      if (gapIdRef.current === id) {
+        setScanError('Stockfish busy or offline — click this gap again to retry analysis.');
+      }
     } finally {
       if (gapIdRef.current === id) setAnalyzingGap(false);
     }
@@ -135,10 +151,13 @@ export const CoverageGapPanel: React.FC<Props> = ({
   const handlePatch = async (cand: CandidateReply) => {
     if (!selectedGap) return;
     setPatching(cand.san);
+    setScanError(null);
     try {
       const note = `Stockfish candidate ${cand.san} (${cand.evalDisplay}${cand.humanWinPct !== null ? `, ${cand.humanWinPct}% human score` : ''}). Line: ${cand.pvSan}`;
       await onPatchGap(course, selectedGap, cand.san, note);
       setPatchedNotice(`Patched ${cand.san} against ${selectedGap.opponentSan} — added to repertoire & unlocked in FSRS!`);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Could not patch gap.');
     } finally {
       setPatching(null);
     }
@@ -201,6 +220,12 @@ export const CoverageGapPanel: React.FC<Props> = ({
         {patchedNotice && (
           <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
             <CheckCircle2 className="h-4 w-4 shrink-0" /> {patchedNotice}
+          </div>
+        )}
+
+        {scanError && (
+          <div className="mt-2.5 flex items-center gap-2 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {scanError}
           </div>
         )}
       </div>

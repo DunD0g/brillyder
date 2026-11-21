@@ -39,6 +39,8 @@ export const MothershipCard: React.FC<Props> = ({
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); setStep((s) => Math.max(0, s - 1)); }
@@ -90,6 +92,8 @@ export const MothershipCard: React.FC<Props> = ({
           customArrows={atTarget ? arrows : undefined}
           squareHighlights={atTarget ? highlights : undefined}
           theme={boardTheme}
+          onSwipePrev={() => setStep((s) => Math.max(0, s - 1))}
+          onSwipeNext={() => setStep((s) => Math.min(previewMoves.length, s + 1))}
         />
 
         <div className="mt-2.5 flex items-center gap-1.5">

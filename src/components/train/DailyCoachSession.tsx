@@ -27,6 +27,7 @@ import {
 } from '../../services/dailyCoach';
 import {
   findRadarPingTargets,
+  formatCooldownLabel,
   recordWoodpeckerPuzzleOutcome,
 } from '../../services/woodpeckerCycles';
 import {
@@ -93,6 +94,8 @@ export const DailyCoachSession: React.FC<Props> = ({
   const [stage, setStage] = useState<StageNum>(1);
   const [itemIndex, setItemIndex] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
+  const [completedStages, setCompletedStages] = useState<Set<number>>(() => new Set());
+  const [stage1CardOverride, setStage1CardOverride] = useState<FsrsOpeningCard | null>(null);
   const [radarPingEnabled, setRadarPingEnabled] = useState(true);
   const [radarCleared, setRadarCleared] = useState(false);
   const [radarNote, setRadarNote] = useState('');
@@ -105,8 +108,9 @@ export const DailyCoachSession: React.FC<Props> = ({
   const [hintUsed, setHintUsed] = useState(false);
   const startedAtRef = useRef<number>(performance.now());
   const genRef = useRef(0);
+  const availableDeckIds = useMemo(() => new Set(deck.map((p) => p.id)), [deck]);
 
-  // Snapshot the workout plan when duration changes so completed items don't shift indices mid-stage
+  // Snapshot the workout plan when duration/account changes so completed items don't shift indices mid-stage
   const [planSeed, setPlanSeed] = useState(0);
   const plan = useMemo(
     () =>
@@ -117,9 +121,10 @@ export const DailyCoachSession: React.FC<Props> = ({
         analyzedGames,
         username,
         activeCycle,
+        convertedIds,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [duration, planSeed, analyzedGames.length, activeCycle?.id]
+    [duration, planSeed, analyzedGames.length, activeCycle?.id, username]
   );
 
   const stageCounts = useMemo(() => {
@@ -139,11 +144,17 @@ export const DailyCoachSession: React.FC<Props> = ({
   const radarInfo = useMemo(
     () =>
       stage === 2 && activeStage2Puzzle
-        ? findRadarPingTargets(activeStage2Puzzle.beforeFen, activeStage2Puzzle.color, activeStage2Puzzle.bestMoveUci)
+        ? findRadarPingTargets(
+            activeStage2Puzzle.beforeFen,
+            activeStage2Puzzle.color,
+            activeStage2Puzzle.bestMoveUci,
+            activeStage2Puzzle.threatMoveUci
+          )
         : null,
     [stage, activeStage2Puzzle]
   );
 
+  // Reset puzzle state ONLY on stage/item change — NEVER when toggling Radar Ping!
   useEffect(() => {
     genRef.current += 1;
     setStatus('idle');
@@ -153,6 +164,7 @@ export const DailyCoachSession: React.FC<Props> = ({
     setWrongCount(0);
     setHintUsed(false);
     setRadarNote('');
+    setStage1CardOverride(null);
     setRadarCleared(!(stage === 2 && radarPingEnabled));
     startedAtRef.current = performance.now();
 
@@ -161,7 +173,8 @@ export const DailyCoachSession: React.FC<Props> = ({
     } else if (activePuzzle) {
       setFen(activePuzzle.beforeFen);
     }
-  }, [stage, itemIndex, activeStage1Card?.cardId, activePuzzle?.id, radarPingEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, itemIndex, activeStage1Card?.cardId, activePuzzle?.id]);
 
   const progressPct = stage === 5
     ? 100
@@ -180,19 +193,21 @@ export const DailyCoachSession: React.FC<Props> = ({
       setItemIndex(currentIdx + 1);
       return;
     }
+    setCompletedStages((prev) => new Set(prev).add(currentStage));
     if (currentStage < 4) {
       setStage((currentStage + 1) as StageNum);
       setItemIndex(0);
     } else {
       setStage(5);
-      void onSessionComplete({ duration, completedItems: completedCount + 1 });
+      void onSessionComplete({ duration, completedItems: completedCount });
     }
   };
 
   const handleStage1Move = async (from: Square, to: Square) => {
-    if (!activeStage1Card || status === 'solved') return;
+    const currentCard = stage1CardOverride ?? activeStage1Card;
+    if (!currentCard || status === 'solved') return;
     soundManager.unlock();
-    const chess = new Chess(activeStage1Card.fen);
+    const chess = new Chess(currentCard.fen);
     let mv;
     try {
       mv = chess.move({ from, to, promotion: 'q' });
@@ -202,12 +217,13 @@ export const DailyCoachSession: React.FC<Props> = ({
     const uci = `${mv.from}${mv.to}${mv.promotion ?? ''}`;
     const responseMs = Math.max(150, Math.round(performance.now() - startedAtRef.current));
 
-    if (uci === activeStage1Card.expectedUci || mv.san === activeStage1Card.expectedSan) {
-      const reviewed = reviewFsrsOpeningCard(activeStage1Card, {
+    if (uci === currentCard.expectedUci || mv.san === currentCard.expectedSan) {
+      const reviewed = reviewFsrsOpeningCard(currentCard, {
         correct: wrongCount === 0,
         responseMs,
         hintUsed,
       });
+      setStage1CardOverride(reviewed.card);
       setFen(chess.fen());
       setLastMove([mv.from, mv.to]);
       setCustomArrows([{ from: mv.from, to: mv.to, color: 'best' }]);
@@ -219,11 +235,12 @@ export const DailyCoachSession: React.FC<Props> = ({
     } else {
       soundManager.playHullThud();
       setWrongCount((w) => w + 1);
-      const again = reviewFsrsOpeningCard(activeStage1Card, { correct: false, responseMs });
+      const again = reviewFsrsOpeningCard(currentCard, { correct: false, responseMs });
+      setStage1CardOverride(again.card);
       await onCardReviewed(again.card);
-      const sq = uciToSquares(activeStage1Card.expectedUci);
+      const sq = uciToSquares(currentCard.expectedUci);
       if (sq) setCustomArrows([{ from: sq.from, to: sq.to, color: 'plan' }]);
-      setFeedback(`Played ${mv.san}; repertoire expects ${activeStage1Card.expectedSan}. Retry to continue!`);
+      setFeedback(`Played ${mv.san}; repertoire expects ${currentCard.expectedSan}. Retry to continue!`);
     }
   };
 
@@ -268,12 +285,18 @@ export const DailyCoachSession: React.FC<Props> = ({
       setCompletedCount((n) => n + 1);
       setFeedback(msg);
       onRecordMistakeAttempt(activePuzzle.id, true);
-      if (stage === 3 && activeCycle && activeCycle.puzzleIds.includes(activePuzzle.id)) {
-        const { updated } = recordWoodpeckerPuzzleOutcome(activeCycle, activePuzzle.id, {
-          solved: true,
-          wrongMoves: wrongCount,
-          hintsUsed: hintUsed ? 1 : 0,
-        });
+      if (stage === 3 && activeCycle && !plan.stage3OnCooldown && activeCycle.puzzleIds.includes(activePuzzle.id)) {
+        const { updated } = recordWoodpeckerPuzzleOutcome(
+          activeCycle,
+          activePuzzle.id,
+          {
+            solved: true,
+            wrongMoves: wrongCount,
+            hintsUsed: hintUsed ? 1 : 0,
+          },
+          Date.now(),
+          availableDeckIds
+        );
         await onSaveCycle(updated);
       }
     };
@@ -356,7 +379,8 @@ export const DailyCoachSession: React.FC<Props> = ({
               onClick={onOpenGravityCheck}
               className="inline-flex items-center gap-1 rounded-xl border border-purple-400/40 bg-purple-500/15 px-2.5 py-1.5 text-[11px] font-extrabold text-purple-200 hover:bg-purple-500/25"
             >
-              <Rocket className="h-3.5 w-3.5" /> 60s {copy.gravityCheckTitle}
+              <Rocket className="h-3.5 w-3.5" />{' '}
+              {copy.gravityCheckTitle.startsWith('60s') ? copy.gravityCheckTitle : `60s ${copy.gravityCheckTitle}`}
             </button>
           </div>
         </div>
@@ -380,7 +404,7 @@ export const DailyCoachSession: React.FC<Props> = ({
             const count =
               st.num === 1 ? stageCounts.s1 : st.num === 2 ? stageCounts.s2 : st.num === 3 ? stageCounts.s3 : stageCounts.s4;
             const active = stage === st.num;
-            const done = stage > st.num;
+            const done = completedStages.has(st.num);
             return (
               <button
                 key={st.num}
@@ -420,7 +444,13 @@ export const DailyCoachSession: React.FC<Props> = ({
             </button>
             <button
               type="button"
-              onClick={() => { setPlanSeed((s) => s + 1); setStage(1); setItemIndex(0); setCompletedCount(0); }}
+              onClick={() => {
+                setPlanSeed((s) => s + 1);
+                setStage(1);
+                setItemIndex(0);
+                setCompletedCount(0);
+                setCompletedStages(new Set());
+              }}
               className="rounded-xl border border-slate-700 bg-hull px-3.5 py-2 text-xs font-bold text-slate-200"
             >
               Run Another Loop
@@ -552,7 +582,11 @@ export const DailyCoachSession: React.FC<Props> = ({
               {stage === 2 && (
                 <button
                   type="button"
-                  onClick={() => setRadarPingEnabled((v) => !v)}
+                  onClick={() => {
+                    const next = !radarPingEnabled;
+                    setRadarPingEnabled(next);
+                    if (!next) setRadarCleared(true);
+                  }}
                   className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
                     radarPingEnabled ? 'border-teal-400/45 bg-teal-400/15 text-teal-200' : 'border-slate-700 text-slate-400'
                   }`}
@@ -641,6 +675,27 @@ export const DailyCoachSession: React.FC<Props> = ({
               </button>
             </div>
           </div>
+        </div>
+      ) : stage === 3 && plan.stage3OnCooldown ? (
+        <div className="glass-card border-amber-400/35 p-6 text-center space-y-2.5">
+          <Clock className="mx-auto h-8 w-8 text-amber-300" />
+          <h3 className="text-sm font-extrabold text-amber-200">{copy.woodpeckerRest}</h3>
+          <p className="mx-auto max-w-md text-xs text-slate-300">
+            Your Frozen Woodpecker Cycle is in its 24h memory consolidation rest
+            {plan.stage3CooldownRemainingMs ? ` (${formatCooldownLabel(plan.stage3CooldownRemainingMs)} remaining)` : ''}.
+            Let those patterns settle, then move on to Stage 4!
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setCompletedStages((prev) => new Set(prev).add(3));
+              setStage(4);
+              setItemIndex(0);
+            }}
+            className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-3.5 py-2 text-xs font-extrabold text-slate-950"
+          >
+            Continue to Stage 4 <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       ) : (
         <div className="glass-card p-6 text-center space-y-2.5">

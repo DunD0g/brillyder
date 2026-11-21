@@ -14,6 +14,7 @@ import type { RepertoireDeviation } from '../services/deviationDetector';
 import { useVibe } from '../utils/vibeCopy';
 
 interface Props {
+  gameId?: string;
   report: OpeningReport;
   repertoireDeviation?: RepertoireDeviation | null;
   onJumpToPly: (ply: number) => void;
@@ -24,6 +25,7 @@ interface Props {
 }
 
 export const OpeningReportCard: React.FC<Props> = ({
+  gameId = '',
   report,
   repertoireDeviation,
   onJumpToPly,
@@ -38,7 +40,7 @@ export const OpeningReportCard: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
 
   const devKey = repertoireDeviation
-    ? `${repertoireDeviation.kind}:${repertoireDeviation.ply}:${repertoireDeviation.playedSan}`
+    ? `${gameId}:${repertoireDeviation.kind}:${repertoireDeviation.ply}:${repertoireDeviation.playedSan}`
     : null;
 
   const handleBoost = async () => {
@@ -47,6 +49,8 @@ export const OpeningReportCard: React.FC<Props> = ({
     try {
       await onBoostDeviationToFsrs(repertoireDeviation);
       setBoostedKey(devKey);
+    } catch {
+      // handled silently so button recovers
     } finally {
       setBusy(false);
     }
@@ -58,6 +62,8 @@ export const OpeningReportCard: React.FC<Props> = ({
     try {
       await onPatchDeviationGap(repertoireDeviation);
       setPatchedKey(devKey);
+    } catch {
+      // handled silently so button recovers
     } finally {
       setBusy(false);
     }

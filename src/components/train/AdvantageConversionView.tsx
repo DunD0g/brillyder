@@ -76,8 +76,8 @@ export const AdvantageConversionView: React.FC<Props> = ({
 
   useEffect(() => {
     const checkFen = fen || activePos?.fen || '';
+    setTablebase(null);
     if (!checkFen || !isTablebaseEligible(checkFen)) {
-      setTablebase(null);
       return;
     }
     let cancelled = false;
@@ -89,17 +89,18 @@ export const AdvantageConversionView: React.FC<Props> = ({
 
   const loadPosition = (pos: BlownLeadPosition) => {
     genRef.current += 1;
+    const clampedElo = Math.min(2200, Math.max(1000, Math.round(pos.opponentRating / 100) * 100 || 1400));
     setSelectedId(pos.id);
     setFen(pos.fen);
     setHistoryFens([pos.fen]);
     setLastMove(undefined);
-    setBotElo(Math.min(2200, Math.max(1000, Math.round(pos.opponentRating / 100) * 100 || 1400)));
+    setBotElo(clampedElo);
     setThinking(false);
     setEvalPawns(pos.peakEvalPawns);
     setVerdict('holding');
     setEverSlipped(false);
     setStatusText(
-      `Convert this +${pos.peakEvalPawns.toFixed(1)} advantage vs Stockfish ${Math.round(pos.opponentRating / 100) * 100 || 1400}. Reach mate or +8.0 without slipping below +1.5!`
+      `Convert this +${pos.peakEvalPawns.toFixed(1)} advantage vs Bot ${clampedElo}. Reach mate or +8.0 without slipping below +1.5!`
     );
   };
 
@@ -145,14 +146,18 @@ export const AdvantageConversionView: React.FC<Props> = ({
     if (mv.captured) soundManager.playCapture();
     else soundManager.playMove();
 
+    const beforeMoveFen = fen;
     setThinking(true);
-    setStatusText(`Stockfish (${botElo}) defending…`);
+    setStatusText(`Bot (${botElo}) defending…`);
     try {
       const { moveUci: botUci, engine: botEngine } = await maiaService.getSmartBotMove(afterUserFen, botElo);
       if (genRef.current !== gen) return;
       const parsed = uciToSquares(botUci);
       if (!parsed) {
-        setThinking(false);
+        // Revert to pre-move FEN so the board never soft-locks on the bot's turn
+        setFen(beforeMoveFen);
+        setHistoryFens((h) => h.slice(0, Math.max(1, h.length - 1)));
+        setStatusText('Bot could not find a move — try your move again.');
         return;
       }
       const bc = new Chess(afterUserFen);
@@ -202,21 +207,37 @@ export const AdvantageConversionView: React.FC<Props> = ({
         setVerdict('holding');
         setStatusText(`${defenderName} played ${bmv.san}. Advantage holding at +${check.pawns.toFixed(1)} — keep simplifying!`);
       }
+    } catch {
+      if (genRef.current !== gen) return;
+      // Never soft-lock on opponent's turn when Stockfish is busy or cancelled
+      setFen(beforeMoveFen);
+      setHistoryFens((h) => h.slice(0, Math.max(1, h.length - 1)));
+      setStatusText('Engine busy or interrupted — play your move again.');
     } finally {
       if (genRef.current === gen) setThinking(false);
     }
   };
 
   const rewindTurn = () => {
-    if (historyFens.length <= 1) return;
+    if (!activePos || historyFens.length <= 1) return;
     genRef.current += 1;
-    const nextHist = historyFens.slice(0, Math.max(1, historyFens.length - 2));
+    // Rewind to the most recent snapshot where it is actually the user's turn (fixes post-mate even-length soft-lock!)
+    let targetIdx = historyFens.length - 2;
+    while (targetIdx > 0) {
+      try {
+        if (new Chess(historyFens[targetIdx]).turn() === activePos.userColor) break;
+      } catch {
+        break;
+      }
+      targetIdx--;
+    }
+    const nextHist = historyFens.slice(0, Math.max(1, targetIdx + 1));
     setHistoryFens(nextHist);
     setFen(nextHist[nextHist.length - 1]);
     setLastMove(undefined);
     setThinking(false);
     setVerdict('holding');
-    setStatusText('Rewound one full turn — find the cleaner consolidating move!');
+    setStatusText('Rewound to your turn — find the cleaner consolidating move!');
   };
 
   if (positions.length === 0 && !focusedPosition) {

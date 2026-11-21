@@ -74,6 +74,9 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
     return () => window.clearInterval(id);
   }, []);
 
+  const [pinnedPuzzle, setPinnedPuzzle] = useState<MistakePuzzle | null>(null);
+  const availableDeckIds = useMemo(() => new Set(deck.map((p) => p.id)), [deck]);
+
   const cyclePuzzles = useMemo(() => {
     if (!activeCycle) return [];
     return activeCycle.puzzleIds
@@ -81,20 +84,28 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
       .filter((p): p is MistakePuzzle => Boolean(p));
   }, [activeCycle, deckById]);
 
-  const activePuzzle = useMemo(() => {
+  const nextCyclePuzzle = useMemo(() => {
     if (!activeCycle || cyclePuzzles.length === 0) return null;
     const unattempted = cyclePuzzles.find((p) => !(p.id in activeCycle.activeAttemptedIds));
     return unattempted ?? cyclePuzzles[activeCycle.activeIndex] ?? cyclePuzzles[0];
   }, [activeCycle, cyclePuzzles]);
 
+  const activePuzzle = pinnedPuzzle ?? nextCyclePuzzle;
+
   const radarInfo = useMemo(
     () =>
       activePuzzle
-        ? findRadarPingTargets(activePuzzle.beforeFen, activePuzzle.color, activePuzzle.bestMoveUci)
+        ? findRadarPingTargets(
+            activePuzzle.beforeFen,
+            activePuzzle.color,
+            activePuzzle.bestMoveUci,
+            activePuzzle.threatMoveUci
+          )
         : null,
     [activePuzzle]
   );
 
+  // Reset board ONLY when moving to a genuinely new puzzle/cycle — NEVER when toggling Radar Ping!
   useEffect(() => {
     runRef.current += 1;
     if (!activePuzzle) return;
@@ -106,7 +117,12 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
     setFeedback('');
     setRadarCleared(!radarPingEnabled);
     setRadarFeedback('');
-  }, [activePuzzle?.id, activeCycle?.currentCycle, radarPingEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePuzzle?.id, activeCycle?.currentCycle]);
+
+  const advanceToNextPuzzle = () => {
+    setPinnedPuzzle(null);
+  };
 
   const cooldownMs = activeCycle ? getCooldownRemainingMs(activeCycle, nowMs) : 0;
   const inCooldown = cooldownMs > 0;
@@ -146,11 +162,19 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
 
   const completeCurrentPuzzle = async (solved: boolean, finalWrong: number, finalHints: number) => {
     if (!activeCycle || !activePuzzle) return;
-    const { updated } = recordWoodpeckerPuzzleOutcome(activeCycle, activePuzzle.id, {
-      solved,
-      wrongMoves: finalWrong,
-      hintsUsed: finalHints,
-    });
+    // Pin the current puzzle so solved / revealed feedback stays visible until the user clicks Next Puzzle!
+    setPinnedPuzzle(activePuzzle);
+    const { updated } = recordWoodpeckerPuzzleOutcome(
+      activeCycle,
+      activePuzzle.id,
+      {
+        solved,
+        wrongMoves: finalWrong,
+        hintsUsed: finalHints,
+      },
+      Date.now(),
+      availableDeckIds
+    );
     await onSaveCycle(updated);
   };
 
@@ -386,7 +410,11 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
               </span>
               <button
                 type="button"
-                onClick={() => setRadarPingEnabled((v) => !v)}
+                onClick={() => {
+                  const next = !radarPingEnabled;
+                  setRadarPingEnabled(next);
+                  if (!next) setRadarCleared(true);
+                }}
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
                   radarPingEnabled
                     ? 'border-teal-400/45 bg-teal-400/15 text-teal-200'
@@ -456,6 +484,15 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
             )}
 
             <div className="flex flex-wrap gap-1.5">
+              {(status === 'solved' || status === 'revealed') && (
+                <button
+                  type="button"
+                  onClick={advanceToNextPuzzle}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-3.5 py-1.5 text-[11px] font-extrabold text-slate-950"
+                >
+                  Next Puzzle →
+                </button>
+              )}
               {status === 'idle' && (
                 <>
                   <button
@@ -477,20 +514,33 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
                   </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setFen(activePuzzle.beforeFen);
-                  setLastMove(undefined);
-                  setStatus('idle');
-                  setFeedback('');
-                }}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-hull px-3 py-1.5 text-[11px] font-bold text-slate-300"
-              >
-                <RotateCcw className="h-3 w-3" /> Reset
-              </button>
+              {status !== 'solved' && status !== 'revealed' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFen(activePuzzle.beforeFen);
+                    setLastMove(undefined);
+                    setStatus('idle');
+                    setFeedback('');
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-hull px-3 py-1.5 text-[11px] font-bold text-slate-300"
+                >
+                  <RotateCcw className="h-3 w-3" /> Reset
+                </button>
+              )}
             </div>
           </div>
+        </div>
+      )}
+
+      {activeCycle && !inCooldown && !allSevenCompleted && cyclePuzzles.length === 0 && (
+        <div className="glass-card border-amber-400/35 p-5 text-center">
+          <p className="text-xs font-bold text-amber-200">
+            This frozen cycle references games that are no longer in the active account deck.
+          </p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Freeze a fresh 30 / 50 / 100 puzzle batch above from your current games to continue.
+          </p>
         </div>
       )}
 

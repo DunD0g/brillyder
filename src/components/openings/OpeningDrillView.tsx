@@ -185,7 +185,16 @@ export const OpeningDrillView: React.FC<Props> = ({
     });
   }, [sideCards, drillMode]);
 
-  const activeCard = queue[cardIndex] ?? queue[0] ?? null;
+  // Pin the card currently being drilled so ts-fsrs pushing dueAt forward (even on Again)
+  // NEVER evicts the card before trap animations, retries, or solved grades finish!
+  const [pinnedCard, setPinnedCard] = useState<FsrsOpeningCard | null>(null);
+  const safeCardIndex = queue.length > 0 ? Math.min(cardIndex, queue.length - 1) : 0;
+  const activeCard = pinnedCard ?? queue[safeCardIndex] ?? null;
+
+  useEffect(() => {
+    setPinnedCard(null);
+    setCardIndex(0);
+  }, [side, drillMode, focusCourseId, focusLineId]);
 
   useEffect(() => {
     clearTimers();
@@ -215,6 +224,18 @@ export const OpeningDrillView: React.FC<Props> = ({
   }, [activeCard?.cardId, drillMode]);
 
   const advanceCard = () => {
+    clearTimers();
+    const wasPinnedId = pinnedCard?.cardId;
+    setPinnedCard(null);
+    if (queue.length === 0) {
+      setCardIndex(0);
+      return;
+    }
+    if (wasPinnedId && !queue.some((c) => c.cardId === wasPinnedId)) {
+      // Card already left the due queue — clamp cleanly to current index
+      setCardIndex((prev) => Math.min(prev, Math.max(0, queue.length - 1)));
+      return;
+    }
     if (queue.length <= 1) {
       setCardIndex(0);
       return;
@@ -241,6 +262,8 @@ export const OpeningDrillView: React.FC<Props> = ({
         responseMs,
         hintUsed,
       });
+      // Pin the solved card so the user can read their FSRS grade & plan note and click Next Card!
+      setPinnedCard(result.card);
       setBoardFen(chess.fen());
       setLastMove([mv.from, mv.to]);
       setCustomArrows([{ from: mv.from, to: mv.to, color: 'best' }]);
@@ -258,9 +281,10 @@ export const OpeningDrillView: React.FC<Props> = ({
       return;
     }
 
-    // Wrong move -> immediately record Again in FSRS and check for wrongMoveTraps punishment animation!
+    // Wrong move -> pin card BEFORE updating FSRS so trap punishment animation & retry are never cancelled!
     setHadWrongThisCard(true);
     const againRes = reviewFsrsOpeningCard(activeCard, { correct: false, responseMs });
+    setPinnedCard(againRes.card);
     await onCardReviewed(againRes.card);
 
     const traps = trapLookup.get(`${activeCard.courseId}::${activeCard.lineId}::${activeCard.ply}`) ?? [];
@@ -460,14 +484,32 @@ export const OpeningDrillView: React.FC<Props> = ({
 
       const engineTag = botEngine === 'maia' ? `Maia ${sparringElo}` : `Bot (${sparringElo})`;
       if (nextOut >= 8 || chess.isGameOver()) {
-        const evalRes = await stockfishService.analyzePosition(nextFen, { depth: 12, multiPv: 1, timeoutMs: 8000 });
-        if (sparringGenRef.current !== gen) return;
-        setSparringEvalDisplay(evalRes.score.display);
-        setSparringPhase('finished');
-        setSparringStatus(`Sparring complete! Final Stockfish eval: ${evalRes.score.display}.`);
+        try {
+          const evalRes = await stockfishService.analyzePosition(nextFen, { depth: 12, multiPv: 1, timeoutMs: 8000 });
+          if (sparringGenRef.current !== gen) return;
+          setSparringEvalDisplay(evalRes.score.display);
+          setSparringPhase('finished');
+          setSparringStatus(`Sparring complete! Final Stockfish eval: ${evalRes.score.display}.`);
+        } catch {
+          if (sparringGenRef.current !== gen) return;
+          setSparringPhase('finished');
+          setSparringStatus('Sparring play-out complete!');
+        }
       } else {
         setSparringStatus(`${engineTag} played ${mv.san}. Play-out move ${nextOut}/8.`);
       }
+    } catch {
+      if (sparringGenRef.current !== gen) return;
+      // Never soft-lock on opponent's turn if engine is busy or cancelled — roll back last move cleanly
+      const rollback = new Chess();
+      const kept = movesSoFar.slice(0, Math.max(0, movesSoFar.length - 1));
+      for (const s of kept) {
+        try { rollback.move(s); } catch { break; }
+      }
+      setSparringFen(rollback.fen());
+      setSparringMoves(kept);
+      setSparringLastMove(undefined);
+      setSparringStatus('Engine busy or interrupted — play your move again.');
     } finally {
       if (sparringGenRef.current === gen) setSparringThinking(false);
     }
@@ -518,7 +560,7 @@ export const OpeningDrillView: React.FC<Props> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex rounded-xl border border-slate-800 bg-void/70 p-0.5">
           {([
-            ['due', `Due Reviews (${cards.filter((c) => c.side === side && isCardDue(c)).length})`],
+            ['due', `Due Reviews (${sideCards.filter((c) => isCardDue(c)).length})`],
             ['weakest', 'Weakest Lines'],
             ['sparring', 'Opening Sparring'],
           ] as Array<[DrillMode, string]>).map(([m, label]) => (
@@ -705,7 +747,7 @@ export const OpeningDrillView: React.FC<Props> = ({
                 </h3>
               </div>
               <span className="rounded-lg border border-slate-800 bg-void/70 px-2 py-1 font-mono text-[10px] text-slate-400">
-                {cardIndex + 1}/{queue.length} in queue
+                {queue.length > 0 ? `${safeCardIndex + 1}/${queue.length}` : '1/1'} in queue
               </span>
             </div>
 

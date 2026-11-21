@@ -94,6 +94,8 @@ export const GuidedWalkthrough: React.FC<Props> = ({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); stepTo(step - 1); }
@@ -191,6 +193,8 @@ export const GuidedWalkthrough: React.FC<Props> = ({
           customArrows={activeArrows}
           squareHighlights={activeHighlights}
           theme={boardTheme}
+          onSwipePrev={() => stepTo(step - 1)}
+          onSwipeNext={() => stepTo(step + 1)}
         />
 
         <div className="mt-2.5 flex items-center gap-1.5">

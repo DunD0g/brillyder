@@ -172,26 +172,29 @@ export const CoachCard: React.FC<Props> = ({
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {isMistake && (
-            <button type="button" onClick={onStartRetry} className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/20 px-2.5 py-1.5 text-[11px] font-bold text-amber-200">
+            <button type="button" disabled={analyzing} onClick={onStartRetry} className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/20 px-2.5 py-1.5 text-[11px] font-bold text-amber-200 disabled:opacity-40">
               <RotateCcw className="w-3.5 h-3.5" /> Retry move
             </button>
           )}
-          <button type="button" onClick={onStartSandbox} className="inline-flex items-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/15 px-2.5 py-1.5 text-[11px] font-bold text-fuchsia-200">
+          <button type="button" disabled={analyzing} onClick={onStartSandbox} className="inline-flex items-center gap-1.5 rounded-xl border border-fuchsia-400/35 bg-fuchsia-500/15 px-2.5 py-1.5 text-[11px] font-bold text-fuchsia-200 disabled:opacity-40">
             <FlaskConical className="w-3.5 h-3.5" /> What if?
           </button>
-          <button type="button" onClick={onStartBot} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200">
+          <button type="button" disabled={analyzing} onClick={onStartBot} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 disabled:opacity-40">
             <Bot className="w-3.5 h-3.5 text-cyan-400" /> Play bot ({botElo})
           </button>
           <button
             type="button"
+            disabled={!currentPly.threatMoveUci}
             onClick={onToggleThreat}
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold ${showThreat ? 'border-red-500/40 bg-red-500/20 text-red-200' : 'border-slate-700 bg-slate-800/70 text-slate-400'}`}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-40 ${showThreat && currentPly.threatMoveUci ? 'border-red-500/40 bg-red-500/20 text-red-200' : 'border-slate-700 bg-slate-800/70 text-slate-400'}`}
           >
             <Eye className="w-3.5 h-3.5" /> Threat
           </button>
-          <button type="button" onClick={onNextMistake} className="ml-auto inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300">
-            <Lightbulb className="w-3.5 h-3.5" /> Next mistake
-          </button>
+          {analyzed && analyzed.plies.some((p) => p.classification === 'inaccuracy' || p.classification === 'mistake' || p.classification === 'blunder') && (
+            <button type="button" onClick={onNextMistake} className="ml-auto inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300">
+              <Lightbulb className="w-3.5 h-3.5" /> Next mistake
+            </button>
+          )}
         </div>
       </div>
     </div>

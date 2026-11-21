@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { CLASSIFICATION_META, type AnalyzedPly, type MoveClassification } from '../types/chess';
+import { getClassificationLabel, useVibe } from '../utils/vibeCopy';
 
 interface Props {
   plies: AnalyzedPly[];
@@ -11,14 +12,15 @@ interface Props {
 type MomentFilter = 'all' | 'brilliant' | 'great' | 'mistake' | 'blunder';
 
 const FILTERS: Array<{ key: MomentFilter; label: string; symbol: string; color: string }> = [
-  { key: 'all', label: 'All turns', symbol: '⚡', color: '#cbd5e1' },
+  { key: 'all', label: 'All', symbol: '⚡', color: '#cbd5e1' },
   { key: 'brilliant', label: 'Brilliant', symbol: '!!', color: CLASSIFICATION_META.brilliant.color },
   { key: 'great', label: 'Great', symbol: '!', color: CLASSIFICATION_META.great.color },
-  { key: 'mistake', label: 'Mistakes', symbol: '?', color: CLASSIFICATION_META.mistake.color },
+  { key: 'mistake', label: 'Mistakes & ?!', symbol: '?', color: CLASSIFICATION_META.mistake.color },
   { key: 'blunder', label: 'Blunders', symbol: '??', color: CLASSIFICATION_META.blunder.color },
 ];
 
 export const KeyMomentsBar: React.FC<Props> = ({ plies, currentPlyIndex, onJump }) => {
+  const { vibe } = useVibe();
   const [filter, setFilter] = useState<MomentFilter>('all');
 
   const moments = useMemo(() => {
@@ -35,7 +37,8 @@ export const KeyMomentsBar: React.FC<Props> = ({ plies, currentPlyIndex, onJump 
     for (const p of plies) {
       if (p.classification === 'brilliant') { c.all++; c.brilliant++; }
       else if (p.classification === 'great') { c.all++; c.great++; }
-      else if (p.classification === 'mistake' || p.classification === 'inaccuracy') { c.all++; c.mistake++; }
+      else if (p.classification === 'mistake') { c.all++; c.mistake++; }
+      else if (p.classification === 'inaccuracy') { c.mistake++; }
       else if (p.classification === 'blunder') { c.all++; c.blunder++; }
     }
     return c;
@@ -63,7 +66,13 @@ export const KeyMomentsBar: React.FC<Props> = ({ plies, currentPlyIndex, onJump 
             }`}
           >
             <span style={{ color: f.color }}>{f.symbol}</span>
-            <span>{f.key === 'all' ? 'All' : CLASSIFICATION_META[f.key].label}</span>
+            <span>
+              {f.key === 'all'
+                ? 'All'
+                : f.key === 'mistake'
+                  ? f.label
+                  : getClassificationLabel(f.key, vibe)}
+            </span>
             <span className="font-mono text-slate-500">{counts[f.key]}</span>
           </button>
         ))}

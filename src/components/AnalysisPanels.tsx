@@ -29,7 +29,7 @@ export const BotPanel: React.FC<BotProps> = ({ session, onExit, onEloChange, onU
           {elo}
         </button>
       ))}
-      {session.historyFens.length >= 3 && !session.thinking && (
+      {session.historyFens.length >= 2 && !session.thinking && (
         <button type="button" onClick={onUndo} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-300">
           <Undo2 className="w-3 h-3" /> Undo
         </button>

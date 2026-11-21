@@ -124,7 +124,7 @@ export const App: React.FC = () => {
   });
   const [analyzedMap, setAnalyzedMap] = useState<Map<string, AnalyzedGame>>(() => new Map());
   const [selectedGame, setSelectedGame] = useState<LichessGameRecord | null>(null);
-  const [initialPly, setInitialPly] = useState<number | null>(null);
+  const [initialJump, setInitialJump] = useState<{ ply: number; nonce: number } | null>(null);
   const [loadingGames, setLoadingGames] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
@@ -145,11 +145,16 @@ export const App: React.FC = () => {
   const [gravityCheckOpen, setGravityCheckOpen] = useState(false);
   const [trainSection, setTrainSection] = useState<TrainSection>('daily');
   const [trainMotif, setTrainMotif] = useState<string | null>(null);
+  const [trainNavToken, setTrainNavToken] = useState(0);
+  const [storageRevision, setStorageRevision] = useState(0);
   const [fsrsCards, setFsrsCards] = useState<FsrsOpeningCard[]>([]);
   const [customRepertoires, setCustomRepertoires] = useState<OpeningCourse[]>([]);
   const [woodpeckerCycles, setWoodpeckerCycles] = useState<WoodpeckerCycleRecord[]>([]);
   const [convertedIds, setConvertedIds] = useState<string[]>([]);
 
+  const hydratedRef = useRef(false);
+  const syncRunRef = useRef(0);
+  const jumpNonceRef = useRef(0);
   const cancelAnalysisRef = useRef(false);
   const analysisRunRef = useRef(0);
   const batchCancelRef = useRef(false);
@@ -172,28 +177,34 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     setPref('brillyder_platform', platform);
     setPref(usernamePrefKey(platform), usernames[platform]);
     setPref(LEGACY_USERNAME_KEY, usernames.lichess);
   }, [platform, usernames]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     storeBoardTheme(boardTheme);
   }, [boardTheme]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     setPref('brillyder_celebrations', celebrationsEnabled);
   }, [celebrationsEnabled]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     setPref('brillyder_vibe', vibe);
   }, [vibe]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     setPref('brillyder_explorer_prefs', explorerPrefs);
   }, [explorerPrefs]);
 
   const setUsernameFor = useCallback((name: string) => {
+    setSyncError(null);
     setUsernames((prev) => ({ ...prev, [platform]: name }));
   }, [platform]);
 
@@ -203,6 +214,7 @@ export const App: React.FC = () => {
       setSyncError(`Enter a ${platformLabel(targetPlatform)} username to sync.`);
       return;
     }
+    const runId = ++syncRunRef.current;
     setLoadingGames(true);
     setSyncError(null);
     const streamed: LichessGameRecord[] = [];
@@ -211,17 +223,22 @@ export const App: React.FC = () => {
         targetPlatform,
         target,
         (g) => {
+          if (syncRunRef.current !== runId) return;
           streamed.push(g);
           setGamesByPlatform((prev) => ({ ...prev, [targetPlatform]: [...streamed] }));
         },
         15
       );
+      if (syncRunRef.current !== runId) return;
       setGamesByPlatform((prev) => ({ ...prev, [targetPlatform]: result }));
       setSelectedGame((prev) => prev ?? result[0] ?? null);
     } catch (err) {
+      if (syncRunRef.current !== runId) return;
       setSyncError(err instanceof Error ? `${err.message} Showing previously loaded games.` : 'Sync failed.');
     } finally {
-      setLoadingGames(false);
+      if (syncRunRef.current === runId) {
+        setLoadingGames(false);
+      }
     }
   }, [usernames]);
 
@@ -247,6 +264,13 @@ export const App: React.FC = () => {
     setWoodpeckerCycles(cycles);
     const savedIds = Array.isArray(convLog?.data?.ids) ? (convLog.data.ids as string[]) : [];
     setConvertedIds(savedIds);
+    setPlatform(getPref<GamePlatform>('brillyder_platform', 'lichess'));
+    setUsernames({
+      lichess: getPref<string>(usernamePrefKey('lichess'), getPref<string>(LEGACY_USERNAME_KEY, 'Lukedunwell')),
+      chesscom: getPref<string>(usernamePrefKey('chesscom'), ''),
+    });
+    setDepthPreset(getPref<AnalysisDepthPreset>('brillyder_depth', 14));
+    setMuted(soundManager.syncFromStorage());
     setVibe(getPref<VibeMode>('brillyder_vibe', 'cosmic'));
     setMaiaEnabled(maiaService.isEnabled());
     setBoardTheme(getStoredBoardTheme());
@@ -254,6 +278,8 @@ export const App: React.FC = () => {
     setExplorerPrefs(
       getPref<ExplorerPrefSettings>('brillyder_explorer_prefs', { ratingBand: 1400, speeds: ['blitz', 'rapid'] })
     );
+    hydratedRef.current = true;
+    setStorageRevision((r) => r + 1);
     for (const ag of refreshed) void saveAnalyzedGame(ag);
   }, []);
 
@@ -321,6 +347,7 @@ export const App: React.FC = () => {
   const handleDeleteCourse = useCallback(async (courseId: string) => {
     await deleteRepertoire(courseId);
     setCustomRepertoires((prev) => prev.filter((c) => c.id !== courseId));
+    setFsrsCards((prev) => prev.filter((c) => c.courseId !== courseId));
   }, []);
 
   const handleBoostDeviationToFsrs = useCallback(async (deviation: RepertoireDeviation) => {
@@ -416,8 +443,17 @@ export const App: React.FC = () => {
   const openTrainerFocus = useCallback((section: TrainSection = 'daily', motif?: string | null) => {
     setTrainSection(section);
     setTrainMotif(motif ?? null);
+    setTrainNavToken((n) => n + 1);
     setTab('train');
   }, []);
+
+  const handleSelectNavTab = useCallback((nextTab: ActiveTab) => {
+    if (nextTab === 'train') setTrainMotif(null);
+    setTab(nextTab);
+  }, []);
+
+  const closeVault = useCallback(() => setVaultOpen(false), []);
+  const closeGravityCheck = useCallback(() => setGravityCheckOpen(false), []);
 
   const handleBackupImported = useCallback((summary: BackupImportSummary) => {
     void reloadFromIndexedDb();
@@ -445,12 +481,14 @@ export const App: React.FC = () => {
     batchCancelRef.current = true;
     batchPauseRef.current = false;
     setBatch(null);
+    void stockfishService.cancelCurrent();
   }, []);
 
   const abortScout = useCallback(() => {
     scoutRunRef.current += 1;
     scoutCancelRef.current = true;
     setScout(null);
+    void stockfishService.cancelCurrent();
   }, []);
 
   const runSingleAnalysis = useCallback(async (targetGame: LichessGameRecord, depth: AnalysisDepthPreset) => {
@@ -739,7 +777,7 @@ export const App: React.FC = () => {
     soundManager.unlock();
     if (analyzing && selectedGame?.id !== game.id) cancelAnalysis();
     setSelectedGame(game);
-    setInitialPly(null);
+    setInitialJump(null);
     setTab('analyze');
     if (autoAnalyze && !analyzedMap.has(game.id)) void runSingleAnalysis(game, depthPreset);
   }, [analyzedMap, analyzing, cancelAnalysis, depthPreset, runSingleAnalysis, selectedGame?.id]);
@@ -758,22 +796,30 @@ export const App: React.FC = () => {
   }, [handleSelectGame, platform, username]);
 
   const openReviewedPly = useCallback((gameId: string, ply: number) => {
-    const analyzed = analyzedMap.get(gameId);
+    const localAnalyzed = analyzedMap.get(gameId);
+    const scoutAnalyzed = !localAnalyzed ? scout?.games.find((g) => g.id === gameId) : undefined;
+    const analyzed = localAnalyzed ?? scoutAnalyzed;
     if (!analyzed) {
       setNotice({ kind: 'error', text: 'Analyze that game first so the exact moment is available.' });
       return;
     }
-    const targetPlatform = gamePlatformOf(analyzed.game);
-    setPlatform(targetPlatform);
-    setGamesByPlatform((prev) =>
-      prev[targetPlatform].some((g) => g.id === analyzed.game.id)
-        ? prev
-        : { ...prev, [targetPlatform]: [analyzed.game, ...prev[targetPlatform]] }
-    );
+    if (analyzing && selectedGame?.id !== analyzed.game.id) {
+      cancelAnalysis();
+    }
+    if (localAnalyzed) {
+      const targetPlatform = gamePlatformOf(analyzed.game);
+      setPlatform(targetPlatform);
+      setGamesByPlatform((prev) =>
+        prev[targetPlatform].some((g) => g.id === analyzed.game.id)
+          ? prev
+          : { ...prev, [targetPlatform]: [analyzed.game, ...prev[targetPlatform]] }
+      );
+    }
+    jumpNonceRef.current += 1;
     setSelectedGame(analyzed.game);
-    setInitialPly(ply);
+    setInitialJump({ ply, nonce: jumpNonceRef.current });
     setTab('analyze');
-  }, [analyzedMap]);
+  }, [analyzedMap, analyzing, cancelAnalysis, scout?.games, selectedGame?.id]);
 
   const handleDepthChange = useCallback((depth: AnalysisDepthPreset) => {
     setDepthPreset(depth);
@@ -815,7 +861,7 @@ export const App: React.FC = () => {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setTab(id)}
+                  onClick={() => handleSelectNavTab(id)}
                   aria-current={tab === id ? 'page' : undefined}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition lg:px-3 ${
                     tab === id
@@ -839,11 +885,11 @@ export const App: React.FC = () => {
                 type="button"
                 onClick={() => setVaultOpen(true)}
                 className="inline-flex items-center gap-1 rounded-xl border border-teal-400/35 bg-teal-400/10 px-2 py-1.5 text-teal-200 transition hover:border-teal-300/60 hover:bg-teal-400/20"
-                aria-label={`Open Brilly Vault: ${vault.stats.total} brilliant moves`}
+                aria-label={`Open Brilly Vault: ${vault.stats.totalHighlights} highlights (${vault.stats.total} brilliant)`}
                 title="Open Brilly Vault modal"
               >
                 <Gem className="h-3.5 w-3.5 text-brilly" />
-                <span className="font-mono text-xs font-black tabular-nums">{vault.stats.total}</span>
+                <span className="font-mono text-xs font-black tabular-nums">{vault.stats.totalHighlights}</span>
                 <span className="hidden text-[10px] font-bold sm:inline">Vault</span>
               </button>
 
@@ -965,6 +1011,48 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {scout?.status === 'loading' && tab !== 'insights' && (() => {
+          const pct = Math.max(4, Math.min(100, scout.progress?.percent ?? 4));
+          return (
+            <div className="mb-3 glass-card overflow-hidden border-fuchsia-400/30 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setTab('insights')}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <span className="radar-sweep h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate font-semibold text-fuchsia-200">
+                    Scouting {scout.username}
+                    {scout.progress ? ` · game ${Math.min(scout.progress.done + 1, scout.progress.total)}/${scout.progress.total}` : '…'}
+                  </span>
+                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-mono text-[11px] font-bold tabular-nums text-fuchsia-200">{pct}%</span>
+                  <button
+                    type="button"
+                    onClick={cancelScout}
+                    aria-label="Cancel opponent scout"
+                    className="rounded-lg border border-red-500/35 bg-red-500/15 p-1 text-red-300"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              <div
+                className="mt-1.5 tractor-beam-track h-1.5 w-full"
+                role="progressbar"
+                aria-label="Opponent scouting progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+              >
+                <div className="tractor-beam-fill" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })()}
+
         {tab === 'games' && (
           <GameListView
             username={username}
@@ -986,28 +1074,34 @@ export const App: React.FC = () => {
         )}
 
         {tab === 'analyze' && (
-          selectedGame ? (
-            <AnalysisView
-              game={selectedGame}
-              analyzed={analyzedMap.get(selectedGame.id) ?? null}
-              analyzing={analyzing}
-              progress={progress}
-              depthPreset={depthPreset}
-              onDepthPresetChange={handleDepthChange}
-              onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
-              onCancelAnalysis={cancelAnalysis}
-              onBackToGames={() => setTab('games')}
-              onOpenInsights={() => setTab('insights')}
-              onOpenVault={() => setVaultOpen(true)}
-              initialPly={initialPly}
-              boardTheme={boardTheme}
-              celebrationsEnabled={celebrationsEnabled}
-              courses={allCourses}
-              explorerPrefs={explorerPrefs}
-              onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
-              onPatchDeviationGap={handlePatchDeviationGap}
-            />
-          ) : (
+          selectedGame ? (() => {
+            const localAnalyzed = analyzedMap.get(selectedGame.id) ?? null;
+            const scoutAnalyzed = !localAnalyzed ? scout?.games.find((g) => g.id === selectedGame.id) ?? null : null;
+            const effectiveUsername = !localAnalyzed && scoutAnalyzed && scout ? scout.username : username;
+            return (
+              <AnalysisView
+                game={selectedGame}
+                username={effectiveUsername}
+                analyzed={localAnalyzed ?? scoutAnalyzed}
+                analyzing={analyzing}
+                progress={progress}
+                depthPreset={depthPreset}
+                onDepthPresetChange={handleDepthChange}
+                onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
+                onCancelAnalysis={cancelAnalysis}
+                onBackToGames={() => setTab('games')}
+                onOpenInsights={() => setTab('insights')}
+                onOpenVault={() => setVaultOpen(true)}
+                initialJump={initialJump}
+                boardTheme={boardTheme}
+                celebrationsEnabled={celebrationsEnabled}
+                courses={allCourses}
+                explorerPrefs={explorerPrefs}
+                onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
+                onPatchDeviationGap={handlePatchDeviationGap}
+              />
+            );
+          })() : (
             <div className="glass-card mx-auto max-w-lg p-8 text-center">
               <Sparkles className="mx-auto h-9 w-9 text-cyan-300/70" />
               <h1 className="mt-2 text-base font-extrabold text-white">No game selected</h1>
@@ -1052,6 +1146,8 @@ export const App: React.FC = () => {
             convertedIds={convertedIds}
             initialSection={trainSection}
             initialMotifFilter={trainMotif}
+            navToken={trainNavToken}
+            storageRevision={storageRevision}
             onCardReviewed={handleCardReviewed}
             onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
             onMarkConverted={handleMarkConverted}
@@ -1082,14 +1178,14 @@ export const App: React.FC = () => {
         )}
       </main>
 
-        {tab !== 'analyze' && (
+        {(tab !== 'analyze' || !selectedGame) && (
           <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-void/[0.95] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
             <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
               {NAV_ITEMS.map(({ id, label, Icon }) => (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setTab(id)}
+                  onClick={() => handleSelectNavTab(id)}
                   aria-current={tab === id ? 'page' : undefined}
                   className={`relative flex flex-col items-center rounded-xl py-1.5 text-[9px] font-bold transition ${
                     tab === id ? 'bg-teal-400/12 text-brilly' : 'text-slate-400 active:bg-slate-800/50'
@@ -1108,7 +1204,7 @@ export const App: React.FC = () => {
 
         <BrillyVaultModal
           open={vaultOpen}
-          onClose={() => setVaultOpen(false)}
+          onClose={closeVault}
           entries={vault.entries}
           stats={vault.stats}
           username={username}
@@ -1119,7 +1215,7 @@ export const App: React.FC = () => {
 
         <GravityCheckModal
           open={gravityCheckOpen}
-          onClose={() => setGravityCheckOpen(false)}
+          onClose={closeGravityCheck}
           deck={mistakeDeck}
           fsrsCards={fsrsCards}
           courses={allCourses}

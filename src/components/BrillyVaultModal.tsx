@@ -27,7 +27,10 @@ export const BrillyVaultModal: React.FC<Props> = ({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -58,7 +61,9 @@ export const BrillyVaultModal: React.FC<Props> = ({
             </span>
             <div>
               <div className="text-xs font-black uppercase tracking-[0.16em] text-teal-300">Brilly Vault</div>
-              <div className="text-[10px] text-slate-400">{stats.total} personal !! archived</div>
+              <div className="text-[10px] text-slate-400">
+                {stats.totalHighlights} highlights · {stats.total} !! · {stats.clutchSaves} clutch · {stats.cleanSweeps} sweeps
+              </div>
             </div>
           </div>
           <button

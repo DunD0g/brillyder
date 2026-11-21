@@ -29,7 +29,25 @@ export const ImportCourseModal: React.FC<Props> = ({
 
   React.useEffect(() => {
     setSide(defaultSide);
+    if (open) setError(null);
   }, [defaultSide, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -82,7 +100,7 @@ export const ImportCourseModal: React.FC<Props> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="glass-card glass-card-strong anim-pop w-full max-w-lg rounded-b-none rounded-t-3xl p-4 sm:rounded-2xl">
+      <div className="glass-card glass-card-strong anim-pop max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-b-none rounded-t-3xl p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] nice-scroll sm:rounded-2xl sm:pb-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-brilly">
             <BookPlus className="h-4 w-4" /> Import PGN / Lichess Study

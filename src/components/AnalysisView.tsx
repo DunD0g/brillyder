@@ -30,8 +30,10 @@ import type { OpeningCourse } from '../types/openings';
 import { detectRepertoireDeviation, type RepertoireDeviation } from '../services/deviationDetector';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { buildEngineScore, getMaterialBalance, getMoverWinPercent, uciToSquares } from '../utils/chessMath';
+import { resolveUserColor } from '../utils/player';
 import { appendSandboxMoves, jumpSandboxEdge, stepSandboxNav, type SandboxNavMove } from '../utils/sandboxNav';
 import { soundManager } from '../utils/sound';
+import { useVibe } from '../utils/vibeCopy';
 import { stockfishService } from '../engine/StockfishService';
 import { maiaService } from '../engine/MaiaService';
 import {
@@ -57,6 +59,7 @@ import { AlienCelebration, type CelebrationKind } from './AlienCelebration';
 
 interface Props {
   game: LichessGameRecord;
+  username?: string;
   analyzed: AnalyzedGame | null;
   analyzing: boolean;
   progress: { done: number; total: number; stageLabel?: string; percent?: number } | null;
@@ -68,6 +71,7 @@ interface Props {
   onOpenInsights: () => void;
   onOpenVault: () => void;
   initialPly?: number | null;
+  initialJump?: { ply: number; nonce: number } | null;
   boardTheme: BoardThemeId;
   celebrationsEnabled: boolean;
   courses?: OpeningCourse[];
@@ -99,6 +103,7 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 export const AnalysisView: React.FC<Props> = ({
   game,
+  username = '',
   analyzed,
   analyzing,
   progress,
@@ -110,6 +115,7 @@ export const AnalysisView: React.FC<Props> = ({
   onOpenInsights,
   onOpenVault,
   initialPly,
+  initialJump,
   boardTheme,
   celebrationsEnabled,
   courses = [],
@@ -117,12 +123,22 @@ export const AnalysisView: React.FC<Props> = ({
   onBoostDeviationToFsrs,
   onPatchDeviationGap,
 }) => {
+  const { vibe } = useVibe();
+  const userColor = useMemo(() => resolveUserColor(game, username), [game, username]);
+  const targetInitialPly = initialJump?.ply ?? initialPly ?? null;
+  const jumpNonce = initialJump?.nonce ?? 0;
+
   const rawMoves = useMemo(() => {
     try { return loadPgnSafely(game.pgn).history({ verbose: true }); } catch { return []; }
   }, [game.pgn]);
 
+  const startFen = useMemo(
+    () => analyzed?.plies[0]?.beforeFen ?? rawMoves[0]?.before ?? START_FEN,
+    [analyzed, rawMoves]
+  );
+
   const [currentPlyIndex, setCurrentPlyIndex] = useState(0);
-  const [orientation, setOrientation] = useState<PlayerColor>(game.userColor ?? 'w');
+  const [orientation, setOrientation] = useState<PlayerColor>(userColor);
   const [showThreat, setShowThreat] = useState(false);
   const [botElo, setBotElo] = useState(1400);
   const [pendingPromo, setPendingPromo] = useState<{ from: Square; to: Square; mode: BoardMode } | null>(null);
@@ -148,18 +164,18 @@ export const AnalysisView: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    const start = initialPly && initialPly > 0 ? initialPly : 0;
+    const start = targetInitialPly && targetInitialPly > 0 ? targetInitialPly : 0;
     botGenerationRef.current += 1;
     retryGenerationRef.current += 1;
     setCurrentPlyIndex(start);
-    setOrientation(game.userColor ?? 'w');
+    setOrientation(userColor);
     setRetryState(null);
     setBotState(null);
     setPendingPromo(null);
     setSandbox(null);
     setPlaying(false);
     setCelebration(null);
-  }, [game.id, game.userColor, initialPly]);
+  }, [game.id, userColor, targetInitialPly, jumpNonce]);
 
   const totalPlies = analyzed ? analyzed.plies.length : rawMoves.length;
   const currentPly: AnalyzedPly | null = analyzed && currentPlyIndex > 0 ? analyzed.plies[currentPlyIndex - 1] ?? null : null;
@@ -169,27 +185,27 @@ export const AnalysisView: React.FC<Props> = ({
     [analyzed, rawMoves],
   );
   const openingReport = useMemo(
-    () => buildOpeningReport(sanHistory, game.userColor ?? 'w'),
-    [sanHistory, game.userColor],
+    () => buildOpeningReport(sanHistory, userColor),
+    [sanHistory, userColor],
   );
 
   const repertoireDeviation = useMemo(
     () =>
       detectRepertoireDeviation({
         sanHistory,
-        userColor: game.userColor ?? 'w',
+        userColor,
         courses,
         analyzed,
         maxMoveNumber: 12,
       }),
-    [sanHistory, game.userColor, courses, analyzed]
+    [sanHistory, userColor, courses, analyzed]
   );
 
   const reviewFen = useMemo(() => {
-    if (currentPlyIndex === 0) return START_FEN;
+    if (currentPlyIndex === 0) return startFen;
     if (analyzed?.plies[currentPlyIndex - 1]) return analyzed.plies[currentPlyIndex - 1].afterFen;
-    return rawMoves[currentPlyIndex - 1]?.after ?? START_FEN;
-  }, [currentPlyIndex, analyzed, rawMoves]);
+    return rawMoves[currentPlyIndex - 1]?.after ?? startFen;
+  }, [currentPlyIndex, analyzed, rawMoves, startFen]);
 
   const reviewLastMove = useMemo<[string, string] | undefined>(() => {
     if (currentPlyIndex === 0) return undefined;
@@ -212,8 +228,8 @@ export const AnalysisView: React.FC<Props> = ({
   }, [sandbox, analyzed, rawMoves, currentPlyIndex]);
 
   const fenAtPly = (plyIndex: number): string => {
-    if (plyIndex <= 0) return START_FEN;
-    return analyzed?.plies[plyIndex - 1]?.afterFen ?? rawMoves[plyIndex - 1]?.after ?? START_FEN;
+    if (plyIndex <= 0) return startFen;
+    return analyzed?.plies[plyIndex - 1]?.afterFen ?? rawMoves[plyIndex - 1]?.after ?? startFen;
   };
 
   const currentScore: EngineScore = useMemo(() => {
@@ -266,15 +282,15 @@ export const AnalysisView: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    if (!initialPly || initialPly <= 0 || !analyzed || !celebrationsEnabled) return;
-    const key = `${game.id}:${initialPly}`;
+    if (!targetInitialPly || targetInitialPly <= 0 || !analyzed || !celebrationsEnabled) return;
+    const key = `${game.id}:${targetInitialPly}:${jumpNonce}`;
     if (celebratedInitialRef.current === key) return;
     celebratedInitialRef.current = key;
-    const ply = analyzed.plies[initialPly - 1];
+    const ply = analyzed.plies[targetInitialPly - 1];
     if (ply?.classification === 'brilliant') {
       setCelebration({ trigger: Date.now(), kind: 'brilliant' });
     }
-  }, [initialPly, analyzed, game.id, celebrationsEnabled]);
+  }, [targetInitialPly, jumpNonce, analyzed, game.id, celebrationsEnabled]);
 
   const buildSandboxFen = (basePlyIdx: number, moves: SandboxMove[], cursor: number): string => {
     const c = new Chess(fenAtPly(basePlyIdx));
@@ -324,18 +340,36 @@ export const AnalysisView: React.FC<Props> = ({
     jumpToPly(idx);
   };
 
+  const rewindBotSession = (prev: BotSession): BotSession => {
+    if (prev.historyFens.length < 2) return prev;
+    let targetIdx = 0;
+    for (let i = prev.historyFens.length - 2; i >= 0; i--) {
+      try {
+        if (new Chess(prev.historyFens[i]).turn() === prev.userColor) {
+          targetIdx = i;
+          break;
+        }
+      } catch { /* continue */ }
+    }
+    const h = prev.historyFens.slice(0, targetIdx + 1);
+    return {
+      ...prev,
+      fen: h[h.length - 1],
+      historyFens: h,
+      lastMove: undefined,
+      thinking: false,
+      statusText: 'Turn undone. Your turn!',
+    };
+  };
+
   const handleNavPrev = () => {
     if (sandbox) {
       applySandboxNav(stepSandboxNav(sandbox, -1, totalPlies));
       return;
     }
     if (botState) {
-      if (botState.historyFens.length > 2 && !botState.thinking) {
-        setBotState((prev) => {
-          if (!prev || prev.historyFens.length <= 2) return prev;
-          const h = prev.historyFens.slice(0, -2);
-          return { ...prev, fen: h[h.length - 1], historyFens: h, lastMove: undefined, statusText: 'Turn undone.' };
-        });
+      if (botState.historyFens.length >= 2 && !botState.thinking) {
+        setBotState((prev) => (prev ? rewindBotSession(prev) : null));
       }
       return;
     }
@@ -400,8 +434,8 @@ export const AnalysisView: React.FC<Props> = ({
   }, [playing, currentPlyIndex, totalPlies, speed, botState, retryState, sandbox]);
 
   useEffect(() => {
+    setTablebase(null);
     if (!isTablebaseEligible(activeFen)) {
-      setTablebase(null);
       return;
     }
     let cancelled = false;
@@ -414,10 +448,11 @@ export const AnalysisView: React.FC<Props> = ({
   useEffect(() => {
     if (!sandboxFen) return;
     let cancelled = false;
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSandbox((prev) => (prev && prev.fen === sandboxFen ? { ...prev, loading: true } : prev));
       stockfishService
-        .analyzePosition(sandboxFen, { depth: 10, multiPv: 3, timeoutMs: 10000 })
+        .analyzePosition(sandboxFen, { depth: 10, multiPv: 3, timeoutMs: 10000, signal: controller.signal })
         .then((res) => {
           if (!cancelled) setSandbox((prev) => (prev && prev.fen === sandboxFen ? { ...prev, eval: res, loading: false } : prev));
         })
@@ -425,7 +460,11 @@ export const AnalysisView: React.FC<Props> = ({
           if (!cancelled) setSandbox((prev) => (prev && prev.fen === sandboxFen ? { ...prev, loading: false } : prev));
         });
     }, 180);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [sandboxFen]);
 
   const startRetry = () => {
@@ -435,6 +474,7 @@ export const AnalysisView: React.FC<Props> = ({
     setPlaying(false);
     setSandbox(null);
     setBotState(null);
+    setPendingPromo(null);
     setRetryState({
       active: true,
       fen: currentPly.beforeFen,
@@ -444,25 +484,54 @@ export const AnalysisView: React.FC<Props> = ({
     scrollBoardIntoView();
   };
 
-  const jumpToNextMistake = () => {
-    if (!analyzed) return;
-    const uc = game.userColor ?? 'w';
+  const findNextMistake = (): AnalyzedPly | null => {
+    if (!analyzed) return null;
     const isErr = (c: MoveClassification) => c === 'inaccuracy' || c === 'mistake' || c === 'blunder';
-    const target = analyzed.plies.find((p, i) => i + 1 > currentPlyIndex && p.color === uc && isErr(p.classification))
-      ?? analyzed.plies.find((p) => p.color === uc && isErr(p.classification))
-      ?? analyzed.plies.find((p) => isErr(p.classification));
+    return (
+      analyzed.plies.find((p, i) => i + 1 > currentPlyIndex && p.color === userColor && isErr(p.classification)) ??
+      analyzed.plies.find((p) => p.color === userColor && isErr(p.classification)) ??
+      analyzed.plies.find((p, i) => i + 1 > currentPlyIndex && isErr(p.classification)) ??
+      analyzed.plies.find((p) => isErr(p.classification)) ??
+      null
+    );
+  };
+
+  const jumpToNextMistake = () => {
+    const target = findNextMistake();
     if (target) jumpToPly(target.ply);
+  };
+
+  const retryNextMistake = () => {
+    const target = findNextMistake();
+    if (!target) return;
+    soundManager.unlock();
+    botGenerationRef.current += 1;
+    retryGenerationRef.current += 1;
+    setPlaying(false);
+    setSandbox(null);
+    setBotState(null);
+    setPendingPromo(null);
+    setCurrentPlyIndex(target.ply);
+    setRetryState({
+      active: true,
+      fen: target.beforeFen,
+      status: 'prompt',
+      feedback: `Find a better move for ${target.color === 'w' ? 'White' : 'Black'} instead of ${target.san}.`,
+    });
+    scrollBoardIntoView();
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
       if (pendingPromo) return;
       if (e.key === 'Escape') {
         botGenerationRef.current += 1;
         retryGenerationRef.current += 1;
-        setRetryState(null); setBotState(null); setSandbox(null); setPlaying(false);
+        setRetryState(null); setBotState(null); setSandbox(null); setPendingPromo(null); setPlaying(false);
         return;
       }
       if (e.key === 'f' || e.key === 'F') { setOrientation((o) => (o === 'w' ? 'b' : 'w')); return; }
@@ -470,8 +539,13 @@ export const AnalysisView: React.FC<Props> = ({
       if (e.key === 'ArrowRight') { e.preventDefault(); handleNavNext(); return; }
       if (e.key === 'Home') { e.preventDefault(); handleNavFirst(); return; }
       if (e.key === 'End') { e.preventDefault(); handleNavLast(); return; }
+      if ((e.key === 'r' || e.key === 'R') && retryState) {
+        retryNextMistake();
+        return;
+      }
       if (botState || retryState) return;
       if (e.key === ' ') {
+        if (target?.closest('button, a, [role="button"]')) return;
         e.preventDefault();
         if (sandbox) {
           const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
@@ -493,12 +567,17 @@ export const AnalysisView: React.FC<Props> = ({
   const celebrateIfSacrifice = (fenAfter: string, mv: { to: string; piece: PieceSymbol; captured?: PieceSymbol }, mover: PlayerColor) => {
     if (!currentPly) return;
     if (isSacrificeMove(currentPly.beforeFen, fenAfter, mover, mv.to, mv.piece, mv.captured)) {
-      triggerCelebration('brilliant', 'Galaxy-brain retry confirmed — that sacrifice bends spacetime. 🛸');
+      triggerCelebration(
+        'brilliant',
+        vibe === 'cosmic'
+          ? 'Galaxy-brain retry confirmed — that sacrifice bends spacetime. 🛸'
+          : 'Brilliant sacrifice found on the retry!'
+      );
     }
   };
 
   const executeRetryMove = async (from: Square, to: Square, promotion?: PieceSymbol) => {
-    if (!currentPly) return;
+    if (!currentPly || !retryState || retryState.status === 'evaluating') return;
     const generation = retryGenerationRef.current;
     const c = new Chess(currentPly.beforeFen);
     let mv;
@@ -521,7 +600,12 @@ export const AnalysisView: React.FC<Props> = ({
         celebrateIfSacrifice(c.fen(), mv, currentPly.color);
       } else {
         soundManager.playError();
-        if (loss > 22) triggerCelebration('blunder', 'Houston, we dropped a piece. Reset and try again.');
+        if (loss > 22) {
+          triggerCelebration(
+            'blunder',
+            vibe === 'cosmic' ? 'Houston, we dropped a piece. Reset and try again.' : 'That drops significant material — try another move.'
+          );
+        }
         setRetryState({ active: true, fen: currentPly.beforeFen, status: 'try_again', feedback: `${mv.san} drops ${loss.toFixed(0)}% win equity (${res.score.display}). Try another move!` });
       }
     } catch {
@@ -549,7 +633,7 @@ export const AnalysisView: React.FC<Props> = ({
     const afterFen = c.fen();
     setBotState((prev) => prev ? {
       ...prev, fen: afterFen, lastMove: [mv.from, mv.to], historyFens: [...prev.historyFens, afterFen], thinking: true,
-      statusText: `Stockfish (${prev.elo}) thinking…`,
+      statusText: `Engine (${prev.elo}) thinking…`,
     } : null);
 
     try {
@@ -557,7 +641,18 @@ export const AnalysisView: React.FC<Props> = ({
       if (botGenerationRef.current !== generation) return;
       const parsed = uciToSquares(botUci);
       if (!parsed) {
-        setBotState((prev) => (prev ? { ...prev, thinking: false, statusText: 'Bot returned no move — try again.' } : null));
+        setBotState((prev) =>
+          prev
+            ? {
+                ...prev,
+                fen: session.fen,
+                lastMove: session.lastMove,
+                historyFens: session.historyFens,
+                thinking: false,
+                statusText: 'Engine returned no move — your move was reverted so you can try again.',
+              }
+            : null
+        );
         return;
       }
       const bc = new Chess(afterFen);
@@ -570,7 +665,18 @@ export const AnalysisView: React.FC<Props> = ({
       } : null);
     } catch {
       if (botGenerationRef.current !== generation) return;
-      setBotState((prev) => prev ? { ...prev, thinking: false, statusText: 'Bot paused.' } : null);
+      setBotState((prev) =>
+        prev
+          ? {
+              ...prev,
+              fen: session.fen,
+              lastMove: session.lastMove,
+              historyFens: session.historyFens,
+              thinking: false,
+              statusText: 'Engine paused — your move was reverted. Drag a piece to try again.',
+            }
+          : null
+      );
     }
   };
 
@@ -621,7 +727,7 @@ export const AnalysisView: React.FC<Props> = ({
   };
 
   const startSandbox = () => {
-    if (!analyzed) return;
+    if (analyzing) return;
     beginSandboxAt(currentPlyIndex);
   };
 
@@ -749,7 +855,50 @@ export const AnalysisView: React.FC<Props> = ({
   const resetSandbox = () => {
     if (!sandbox) return;
     soundManager.playMove();
-    setSandbox((prev) => prev ? { ...prev, moves: [], cursor: 0, fen: sandboxBaseFen, loading: true } : null);
+    const unchanged = sandbox.fen === sandboxBaseFen;
+    setSandbox((prev) =>
+      prev
+        ? {
+            ...prev,
+            moves: [],
+            cursor: 0,
+            fen: sandboxBaseFen,
+            loading: unchanged ? prev.loading : true,
+          }
+        : null
+    );
+  };
+
+  const exitSandbox = () => {
+    setPlaying(false);
+    setPendingPromo(null);
+    setSandbox(null);
+  };
+
+  const exitBot = () => {
+    botGenerationRef.current += 1;
+    setPlaying(false);
+    setPendingPromo(null);
+    setBotState(null);
+  };
+
+  const exitRetry = () => {
+    retryGenerationRef.current += 1;
+    setPlaying(false);
+    setPendingPromo(null);
+    setRetryState(null);
+  };
+
+  const handleTogglePlay = () => {
+    if (botState || retryState) return;
+    if (sandbox) {
+      const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
+      if (!playing && atBranchEnd) handleNavFirst();
+      setPlaying((p) => !p);
+      return;
+    }
+    if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
+    setPlaying((p) => !p);
   };
 
   const transportCurrent = sandbox
@@ -763,11 +912,40 @@ export const AnalysisView: React.FC<Props> = ({
     botGenerationRef.current += 1;
     retryGenerationRef.current += 1;
     setPlaying(false);
+    setPendingPromo(null);
     setSandbox(null);
     setRetryState(null);
     setBotState(null);
     onStartAnalysis();
   };
+
+  const tablebaseCard = tablebase ? (
+    <div className="glass-card border-teal-400/35 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-brilly">
+          7-Piece Syzygy Tablebase
+        </span>
+        <span className="rounded-full border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-teal-200">
+          {formatTablebaseWdl(tablebase.category, activeTurn).label}
+          {tablebase.dtz !== null ? ` · DTZ ${Math.abs(tablebase.dtz)}` : ''}
+        </span>
+      </div>
+      {tablebase.moves.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {tablebase.moves.slice(0, 5).map((mv) => (
+            <button
+              key={mv.uci}
+              type="button"
+              onClick={() => playExplorerSan(mv.san)}
+              className="rounded-lg border border-slate-700 bg-void/70 px-2 py-1 font-mono text-[10px] font-bold text-slate-200 hover:border-teal-400/50"
+            >
+              {mv.san} <span className="text-slate-400">({mv.category})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="space-y-3 pb-32 lg:pb-6">
@@ -919,15 +1097,15 @@ export const AnalysisView: React.FC<Props> = ({
 
             {sandbox && (
               <div className="mt-1.5 space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black text-fuchsia-200">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-black text-fuchsia-200">
                     <FlaskConical className="h-3 w-3" /> {sandbox.cursor}/{sandbox.moves.length} explored
                   </span>
                   <button
                     type="button"
                     onClick={handleNavPrev}
                     disabled={sandbox.cursor === 0 && sandbox.basePly === 0}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
+                    className="inline-flex min-w-[76px] flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
                   >
                     ← Back
                   </button>
@@ -935,7 +1113,7 @@ export const AnalysisView: React.FC<Props> = ({
                     type="button"
                     onClick={handleNavNext}
                     disabled={sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
+                    className="inline-flex min-w-[76px] flex-1 items-center justify-center gap-1 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-2 py-2 text-[11px] font-black text-fuchsia-100 active:bg-fuchsia-500/20 disabled:opacity-40"
                   >
                     Forward →
                   </button>
@@ -943,13 +1121,14 @@ export const AnalysisView: React.FC<Props> = ({
                     type="button"
                     onClick={resetSandbox}
                     disabled={sandbox.moves.length === 0}
+                    aria-label="Reset sandbox variation"
                     className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-900/80 px-2.5 py-2 text-[11px] font-bold text-slate-200 active:bg-slate-800 disabled:opacity-40"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSandbox(null)}
+                    onClick={exitSandbox}
                     className="inline-flex items-center justify-center gap-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-2.5 py-2 text-[11px] font-black text-rose-200 active:bg-rose-500/20"
                   >
                     <X className="h-3.5 w-3.5" /> Exit
@@ -1020,16 +1199,7 @@ export const AnalysisView: React.FC<Props> = ({
                 onNext={handleNavNext}
                 onLast={handleNavLast}
                 onFlip={() => setOrientation((o) => (o === 'w' ? 'b' : 'w'))}
-                onTogglePlay={() => {
-                  if (sandbox) {
-                    const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
-                    if (!playing && atBranchEnd) handleNavFirst();
-                    setPlaying((p) => !p);
-                    return;
-                  }
-                  if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
-                  setPlaying((p) => !p);
-                }}
+                onTogglePlay={handleTogglePlay}
                 onToggleSpeed={() => setSpeed((s) => (s === 1 ? 2 : 1))}
                 onRetry={startRetry}
               />
@@ -1041,14 +1211,21 @@ export const AnalysisView: React.FC<Props> = ({
           {botState && (
             <BotPanel
               session={botState}
-              onExit={() => { botGenerationRef.current += 1; setBotState(null); }}
-              onEloChange={(elo) => { setBotElo(elo); setBotState((prev) => prev ? { ...prev, elo } : null); }}
+              onExit={exitBot}
+              onEloChange={(elo) => {
+                setBotElo(elo);
+                setBotState((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        elo,
+                        statusText: prev.thinking ? prev.statusText : `Engine strength set to ${elo}. Your turn!`,
+                      }
+                    : null
+                );
+              }}
               onUndo={() => {
-                setBotState((prev) => {
-                  if (!prev) return null;
-                  const h = prev.historyFens.slice(0, -2);
-                  return { ...prev, fen: h[h.length - 1], historyFens: h, lastMove: undefined, statusText: 'Turn undone.' };
-                });
+                setBotState((prev) => (prev ? rewindBotSession(prev) : null));
               }}
             />
           )}
@@ -1056,10 +1233,10 @@ export const AnalysisView: React.FC<Props> = ({
           {!botState && retryState && currentPly && (
             <RetryPanel
               session={retryState}
-              onExit={() => { retryGenerationRef.current += 1; setRetryState(null); }}
+              onExit={exitRetry}
               onReveal={() => { retryGenerationRef.current += 1; setRetryState({ active: true, fen: currentPly.beforeFen, status: 'revealed', feedback: `Best was ${currentPly.bestMoveSan}. Line: ${currentPly.bestPvSan.join(' ')}` }); }}
               onReset={() => { retryGenerationRef.current += 1; setRetryState({ active: true, fen: currentPly.beforeFen, status: 'prompt', feedback: `Position reset. Find a better move than ${currentPly.san}.` }); }}
-              onNextMistake={jumpToNextMistake}
+              onNextMistake={retryNextMistake}
             />
           )}
 
@@ -1080,34 +1257,9 @@ export const AnalysisView: React.FC<Props> = ({
                 onStartSandbox={startSandbox}
                 onNextMistake={jumpToNextMistake}
               />
-              {tablebase && (
-                <div className="glass-card border-teal-400/35 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-brilly">
-                      7-Piece Syzygy Tablebase
-                    </span>
-                    <span className="rounded-full border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 font-mono text-[10px] font-bold text-teal-200">
-                      {formatTablebaseWdl(tablebase.category, activeTurn).label}
-                      {tablebase.dtz !== null ? ` · DTZ ${Math.abs(tablebase.dtz)}` : ''}
-                    </span>
-                  </div>
-                  {tablebase.moves.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {tablebase.moves.slice(0, 5).map((mv) => (
-                        <button
-                          key={mv.uci}
-                          type="button"
-                          onClick={() => playExplorerSan(mv.san)}
-                          className="rounded-lg border border-slate-700 bg-void/70 px-2 py-1 font-mono text-[10px] font-bold text-slate-200 hover:border-teal-400/50"
-                        >
-                          {mv.san} <span className="text-slate-400">({mv.category})</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              {tablebaseCard}
               <OpeningReportCard
+                gameId={game.id}
                 report={openingReport}
                 repertoireDeviation={repertoireDeviation}
                 onJumpToPly={jumpToPly}
@@ -1119,6 +1271,7 @@ export const AnalysisView: React.FC<Props> = ({
               <OpeningExplorer
                 fen={reviewFen}
                 sanHistory={activeSanHistory}
+                disabled={analyzing}
                 explorerPrefs={explorerPrefs}
                 onPlaySan={playExplorerSan}
               />
@@ -1128,7 +1281,7 @@ export const AnalysisView: React.FC<Props> = ({
                 fen={reviewFen}
                 evalResult={null}
                 loading={false}
-                disabled={!analyzed}
+                disabled={analyzing}
                 onStart={startSandbox}
                 onExit={() => undefined}
                 onPlayLine={playSandboxLine}
@@ -1138,9 +1291,11 @@ export const AnalysisView: React.FC<Props> = ({
 
           {!botState && !retryState && sandbox && (
             <>
+              {tablebaseCard}
               <OpeningExplorer
                 fen={sandbox.fen}
                 sanHistory={activeSanHistory}
+                disabled={analyzing}
                 explorerPrefs={explorerPrefs}
                 onPlaySan={playExplorerSan}
               />
@@ -1151,7 +1306,7 @@ export const AnalysisView: React.FC<Props> = ({
                 evalResult={sandbox.eval}
                 loading={sandbox.loading}
                 onStart={startSandbox}
-                onExit={() => setSandbox(null)}
+                onExit={exitSandbox}
                 onPlayLine={playSandboxLine}
               />
             </>
@@ -1196,16 +1351,7 @@ export const AnalysisView: React.FC<Props> = ({
         onNext={handleNavNext}
         onLast={handleNavLast}
         onFlip={() => setOrientation((o) => (o === 'w' ? 'b' : 'w'))}
-        onTogglePlay={() => {
-          if (sandbox) {
-            const atBranchEnd = sandbox.moves.length > 0 ? sandbox.cursor >= sandbox.moves.length : sandbox.basePly >= totalPlies;
-            if (!playing && atBranchEnd) handleNavFirst();
-            setPlaying((p) => !p);
-            return;
-          }
-          if (!playing && currentPlyIndex >= totalPlies) jumpToPly(0);
-          setPlaying((p) => !p);
-        }}
+        onTogglePlay={handleTogglePlay}
         onToggleSpeed={() => setSpeed((s) => (s === 1 ? 2 : 1))}
         onRetry={startRetry}
       />

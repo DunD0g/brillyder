@@ -143,12 +143,16 @@ export const ChessgroundBoard: React.FC<Props> = ({
     return out;
   }, [showPlayedArrow, playedMoveUci, showBestArrow, bestMoveUci, showThreatArrow, threatMoveUci]);
 
+  // Only rebuild Chessground when transitioning between swipe/view-only review mode and interactive mode;
+  // playable training/drill boards stay mounted across transient thinking/evaluating toggles with zero flicker!
+  const useViewOnly = !interactive && (mini || !onUserMove || Boolean(onSwipePrev || onSwipeNext));
+
   useEffect(() => {
     if (!containerRef.current) return;
     const api = Chessground(containerRef.current, {
       fen,
       orientation: orientation === 'w' ? 'white' : 'black',
-      viewOnly: !interactive,
+      viewOnly: useViewOnly,
       disableContextMenu: true,
       coordinates: false,
       animation: { enabled: !mini, duration: 165 },
@@ -170,17 +174,15 @@ export const ChessgroundBoard: React.FC<Props> = ({
     const ro = new ResizeObserver(() => api.redrawAll());
     ro.observe(containerRef.current);
     return () => { ro.disconnect(); api.destroy(); cgRef.current = null; };
-    // Chessground binds input listeners once at construction, so the board must
-    // be rebuilt whenever interactivity turns on (e.g. entering a sandbox).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interactive]);
+  }, [useViewOnly]);
 
   useEffect(() => {
     if (!cgRef.current) return;
     cgRef.current.set({
       fen,
       orientation: orientation === 'w' ? 'white' : 'black',
-      viewOnly: !interactive,
+      viewOnly: useViewOnly,
       turnColor: effectiveTurn === 'w' ? 'white' : 'black',
       check: checkColor,
       coordinates: false,
