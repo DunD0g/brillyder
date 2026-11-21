@@ -247,7 +247,7 @@ export const InsightsView: React.FC<Props> = ({
       ) : (
         <>
           {/* Tilt Guard Stop-Loss Alert */}
-          {insights.tiltGuard.activeWarning && (
+          {!scoutActive && insights.tiltGuard.activeWarning && (
             <section className="glass-card border-rose-400/50 bg-rose-500/[0.09] p-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex items-start gap-2">
@@ -271,17 +271,17 @@ export const InsightsView: React.FC<Props> = ({
           )}
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <StatCard icon={<Swords className="h-4 w-4 text-brilly" />} label="Games" value={String(insights.gamesCount)} sub={`${insights.record.wins}W-${insights.record.draws}D-${insights.record.losses}L`} ctaLabel="Daily Coach" onCta={() => onOpenTrainer('daily')} />
-            <StatCard icon={<Target className="h-4 w-4 text-clean" />} label="Avg accuracy" value={`${insights.avgAccuracy}%`} sub={`Best ${insights.bestAccuracy}%`} ctaLabel="Woodpecker" onCta={() => onOpenTrainer('woodpecker')} />
-            <StatCard icon={<TrendingUp className="h-4 w-4 text-cyan-300" />} label="Perf. Elo" value={String(insights.avgEstimatedElo)} sub={insights.ratingBand} ctaLabel="Warmup" onCta={onOpenGravityCheck} />
-            <StatCard icon={<Gem className="h-4 w-4 text-purple-300" />} label="Brilliant !!" value={String(insights.brilliantCount)} sub={copy.brilliantLabel} ctaLabel="Train Tactics" onCta={() => onOpenTrainer('deck')} />
+            <StatCard icon={<Swords className="h-4 w-4 text-brilly" />} label="Games" value={String(insights.gamesCount)} sub={`${insights.record.wins}W-${insights.record.draws}D-${insights.record.losses}L`} ctaLabel={scoutActive ? undefined : 'Daily Coach'} onCta={scoutActive ? undefined : () => onOpenTrainer('daily')} />
+            <StatCard icon={<Target className="h-4 w-4 text-clean" />} label="Avg accuracy" value={`${insights.avgAccuracy}%`} sub={`Best ${insights.bestAccuracy}%`} ctaLabel={scoutActive ? undefined : 'Woodpecker'} onCta={scoutActive ? undefined : () => onOpenTrainer('woodpecker')} />
+            <StatCard icon={<TrendingUp className="h-4 w-4 text-cyan-300" />} label="Perf. Elo" value={String(insights.avgEstimatedElo)} sub={insights.ratingBand} ctaLabel={scoutActive ? undefined : 'Warmup'} onCta={scoutActive ? undefined : onOpenGravityCheck} />
+            <StatCard icon={<Gem className="h-4 w-4 text-purple-300" />} label="Brilliant !!" value={String(insights.brilliantCount)} sub={copy.brilliantLabel} ctaLabel={scoutActive ? undefined : 'Train Tactics'} onCta={scoutActive ? undefined : () => onOpenTrainer('deck')} />
           </div>
 
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <StatCard icon={<Crown className="h-4 w-4 text-amber-300" />} label="Giant slayer" value={String(insights.giantSlayer.wins)} sub={`${insights.giantSlayer.games} vs stronger`} ctaLabel="Openings" onCta={onOpenOpenings} />
-            <StatCard icon={<Flame className="h-4 w-4 text-blunder" />} label="Blown leads" value={String(insights.blownWins)} sub={`${insights.comebacks} comebacks`} ctaLabel="Train This" onCta={() => onOpenTrainer('conversion')} />
-            <StatCard icon={<ShieldCheck className="h-4 w-4 text-clean" />} label="Clean games" value={String(insights.blunderFreeGames)} sub="0 blunders" ctaLabel="Rewind" onCta={() => onOpenTrainer('daily')} />
-            <StatCard icon={<Activity className="h-4 w-4 text-brilly" />} label="Impulse ??" value={String(insights.clockLeaks.impulseBlunders)} sub={`${insights.clockLeaks.impulsePerGame}/game (<5s)`} ctaLabel="Radar Ping" onCta={() => onOpenTrainer('daily')} />
+            <StatCard icon={<Crown className="h-4 w-4 text-amber-300" />} label="Giant slayer" value={String(insights.giantSlayer.wins)} sub={`${insights.giantSlayer.games} vs stronger`} ctaLabel={scoutActive ? undefined : 'Openings'} onCta={scoutActive ? undefined : onOpenOpenings} />
+            <StatCard icon={<Flame className="h-4 w-4 text-blunder" />} label="Blown leads" value={String(insights.blownWins)} sub={`${insights.comebacks} comebacks`} ctaLabel={scoutActive ? undefined : 'Train This'} onCta={scoutActive ? undefined : () => onOpenTrainer('conversion')} />
+            <StatCard icon={<ShieldCheck className="h-4 w-4 text-clean" />} label="Clean games" value={String(insights.blunderFreeGames)} sub="0 blunders" ctaLabel={scoutActive ? undefined : 'Rewind'} onCta={scoutActive ? undefined : () => onOpenTrainer('daily')} />
+            <StatCard icon={<Activity className="h-4 w-4 text-brilly" />} label="Impulse ??" value={String(insights.clockLeaks.impulseBlunders)} sub={`${insights.clockLeaks.impulsePerGame}/game (<5s)`} ctaLabel={scoutActive ? undefined : copy.radarPingLabel} onCta={scoutActive ? undefined : () => onOpenTrainer('daily')} />
           </div>
 
           <section className="glass-card border-amber-500/20 p-3.5">
@@ -361,16 +361,20 @@ export const InsightsView: React.FC<Props> = ({
             <div className="flex items-start gap-2.5">
               <Target className="mt-0.5 h-5 w-5 shrink-0 text-brilly" />
               <div className="min-w-0">
-                <div className="text-xs font-bold text-teal-200">BrillyDer training focus</div>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-300">{insights.recommendation}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <button type="button" onClick={() => onOpenTrainer('daily')} className="inline-flex items-center gap-1 rounded-lg border border-teal-400/35 bg-teal-400/15 px-2.5 py-1 text-[10px] font-extrabold text-teal-100">
-                    <Flame className="h-3 w-3" /> Start 15m Daily Coach
-                  </button>
-                  <button type="button" onClick={() => onOpenTrainer('conversion')} className="inline-flex items-center gap-1 rounded-lg border border-purple-400/35 bg-purple-500/15 px-2.5 py-1 text-[10px] font-bold text-purple-200">
-                    Train Blown Leads →
-                  </button>
+                <div className="text-xs font-bold text-teal-200">
+                  {scoutActive ? `Scouting report for @${scout?.username}` : 'BrillyDer training focus'}
                 </div>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-300">{insights.recommendation}</p>
+                {!scoutActive && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => onOpenTrainer('daily')} className="inline-flex items-center gap-1 rounded-lg border border-teal-400/35 bg-teal-400/15 px-2.5 py-1 text-[10px] font-extrabold text-teal-100">
+                      <Flame className="h-3 w-3" /> Start 15m Daily Coach
+                    </button>
+                    <button type="button" onClick={() => onOpenTrainer('conversion')} className="inline-flex items-center gap-1 rounded-lg border border-purple-400/35 bg-purple-500/15 px-2.5 py-1 text-[10px] font-bold text-purple-200">
+                      Train Blown Leads →
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -382,13 +386,15 @@ export const InsightsView: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
                   <ShieldAlert className="h-4 w-4 text-blunder" /> Tilt Guard (Win Rate by Loss Streak)
                 </div>
-                <button
-                  type="button"
-                  onClick={onOpenGravityCheck}
-                  className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
-                >
-                  Train This →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={onOpenGravityCheck}
+                    className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
+                  >
+                    Train This →
+                  </button>
+                )}
               </div>
               <p className="mt-0.5 text-[10px] text-slate-500">
                 Stop-loss telemetry: how your score shifts after consecutive losses.
@@ -425,13 +431,15 @@ export const InsightsView: React.FC<Props> = ({
                   <TrendingUp className="h-4 w-4 text-brilly" />
                   {insights.checkpoints ? `${insights.checkpoints.windowSize}-Game Checkpoints` : '20-Game Checkpoints'}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenTrainer('daily')}
-                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
-                >
-                  Train This →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTrainer('daily')}
+                    className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                  >
+                    Train This →
+                  </button>
+                )}
               </div>
               {!insights.checkpoints ? (
                 <p className="py-6 text-center text-xs text-slate-500">
@@ -494,15 +502,17 @@ export const InsightsView: React.FC<Props> = ({
             <section className="glass-card p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
-                  <Swords className="h-4 w-4 text-warp" /> Patterns You Miss Most
+                  <Swords className="h-4 w-4 text-warp" /> {scoutActive ? 'Patterns Missed Most' : 'Patterns You Miss Most'}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenTrainer('woodpecker')}
-                  className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
-                >
-                  Woodpecker →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTrainer('woodpecker')}
+                    className="rounded-lg border border-purple-400/35 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/20"
+                  >
+                    Woodpecker →
+                  </button>
+                )}
               </div>
               {insights.missedMotifs.length === 0 ? (
                 <p className="py-5 text-center text-xs text-slate-500">
@@ -521,13 +531,15 @@ export const InsightsView: React.FC<Props> = ({
                           {m.count} missed · avg -{m.avgWinLoss}% equity
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onOpenTrainer('deck', m.motif)}
-                        className="shrink-0 rounded-lg border border-teal-400/35 bg-teal-400/10 px-2.5 py-1 text-[10px] font-extrabold text-teal-200 hover:bg-teal-400/20"
-                      >
-                        Train This →
-                      </button>
+                      {!scoutActive && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenTrainer('deck', m.motif)}
+                          className="shrink-0 rounded-lg border border-teal-400/35 bg-teal-400/10 px-2.5 py-1 text-[10px] font-extrabold text-teal-200 hover:bg-teal-400/20"
+                        >
+                          Train This →
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -539,13 +551,15 @@ export const InsightsView: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
                   <Target className="h-4 w-4 text-clean" /> Endgame Weakness Tracker
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenTrainer('conversion')}
-                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
-                >
-                  Train This →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTrainer('conversion')}
+                    className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                  >
+                    Train This →
+                  </button>
+                )}
               </div>
               {insights.endgameCategories.length === 0 ? (
                 <p className="py-5 text-center text-xs text-slate-500">
@@ -651,7 +665,7 @@ export const InsightsView: React.FC<Props> = ({
             <TimeTroubleCard
               buckets={insights.timeTrouble}
               clockLeaks={insights.clockLeaks}
-              onTrainBlunders={() => onOpenTrainer('daily')}
+              onTrainBlunders={scoutActive ? undefined : () => onOpenTrainer('daily')}
             />
             <ActivityTrendChart trend={insights.trend} />
           </div>
@@ -660,13 +674,15 @@ export const InsightsView: React.FC<Props> = ({
             <div className="glass-card p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-100">Opening repertoire</div>
-                <button
-                  type="button"
-                  onClick={onOpenOpenings}
-                  className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
-                >
-                  Train This →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={onOpenOpenings}
+                    className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
+                  >
+                    Train This →
+                  </button>
+                )}
               </div>
               {insights.openings.length === 0 ? (
                 <p className="py-4 text-xs text-slate-500">Analyze games to reveal your opening win rates.</p>
@@ -698,13 +714,15 @@ export const InsightsView: React.FC<Props> = ({
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
                   <Flame className="h-4 w-4 text-rose-400" /> Blunder rate by phase
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onOpenTrainer('woodpecker')}
-                  className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200 hover:bg-amber-500/20"
-                >
-                  Train This →
-                </button>
+                {!scoutActive && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTrainer('woodpecker')}
+                    className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-200 hover:bg-amber-500/20"
+                  >
+                    Train This →
+                  </button>
+                )}
               </div>
               <div className="mt-2.5 space-y-3">
                 {insights.phaseStats.map((ps) => (

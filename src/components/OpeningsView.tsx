@@ -59,6 +59,7 @@ export const OpeningsView: React.FC<Props> = ({
   const [selectedLineId, setSelectedLineId] = useState<string>('');
   const [drillFocusLineId, setDrillFocusLineId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const sideCourses = useMemo(
     () => courses.filter((c) => c.side === side),
@@ -226,17 +227,39 @@ export const OpeningsView: React.FC<Props> = ({
                       </span>
                     )}
                     {isCustom && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void onDeleteCourse(course.id);
-                        }}
-                        aria-label={`Delete ${course.name}`}
-                        className="rounded p-1 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      confirmDeleteId === course.id ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConfirmDeleteId(null);
+                              void onDeleteCourse(course.id);
+                            }}
+                            className="rounded-md border border-rose-500/50 bg-rose-500/20 px-1.5 py-0.5 text-[9px] font-extrabold text-rose-200 hover:bg-rose-500/30"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="rounded-md border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteId(course.id);
+                          }}
+                          aria-label={`Delete ${course.name}`}
+                          className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-500/15 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -255,7 +278,7 @@ export const OpeningsView: React.FC<Props> = ({
         {/* Sub-Navigation */}
         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-800/80 pt-3">
           {([
-            ['formation', 'Mothership', Compass],
+            ['formation', vibe === 'cosmic' ? 'Mothership' : 'Formation', Compass],
             ['walkthrough', 'Walkthrough', Play],
             ['drill', `FSRS Drill${dueCountSide > 0 ? ` (${dueCountSide})` : ''}`, Orbit],
             ['coverage', 'Coverage & Gaps', ShieldAlert],

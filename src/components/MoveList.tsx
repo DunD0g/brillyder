@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { CLASSIFICATION_META, type AnalyzedPly } from '../types/chess';
+import { getClassificationLabel, useVibe } from '../utils/vibeCopy';
 
 interface Props {
   plies: AnalyzedPly[];
@@ -54,8 +55,10 @@ export const MoveList: React.FC<Props> = ({ plies, currentPlyIndex, onJump }) =>
 };
 
 const MoveCell: React.FC<{ ply?: AnalyzedPly; active: boolean; onJump: (ply: number) => void }> = ({ ply, active, onJump }) => {
+  const { vibe } = useVibe();
   if (!ply) return <span />;
   const meta = CLASSIFICATION_META[ply.classification];
+  const label = getClassificationLabel(ply.classification, vibe);
   return (
     <button
       type="button"
@@ -63,7 +66,7 @@ const MoveCell: React.FC<{ ply?: AnalyzedPly; active: boolean; onJump: (ply: num
       className={`group flex items-center justify-between gap-1 px-1.5 py-[3px] rounded-md font-mono transition ${
         active ? 'bg-cyan-500/20 text-cyan-100 border border-cyan-400/50' : 'text-slate-300 hover:bg-slate-800/70 border border-transparent'
       }`}
-      title={`${meta.label}: ${ply.coaching.headline}`}
+      title={`${label}: ${ply.coaching.headline}`}
     >
       <span className="truncate">{ply.san}</span>
       <span className="text-[10px] font-sans font-black shrink-0" style={{ color: meta.color }}>{meta.symbol}</span>

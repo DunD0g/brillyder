@@ -114,4 +114,30 @@
 - `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly.
 
 ### Release
-- All 4 phases of BrillyDer v2.0 are complete, verified, and ready for GitHub Pages deployment on `main`.
+- All 4 phases of BrillyDer v2.0 are complete, verified, and deployed on GitHub Pages (`main`).
+
+---
+
+## v2.0.1 — Full Codebase Audit, Mobile UX & Pedagogy Hardening
+**Status:** Completed & Verified
+
+### Built
+- **Pass 1 — Brilliant Engine, Classification, Tactical Motifs & Stockfish/Maia (`3bd158d`):**
+  - Hardened `StockfishService.ts` (`EngineCancelledError`, clean `dispose()` queue unwind, `AbortSignal`, MultiPV aspiration bound safety, `Skill Level 20` restoration for `targetElo >= 1320`).
+  - Upgraded `MaiaService.ts` with genuine 1858-move LC0 policy map, plane 109 (`rule50`), `worker.onerror` recovery, and parallel model probing.
+  - Fixed `classification.ts` false-positive promotion sacrifices (`bxa8=Q Kxa8`), passive en-prise sacrifices, missed short mate penalties, stricter `isClutchSave`, safe RAV comment/header parsing in `loadPgnSafely`, bumped `CLASSIFICATION_VERSION = 3`, Move-1 book detection in `openingBook.ts`, legal SEE & pin-aware hanging piece detection in `tacticalMotifs.ts`, paired `(i, i+1)` Pass-2 deepening + custom-FEN starts in `analysisRunner.ts`, and decimal/multi-stage PGN clock parsing in `chessMath.ts`.
+- **Pass 2 — Stats, Vault, Sync, Explorer/Tablebase, Daily Coach & IndexedDB (`0421264`):**
+  - Fixed inverted Lichess Syzygy Tablebase move labels (`invertTablebaseMoveCategory`) and removed negative poison caching in `tablebaseApi.ts` & `openingExplorer.ts`.
+  - Prioritized explicit `username` matching in `resolveUserColor`, excluded unfinished `'*'` games from W/D/L and insights, fixed DST-safe drill streaks, fixed Clean Sweep spotlight ply & deduplicated `vault.stats.totalHighlights`, and tightened Advantage Conversion extraction to `[+2.5, +7.5]` peaks before slips.
+  - Fixed Gravity Check FSRS history preservation and implemented cross-stage deduplication in `dailyCoach.ts` (preserving the Frozen Woodpecker Cycle across days and honoring its 24–48h consolidation cooldown while avoiding within-sitting duplicates across Stages 2–4).
+  - Hardened Lichess/Chess.com sync (aborted game filtering, reserved path rejection, timeouts, deterministic PGN IDs, multi-month archive walking) and IndexedDB backup/restore atomicity (`brillyDb.ts`, `sound.ts`).
+- **Pass 3 — Gravity Check Mobile Layout, Modals, Drills & Mode Interactions (`9237ece`):**
+  - Fixed `GravityCheckModal` mobile cut-off (centered viewport layout with safe-area padding and height-capped square board) plus modal reset-loop and timer races.
+  - Pinned active items in `OpeningDrillView` and `WoodpeckerCycleView` so solved/revealed feedback stays visible; added rollback guards in `OpeningDrillView` Sparring, `AdvantageConversionView`, and `AnalysisView` Bot/Retry modes.
+  - Added boot hydration guard (`hydratedRef`), generation-guarded game sync, scouted-game review jumping, `MistakeTrainerView` motif-aware auto-selection + `EvalBar` orientation fix + `storageRevision` reload, and modal-aware keyboard guards across views.
+- **Pass 4 — Mobile Safe-Areas, Vibe (`Cosmic | Classic`) Polish & Dead-Code Cleanup:**
+  - Fixed `SettingsMenu` mobile viewport inset positioning + larger close target, `AlienCelebration` Classic vibe mode + Face ID safe-area clearance + auto-dismiss callback, mobile `TransportControls` Retry pill, 5-char `EvalBar` legibility, 2-tap delete confirmation in `OpeningsView`, `InsightsView` Scout-mode CTA gating, `MultiGameOpeningReport` deviation badges, `BrillyVaultView` highlight counters, accessibility pinch-zoom in `index.html`, removed unused `BoardThemePicker.tsx`, and bumped `public/sw.js` to `brillyder-v11`.
+
+### Verified
+- `npm test`: **15 test files, 71 tests passed** (including `classification.test.ts` and `auditPass2.test.ts`).
+- `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly.

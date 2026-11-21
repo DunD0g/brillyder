@@ -137,7 +137,7 @@ export const BrillyVaultView: React.FC<Props> = ({
           </div>
           <div className="shrink-0 text-right">
             <div className="bg-gradient-to-br from-teal-300 to-purple-300 bg-clip-text text-4xl font-black leading-none text-transparent">
-              {stats.total + stats.clutchSaves + stats.trapsPunished + stats.cleanSweeps}
+              {stats.totalHighlights}
             </div>
             <div className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">highlights</div>
           </div>
@@ -220,8 +220,16 @@ export const BrillyVaultView: React.FC<Props> = ({
                 </div>
               )}
               <div className="ml-auto flex items-center gap-1.5 text-[10px] text-slate-500">
-                <Calendar className="h-3 w-3" /> {stats.thisMonth} !! this month · <Filter className="h-3.5 w-3.5" />{' '}
-                {filtered.length} shown
+                {category === 'brilliant' ? (
+                  <>
+                    <Calendar className="h-3 w-3" /> {stats.thisMonth} !! this month ·
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="h-3 w-3" /> {categoryEntries.length} total ·
+                  </>
+                )}{' '}
+                <Filter className="h-3.5 w-3.5" /> {filtered.length} shown
               </div>
             </div>
 

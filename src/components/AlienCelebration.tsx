@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
-import { useVibe } from '../utils/vibeCopy';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Sparkles, X } from 'lucide-react';
+import { useVibe, type VibeMode } from '../utils/vibeCopy';
 
 export type CelebrationKind = 'brilliant' | 'blunder';
 
@@ -28,8 +28,28 @@ export const BLUNDER_LINES = [
   'The mothership has muted the game.',
 ];
 
-export function pickCelebrationLine(kind: CelebrationKind, seed = Date.now()): string {
-  const pool = kind === 'brilliant' ? BRILLIANT_LINES : BLUNDER_LINES;
+export const CLASSIC_BRILLIANT_LINES = [
+  'Brilliant sacrifice — the sharpest move in the position.',
+  'Tactical masterpiece! Material offered for decisive play.',
+  'Outstanding calculation — Stockfish’s top sacrificial idea.',
+  'Brilliant move — seizes the initiative immediately.',
+];
+
+export const CLASSIC_BLUNDER_LINES = [
+  'Serious blunder — check the engine’s refutation.',
+  'Missed tactic — review the best reply on the board.',
+  'Decisive swing — retry this position to lock in the pattern.',
+];
+
+export function pickCelebrationLine(kind: CelebrationKind, seed = Date.now(), vibe: VibeMode = 'cosmic'): string {
+  const pool =
+    vibe === 'classic'
+      ? kind === 'brilliant'
+        ? CLASSIC_BRILLIANT_LINES
+        : CLASSIC_BLUNDER_LINES
+      : kind === 'brilliant'
+        ? BRILLIANT_LINES
+        : BLUNDER_LINES;
   return pool[Math.abs(seed) % pool.length];
 }
 
@@ -42,23 +62,28 @@ interface Props {
 }
 
 export const AlienCelebration: React.FC<Props> = ({ kind, trigger, message, autoDismissMs, onDismiss }) => {
-  const { copy } = useVibe();
+  const { vibe, copy } = useVibe();
   const [entered, setEntered] = useState(true);
-  const fallback = useMemo(() => pickCelebrationLine(kind, trigger), [kind, trigger]);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const fallback = useMemo(() => pickCelebrationLine(kind, trigger, vibe), [kind, trigger, vibe]);
   const text = message ?? fallback;
   const brilliant = kind === 'brilliant';
 
   useEffect(() => {
     setEntered(true);
     const ms = autoDismissMs ?? (brilliant ? 2600 : 1900);
-    const timer = window.setTimeout(() => setEntered(false), ms);
+    const timer = window.setTimeout(() => {
+      setEntered(false);
+      onDismissRef.current();
+    }, ms);
     return () => window.clearTimeout(timer);
-  }, [trigger, kind, autoDismissMs]);
+  }, [trigger, kind, autoDismissMs, brilliant]);
 
   if (!entered) return null;
 
   return (
-    <div className="pointer-events-none fixed z-[70] left-3 right-3 bottom-[5.75rem] lg:left-auto lg:right-6 lg:bottom-6 lg:w-[23rem]">
+    <div className="pointer-events-none fixed z-[70] left-3 right-3 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] lg:left-auto lg:right-6 lg:bottom-6 lg:w-[23rem]">
       <button
         type="button"
         onClick={() => { setEntered(false); onDismiss(); }}
@@ -68,12 +93,24 @@ export const AlienCelebration: React.FC<Props> = ({ kind, trigger, message, auto
             : 'border-rose-400/40 bg-[#1a0a10]/[0.92] shadow-rose-500/20'
         }`}
         aria-live="polite"
-        aria-label={`${brilliant ? 'Brilliant move' : 'Blunder'} celebration. Tap to dismiss.`}
+        aria-label={`${brilliant ? 'Brilliant move' : 'Blunder'} notification. Tap to dismiss.`}
       >
         <span className={`absolute inset-0 opacity-40 ${brilliant ? 'bg-[radial-gradient(circle_at_18%_20%,rgba(34,211,238,0.35),transparent_55%)]' : 'bg-[radial-gradient(circle_at_18%_20%,rgba(244,63,94,0.28),transparent_55%)]'}`} />
-        <div className="relative shrink-0 w-[76px] h-[68px]">
-          <UfoAlien kind={kind} />
-        </div>
+        {vibe === 'cosmic' ? (
+          <div className="relative shrink-0 w-[76px] h-[68px]">
+            <UfoAlien kind={kind} />
+          </div>
+        ) : (
+          <div
+            className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${
+              brilliant
+                ? 'border-teal-400/40 bg-teal-400/15 text-teal-300'
+                : 'border-rose-400/40 bg-rose-500/15 text-rose-300'
+            }`}
+          >
+            {brilliant ? <Sparkles className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
+          </div>
+        )}
         <div className="relative min-w-0">
           <div className={`text-[10px] font-black uppercase tracking-[0.16em] ${brilliant ? 'text-teal-300' : 'text-rose-300'}`}>
             {brilliant ? `${copy.brilliantLabel} detected` : `${copy.blunderLabel} detected`}

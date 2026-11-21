@@ -42,9 +42,19 @@ export const TransportControls: React.FC<Props> = ({
           <TransportButton onClick={onToggleSpeed} label="Auto-play speed"><span className="text-[11px] font-black">{speed}x</span></TransportButton>
           <TransportButton onClick={onFlip} label="Flip board"><FlipVertical2 className="w-4 h-4" /></TransportButton>
         </div>
-        <div className="mx-auto mt-1 flex max-w-lg items-center justify-between px-1 text-[9px] font-mono text-slate-500">
+        <div className="mx-auto mt-1 flex max-w-lg items-center justify-between gap-2 px-1 text-[10px] font-mono text-slate-500">
           <span>{current}/{total} plies</span>
-          <span>{canRetry ? 'r retry · ' : ''}← → step · space auto</span>
+          {canRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 font-sans text-[10px] font-extrabold text-amber-200 active:scale-95"
+            >
+              <RotateCcw className="h-3 w-3" /> Retry mistake
+            </button>
+          ) : (
+            <span className="font-sans text-[9px] text-slate-500">Swipe board to step</span>
+          )}
         </div>
       </div>
     );

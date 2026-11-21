@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlarmClock, Flame, TimerOff, Zap } from 'lucide-react';
 import type { ClockBucketStats, ClockLeakSummary } from '../types/chess';
+import { useVibe } from '../utils/vibeCopy';
 
 interface Props {
   buckets: ClockBucketStats[];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export const TimeTroubleCard: React.FC<Props> = ({ buckets, clockLeaks, onTrainBlunders }) => {
+  const { copy } = useVibe();
   const totalMoves = buckets.reduce((sum, b) => sum + b.moves, 0);
   const lowBuckets = buckets.filter((b) => b.clockLimit <= 60);
   const lowMoves = lowBuckets.reduce((sum, b) => sum + b.moves, 0);
@@ -108,7 +110,7 @@ export const TimeTroubleCard: React.FC<Props> = ({ buckets, clockLeaks, onTrainB
                 ? 'Impulse moves are costing you more than time trouble — pause 5 seconds on Checks-Captures-Threats when >3m remain.'
                 : lowErrors >= 2.5
                   ? `You make ${lowErrors.toFixed(1)} errors per 10 moves under 60s. Bank 20% of your clock before move 20.`
-                  : 'Clock discipline is holding steady. Keep running Radar Ping checks on sharp turns.'}
+                  : `Clock discipline is holding steady. Keep running ${copy.radarPingLabel} checks on sharp turns.`}
             </span>
             {onTrainBlunders && (
               <button

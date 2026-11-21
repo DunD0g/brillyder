@@ -68,8 +68,15 @@ export const MultiGameOpeningReport: React.FC<Props> = ({
                     )}
                     <h4 className="truncate text-xs font-extrabold text-white">{row.name}</h4>
                   </div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">
-                    {row.games} game{row.games === 1 ? '' : 's'} · {row.wins}W-{row.draws}D-{row.losses}L · {row.avgAccuracy}% acc
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-400">
+                    <span>
+                      {row.games} game{row.games === 1 ? '' : 's'} · {row.wins}W-{row.draws}D-{row.losses}L · {row.avgAccuracy}% acc
+                    </span>
+                    {row.deviationCount > 0 && (
+                      <span className="rounded-full border border-amber-400/35 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-200">
+                        {row.deviationCount} dev{row.deviationCount === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">

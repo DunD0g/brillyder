@@ -77,7 +77,10 @@ export const SettingsMenu: React.FC<Props> = ({
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
     };
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
@@ -165,18 +168,23 @@ export const SettingsMenu: React.FC<Props> = ({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-[80] mt-2 max-h-[82dvh] w-[min(21rem,calc(100vw-1.5rem))] overflow-y-auto anim-pop glass-card glass-card-strong p-3.5 shadow-2xl nice-scroll">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={vibe === 'cosmic' ? 'Cockpit Settings' : 'Settings'}
+          className="fixed inset-x-3 top-[calc(3.5rem+env(safe-area-inset-top))] z-[80] max-h-[calc(100dvh-5rem-env(safe-area-inset-top))] overflow-y-auto anim-pop glass-card glass-card-strong p-3.5 shadow-2xl nice-scroll sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[82dvh] sm:w-[21rem]"
+        >
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black uppercase tracking-[0.16em] text-brilly">
-              Cockpit Settings
+              {vibe === 'cosmic' ? 'Cockpit Settings' : 'Settings'}
             </span>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="text-slate-500 hover:text-slate-200"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800 bg-void/60 text-slate-400 transition hover:border-slate-600 hover:text-slate-100"
               aria-label="Close settings"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
@@ -261,7 +269,7 @@ export const SettingsMenu: React.FC<Props> = ({
               className="flex w-full items-center justify-between gap-2 text-left"
             >
               <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-200">
-                <Sparkles className="h-3.5 w-3.5 text-brilly" /> Alien celebrations
+                <Sparkles className="h-3.5 w-3.5 text-brilly" /> {vibe === 'cosmic' ? 'Alien celebrations' : 'Move celebrations'}
               </span>
               <span
                 className={`relative h-5 w-9 rounded-full transition ${
@@ -276,7 +284,9 @@ export const SettingsMenu: React.FC<Props> = ({
               </span>
             </button>
             <p className="mt-1 text-[10px] leading-snug text-slate-500">
-              Non-blocking UFO toasts on !! and ?? moves.
+              {vibe === 'cosmic'
+                ? 'Non-blocking UFO toasts on !! and ?? moves.'
+                : 'Non-blocking banners on brilliant (!!) and blunder (??) moves.'}
             </p>
           </div>
 
