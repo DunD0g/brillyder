@@ -1,4 +1,4 @@
-import * as ort from 'onnxruntime-web';
+import * as ort from 'onnxruntime-web/wasm';
 
 interface LoadMessage {
   type: 'load';
@@ -19,9 +19,9 @@ type WorkerRequest = LoadMessage | InferMessage;
 
 let session: ort.InferenceSession | null = null;
 let loadedKey = '';
+let queue: Promise<void> = Promise.resolve();
 
-self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const msg = event.data;
+async function handleRequest(msg: WorkerRequest): Promise<void> {
   try {
     if (msg.type === 'load') {
       const key = msg.modelKey || msg.modelUrl;
@@ -81,4 +81,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       error: err instanceof Error ? err.message : 'Maia worker error',
     });
   }
+}
+
+self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  const msg = event.data;
+  queue = queue.then(() => handleRequest(msg), () => handleRequest(msg));
 };

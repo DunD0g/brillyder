@@ -143,8 +143,8 @@ export async function fetchLichessExplorer(
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
-    if (res.status === 429 || res.status >= 500) {
-      disabledUntil = Date.now() + FAILURE_TTL_MS;
+    if (res.status === 401 || res.status === 429 || res.status >= 500) {
+      disabledUntil = Date.now() + (res.status === 401 ? 15 * 60_000 : FAILURE_TTL_MS);
       return null;
     }
     if (!res.ok) return null;

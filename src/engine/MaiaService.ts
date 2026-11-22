@@ -1,6 +1,6 @@
 import { Chess, type PieceSymbol } from 'chess.js';
 import { getPref, setPref } from '../storage/gameDb';
-import { stockfishService } from './StockfishService';
+import { EngineCancelledError, stockfishService } from './StockfishService';
 
 export const MAIA_ENABLED_PREF_KEY = 'brillyder_maia_enabled';
 const MAIA_CACHE_NAME = 'brillyder-maia-models-v1';
@@ -159,6 +159,8 @@ export function encodeFenToMaiaPlanes(fen: string): Float32Array {
 class MaiaEngineService {
   private worker: Worker | null = null;
   private reqId = 0;
+  private loadedModelKey: string | null = null;
+  private pendingRejectors = new Map<number, (err: Error) => void>();
   private failedModels = new Map<string, number>();
   private memoryModels = new Map<number, { buffer: ArrayBuffer; name: string }>();
   private availability: MaiaAvailability = {
@@ -251,6 +253,10 @@ class MaiaEngineService {
       }
     }
     this.failedModels.delete(`local:${rating}`);
+    // Reset active worker session so replacing an already-loaded rating uses the newly uploaded model
+    if (this.loadedModelKey === `local:${rating}`) {
+      this.dispose();
+    }
     await this.probeAvailableModels();
     return { rating, name: file.name, sizeBytes: buffer.byteLength };
   }
@@ -330,9 +336,14 @@ class MaiaEngineService {
   private callWorker<T>(
     payload: Record<string, unknown>,
     timeoutMs = 6000,
-    transfer?: Transferable[]
+    transfer?: Transferable[],
+    signal?: AbortSignal
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new EngineCancelledError('Maia search cancelled'));
+        return;
+      }
       let worker: Worker;
       try {
         worker = this.ensureWorker();
@@ -344,12 +355,20 @@ class MaiaEngineService {
       const id = ++this.reqId;
       const cleanup = () => {
         window.clearTimeout(timer);
+        this.pendingRejectors.delete(id);
         worker.removeEventListener('message', onMsg);
         worker.removeEventListener('error', onErr);
+        signal?.removeEventListener('abort', onAbort);
+      };
+
+      const onAbort = () => {
+        cleanup();
+        reject(new EngineCancelledError('Maia search cancelled'));
       };
 
       const timer = window.setTimeout(() => {
         cleanup();
+        this.dispose();
         reject(new Error('Maia ONNX worker timed out'));
       }, timeoutMs);
 
@@ -366,6 +385,11 @@ class MaiaEngineService {
         reject(new Error(ev.message || 'Maia worker crashed'));
       };
 
+      this.pendingRejectors.set(id, (err) => {
+        cleanup();
+        reject(err);
+      });
+      signal?.addEventListener('abort', onAbort, { once: true });
       worker.addEventListener('message', onMsg);
       worker.addEventListener('error', onErr);
       if (transfer && transfer.length > 0) {
@@ -376,12 +400,12 @@ class MaiaEngineService {
     });
   }
 
-  async getMaiaMove(fen: string, targetElo: number): Promise<string | null> {
-    if (!this.isEnabled()) return null;
+  async getMaiaMove(fen: string, targetElo: number, signal?: AbortSignal): Promise<string | null> {
+    if (!this.isEnabled() || signal?.aborted) return null;
     if (!this.availability.checked) {
       await this.probeAvailableModels();
     }
-    if (this.availability.availableRatings.length === 0) return null;
+    if (signal?.aborted || this.availability.availableRatings.length === 0) return null;
 
     const nearest = this.availability.availableRatings.reduce((best, r) =>
       Math.abs(r - targetElo) < Math.abs(best - targetElo) ? r : best
@@ -394,17 +418,22 @@ class MaiaEngineService {
     }
 
     try {
-      if (isLocal) {
-        const buffer = await this.readLocalModelBuffer(nearest);
-        if (!buffer) return null;
-        await this.callWorker(
-          { type: 'load', modelUrl: modelKey, modelKey, modelBuffer: buffer },
-          15_000,
-          [buffer]
-        );
-      } else {
-        await this.callWorker({ type: 'load', modelUrl: modelKey, modelKey }, 12_000);
+      if (this.loadedModelKey !== modelKey || !this.worker) {
+        if (isLocal) {
+          const buffer = await this.readLocalModelBuffer(nearest);
+          if (!buffer || signal?.aborted) return null;
+          await this.callWorker(
+            { type: 'load', modelUrl: modelKey, modelKey, modelBuffer: buffer },
+            15_000,
+            [buffer],
+            signal
+          );
+        } else {
+          await this.callWorker({ type: 'load', modelUrl: modelKey, modelKey }, 12_000, undefined, signal);
+        }
+        this.loadedModelKey = modelKey;
       }
+      if (signal?.aborted) return null;
       this.availability = { ...this.availability, activeModelUrl: modelKey, lastError: null };
 
       const chess = new Chess(fen);
@@ -416,13 +445,20 @@ class MaiaEngineService {
       if (legalMoves.length === 0) return null;
 
       const planes = encodeFenToMaiaPlanes(fen);
-      const res = await this.callWorker<{ moveUci: string | null }>({
-        type: 'infer',
-        planes,
-        legalMoves,
-      });
+      const res = await this.callWorker<{ moveUci: string | null }>(
+        {
+          type: 'infer',
+          planes,
+          legalMoves,
+        },
+        6000,
+        undefined,
+        signal
+      );
+      if (signal?.aborted) return null;
       return res.moveUci || null;
     } catch (err) {
+      if (err instanceof EngineCancelledError || signal?.aborted) return null;
       this.failedModels.set(modelKey, Date.now());
       this.availability = {
         ...this.availability,
@@ -441,7 +477,9 @@ class MaiaEngineService {
     targetElo: number,
     signal?: AbortSignal
   ): Promise<{ moveUci: string; engine: 'maia' | 'stockfish' }> {
-    const maiaMove = await this.getMaiaMove(fen, targetElo);
+    if (signal?.aborted) throw new EngineCancelledError();
+    const maiaMove = await this.getMaiaMove(fen, targetElo, signal);
+    if (signal?.aborted) throw new EngineCancelledError();
     if (maiaMove) {
       return { moveUci: maiaMove, engine: 'maia' };
     }
@@ -450,6 +488,12 @@ class MaiaEngineService {
   }
 
   dispose(): void {
+    this.loadedModelKey = null;
+    const pending = Array.from(this.pendingRejectors.values());
+    this.pendingRejectors.clear();
+    for (const reject of pending) {
+      reject(new EngineCancelledError('Maia worker disposed'));
+    }
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;

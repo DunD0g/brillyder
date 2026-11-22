@@ -1,5 +1,5 @@
 import type { AnalyzedGame, MultiGameInsights } from '../types/chess';
-import { resolveUserColor } from '../utils/player';
+import { isUserGame, resolveUserColor, resultForUserStrict } from '../utils/player';
 
 export interface ScoutOpeningLineStat {
   eco: string;
@@ -42,16 +42,18 @@ export function buildScoutGameplan(
     }
   >();
 
+  let matchedGames = 0;
   for (const ag of games) {
+    if (!isUserGame(ag.game, opponentName)) continue;
     const side = resolveUserColor(ag.game, opponentName);
-    if (!side) continue;
+    const outcome = resultForUserStrict(ag.game, side);
+    if (!outcome) continue;
+    matchedGames += 1;
     const eco = ag.game.openingEco || '---';
     const openingName = (ag.game.openingName || 'Unknown Opening').split(':')[0].trim();
     const key = `${side}:${eco}:${openingName}`;
     const summary = side === 'w' ? ag.whiteSummary : ag.blackSummary;
-    let pts = 0.5;
-    if (ag.game.resultString === '1-0') pts = side === 'w' ? 1 : 0;
-    else if (ag.game.resultString === '0-1') pts = side === 'b' ? 1 : 0;
+    const pts = outcome === 'W' ? 1 : outcome === 'D' ? 0.5 : 0;
 
     const cur = buckets.get(key) ?? {
       eco,
@@ -130,7 +132,7 @@ export function buildScoutGameplan(
 
   return {
     opponentName,
-    gamesCount: games.length,
+    gamesCount: matchedGames,
     favoriteWhite,
     favoriteBlack,
     weakestTargets,

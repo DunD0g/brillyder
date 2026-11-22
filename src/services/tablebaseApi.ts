@@ -103,7 +103,8 @@ export function formatTablebaseWdl(category: string, sideToMove: 'w' | 'b'): {
 
 export async function fetchLichessTablebase(fen: string): Promise<TablebaseResult | null> {
   if (!isTablebaseEligible(fen)) return null;
-  const key = fen.split(' ').slice(0, 4).join(' ');
+  // Preserve 5th field (halfmove clock) since 50-move distance changes cursed-win/blessed-loss WDL
+  const key = fen.split(' ').slice(0, 5).join(' ');
   const now = Date.now();
   const cached = cache.get(key);
   if (cached && now - cached.at < CACHE_MS) return cached.data;

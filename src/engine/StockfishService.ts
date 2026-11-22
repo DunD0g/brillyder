@@ -9,6 +9,13 @@ export class EngineCancelledError extends Error {
   }
 }
 
+export class EngineTimeoutError extends Error {
+  constructor(message = 'Stockfish search timed out') {
+    super(message);
+    this.name = 'EngineTimeoutError';
+  }
+}
+
 interface PendingJob {
   cancelled: boolean;
   resolve: (bestMove: string) => void;
@@ -32,7 +39,9 @@ class StockfishEngineService {
     if (this.initPromise) return this.initPromise;
     this.initPromise = new Promise<void>((resolve, reject) => {
       try {
-        const worker = new Worker(new URL('stockfish.js', document.baseURI).href);
+        const jsUrl = new URL('stockfish.js', document.baseURI).href;
+        const wasmUrl = new URL('stockfish.wasm', document.baseURI).href;
+        const worker = new Worker(`${jsUrl}#${encodeURIComponent(wasmUrl)}`);
         this.worker = worker;
         let gotUciOk = false;
         const bootTimeout = window.setTimeout(() => {
@@ -116,6 +125,7 @@ class StockfishEngineService {
           if (this.activeJob === job && !job.cancelled) {
             job.cancelled = true;
             this.worker?.postMessage('stop');
+            if (job.hardTimeoutId !== undefined) window.clearTimeout(job.hardTimeoutId);
             job.hardTimeoutId = window.setTimeout(() => {
               if (this.activeJob === job) {
                 this.dispose(new EngineCancelledError());
@@ -142,9 +152,10 @@ class StockfishEngineService {
         job.timeoutId = window.setTimeout(() => {
           if (this.activeJob === job && this.worker) {
             this.worker.postMessage('stop');
+            if (job.hardTimeoutId !== undefined) window.clearTimeout(job.hardTimeoutId);
             job.hardTimeoutId = window.setTimeout(() => {
               if (this.activeJob === job) {
-                this.dispose(new EngineCancelledError('Stockfish search timed out'));
+                this.dispose(new EngineTimeoutError('Stockfish search timed out'));
               }
             }, 1800);
           }

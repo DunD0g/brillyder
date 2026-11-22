@@ -37,6 +37,7 @@ interface Props {
   username: UserHandleSpec;
   boardTheme: BoardThemeId;
   initialCategory?: EndgameLabCategory | 'All' | 'My Slips' | null;
+  storageRevision?: number;
   onOpenGame: (gameId: string, ply: number) => void;
 }
 
@@ -68,6 +69,7 @@ export const EndgameLabView: React.FC<Props> = ({
   username,
   boardTheme,
   initialCategory = null,
+  storageRevision = 0,
   onOpenGame,
 }) => {
   const userDrills = useMemo(
@@ -85,6 +87,11 @@ export const EndgameLabView: React.FC<Props> = ({
   const [masteredIds, setMasteredIds] = useState<string[]>(() =>
     getPref<string[]>(MASTERED_PREF_KEY, [])
   );
+
+  useEffect(() => {
+    if (storageRevision === 0) return;
+    setMasteredIds(getPref<string[]>(MASTERED_PREF_KEY, []));
+  }, [storageRevision]);
 
   useEffect(() => {
     if (initialCategory) setCategory(initialCategory);
@@ -159,11 +166,24 @@ export const EndgameLabView: React.FC<Props> = ({
     };
   }, []);
 
+  // Escape dismisses promotion picker cleanly
+  useEffect(() => {
+    if (!pendingPromo) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setPendingPromo(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pendingPromo]);
+
   // Live Syzygy 7-piece query on every board position
   useEffect(() => {
     let cancelled = false;
+    setTbResult(null);
     if (!isTablebaseEligible(fen)) {
-      setTbResult(null);
       setTbLoading(false);
       return;
     }
@@ -178,11 +198,26 @@ export const EndgameLabView: React.FC<Props> = ({
     };
   }, [fen]);
 
+  const sideToMove = useMemo(() => {
+    try {
+      return new Chess(fen).turn();
+    } catch {
+      return activeDrill.userColor;
+    }
+  }, [fen, activeDrill.userColor]);
+
+  const validTbHint =
+    tbResult && tbResult.fen === fen && sideToMove === activeDrill.userColor
+      ? tbResult.moves[0] ?? null
+      : null;
+
+  const hintMoveSan =
+    validTbHint?.san ?? (fen === activeDrill.fen ? activeDrill.firstHintSan : null);
+
   const hintArrow = useMemo(() => {
-    if (!showHint) return [];
-    const tbBest = tbResult?.moves?.[0]?.uci;
-    if (tbBest) {
-      const sq = uciToSquares(tbBest);
+    if (!showHint || sideToMove !== activeDrill.userColor) return [];
+    if (validTbHint?.uci) {
+      const sq = uciToSquares(validTbHint.uci);
       if (sq) return [{ from: sq.from, to: sq.to, color: 'best' as const }];
     }
     if (fen === activeDrill.fen) {
@@ -195,7 +230,7 @@ export const EndgameLabView: React.FC<Props> = ({
       }
     }
     return [];
-  }, [showHint, tbResult, fen, activeDrill]);
+  }, [showHint, sideToMove, activeDrill, validTbHint, fen]);
 
   const completeMove = async (from: Square, to: Square, promotion?: PieceSymbol) => {
     const chess = new Chess(fen);
@@ -208,6 +243,11 @@ export const EndgameLabView: React.FC<Props> = ({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    const prevFen = fen;
+    const prevHistory = historyFens;
+    const prevLastMove = lastMove;
+    const prevUserMoves = userMovesMade;
 
     const afterUserFen = chess.fen();
     const nextUserMoves = userMovesMade + 1;
@@ -351,7 +391,11 @@ export const EndgameLabView: React.FC<Props> = ({
 
       const parsed = uciToSquares(replyUci);
       if (!parsed) {
-        setThinking(false);
+        setFen(prevFen);
+        setHistoryFens(prevHistory);
+        setLastMove(prevLastMove);
+        setUserMovesMade(prevUserMoves);
+        setStatusNote('Engine could not generate a reply — try your move again.');
         return;
       }
       const replyChess = new Chess(afterUserFen);
@@ -361,7 +405,11 @@ export const EndgameLabView: React.FC<Props> = ({
         promotion: parsed.promotion ?? 'q',
       });
       if (!replyMv) {
-        setThinking(false);
+        setFen(prevFen);
+        setHistoryFens(prevHistory);
+        setLastMove(prevLastMove);
+        setUserMovesMade(prevUserMoves);
+        setStatusNote('Engine returned an illegal reply — try your move again.');
         return;
       }
       const afterReplyFen = replyChess.fen();
@@ -389,13 +437,18 @@ export const EndgameLabView: React.FC<Props> = ({
       }
     } catch {
       if (runRef.current !== runId) return;
+      setFen(prevFen);
+      setHistoryFens(prevHistory);
+      setLastMove(prevLastMove);
+      setUserMovesMade(prevUserMoves);
+      setStatusNote('Engine reply timed out — try your move again.');
     } finally {
       if (runRef.current === runId) setThinking(false);
     }
   };
 
   const handleUserMove = (from: Square, to: Square) => {
-    if (thinking || status === 'mastered') return;
+    if (thinking || status !== 'playing') return;
     const chess = new Chess(fen);
     if (chess.turn() !== activeDrill.userColor) return;
     const piece = chess.get(from);
@@ -425,21 +478,15 @@ export const EndgameLabView: React.FC<Props> = ({
       }
       idx--;
     }
-    const targetFen = historyFens[idx];
-    setHistoryFens(historyFens.slice(0, idx + 1));
+    const trimmed = historyFens.slice(0, idx + 1);
+    const targetFen = trimmed[trimmed.length - 1];
+    setHistoryFens(trimmed);
     setFen(targetFen);
+    setUserMovesMade(Math.floor(idx / 2));
     setLastMove(undefined);
     setStatus('playing');
     setStatusNote('Stepped back — find the accurate continuation.');
   };
-
-  const sideToMove = useMemo(() => {
-    try {
-      return new Chess(fen).turn();
-    } catch {
-      return activeDrill.userColor;
-    }
-  }, [fen, activeDrill.userColor]);
 
   const wdlBadge = tbResult ? formatTablebaseWdl(tbResult.category, sideToMove) : null;
   const masteredCount = allDrills.filter((d) => masteredIds.includes(d.id)).length;
@@ -519,38 +566,57 @@ export const EndgameLabView: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-21rem))] lg:max-w-none">
+          <div className="relative mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-21rem)))] lg:max-w-none">
             <ChessgroundBoard
               fen={fen}
               orientation={activeDrill.userColor}
-              interactive={!thinking && status !== 'mastered'}
+              turnColor={activeDrill.userColor}
+              interactive={!thinking && status === 'playing'}
               lastMove={lastMove}
               customArrows={hintArrow}
               theme={boardTheme}
               onUserMove={handleUserMove}
             />
             {pendingPromo && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-void/80 backdrop-blur-sm">
+              <div
+                className="absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-void/80 backdrop-blur-sm"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setPendingPromo(null);
+                }}
+              >
                 <div className="rounded-2xl border border-teal-400/40 bg-hull p-3 shadow-2xl">
                   <div className="mb-2 text-center text-[10px] font-black uppercase tracking-wider text-brilly">
                     Promote Pawn
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((p) => (
+                    {([
+                      ['q', 'Queen', activeDrill.userColor === 'w' ? '♕' : '♛'],
+                      ['r', 'Rook', activeDrill.userColor === 'w' ? '♖' : '♜'],
+                      ['b', 'Bishop', activeDrill.userColor === 'w' ? '♗' : '♝'],
+                      ['n', 'Knight', activeDrill.userColor === 'w' ? '♘' : '♞'],
+                    ] as Array<[PieceSymbol, string, string]>).map(([p, name, glyph]) => (
                       <button
                         key={p}
                         type="button"
+                        aria-label={`Promote to ${name}`}
                         onClick={() => {
                           const req = pendingPromo;
                           setPendingPromo(null);
                           void completeMove(req.from, req.to, p);
                         }}
-                        className="rounded-xl border border-slate-700 bg-void px-3 py-2 font-mono text-sm font-black uppercase text-slate-100 hover:border-teal-400 hover:text-brilly"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-void text-2xl text-slate-100 hover:border-teal-400 hover:text-brilly"
                       >
-                        {p}
+                        {glyph}
                       </button>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setPendingPromo(null)}
+                    className="mt-2 w-full rounded-lg border border-slate-800 bg-void/70 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-200"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
@@ -644,7 +710,11 @@ export const EndgameLabView: React.FC<Props> = ({
                 <p className="mt-1 text-xs leading-relaxed text-slate-300">{statusNote}</p>
                 {showHint && (
                   <p className="mt-1.5 font-mono text-[11px] text-amber-200">
-                    Best move: {tbResult?.moves?.[0]?.san ?? activeDrill.firstHintSan}
+                    {hintMoveSan
+                      ? `Best move: ${hintMoveSan}`
+                      : status === 'warning'
+                      ? 'Tap Undo first to step back to your turn.'
+                      : 'Waiting for Syzygy hint (or continue playing offline).'}
                   </p>
                 )}
                 {activeDrill.source === 'user-game' && activeDrill.sourceGameId && (

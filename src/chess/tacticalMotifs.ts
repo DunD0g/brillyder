@@ -55,8 +55,14 @@ export function legalCaptureGainOnSquare(chess: Chess, target: Square, depth = 6
   const captures = chess.moves({ verbose: true }).filter((m) => m.to === target && m.captured);
   if (captures.length === 0) return 0;
 
-  // Prefer lowest-value capturing piece (trying distinct lowest-value candidates avoids factorial blowup)
-  captures.sort((a, b) => PIECE_VAL[a.piece] - PIECE_VAL[b.piece]);
+  // Prefer lowest-value capturing piece, tie-breaking by highest promotion value (=Q before =N)
+  captures.sort((a, b) => {
+    const pieceDiff = PIECE_VAL[a.piece] - PIECE_VAL[b.piece];
+    if (pieceDiff !== 0) return pieceDiff;
+    const promoA = a.promotion ? PIECE_VAL[a.promotion] : 0;
+    const promoB = b.promotion ? PIECE_VAL[b.promotion] : 0;
+    return promoB - promoA;
+  });
   const minPieceVal = PIECE_VAL[captures[0].piece];
   const candidates = captures.filter((c) => PIECE_VAL[c.piece] === minPieceVal).slice(0, 2);
 

@@ -17,20 +17,36 @@ export interface ShareCardInput {
   boardTheme: BoardThemeId;
 }
 
+// Use filled chess silhouettes + text presentation selector (\uFE0E) on pawn so white pieces stay opaque
+// and iOS Safari never turns black pawns into Apple Color Emojis.
 const PIECE_UNICODE: Record<string, string> = {
-  K: '♔',
-  Q: '♕',
-  R: '♖',
-  B: '♗',
-  N: '♘',
-  P: '♙',
+  K: '♚',
+  Q: '♛',
+  R: '♜',
+  B: '♝',
+  N: '♞',
+  P: '♟\uFE0E',
   k: '♚',
   q: '♛',
   r: '♜',
   b: '♝',
   n: '♞',
-  p: '♟',
+  p: '♟\uFE0E',
 };
+
+function fitTextWithEllipsis(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const cand = `${text.slice(0, mid)}…`;
+    if (ctx.measureText(cand).width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? `${text.slice(0, lo)}…` : '…';
+}
 
 export function parseFenToBoardMatrix(fen: string): Array<Array<string | null>> {
   const placement = (fen.split(' ')[0] ?? '').split('/');
@@ -157,15 +173,16 @@ export async function renderShareCardBlob(input: ShareCardInput): Promise<Blob> 
     ctx.fillText(input.badgeText, pillX + 20, 114);
   }
 
-  // Title + Move / Eval line
-  ctx.font = '800 44px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  // Title + Move / Eval line (measured cleanly to fit within inner card width)
+  const innerMaxW = width - 172;
+  ctx.font = '800 42px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.fillStyle = '#F8FAFC';
-  ctx.fillText(input.title.slice(0, 34), 86, 186);
+  ctx.fillText(fitTextWithEllipsis(ctx, input.title, innerMaxW), 86, 186);
 
   if (input.subtitle) {
     ctx.font = '500 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     ctx.fillStyle = '#94A3B8';
-    ctx.fillText(input.subtitle.slice(0, 62), 86, 228);
+    ctx.fillText(fitTextWithEllipsis(ctx, input.subtitle, innerMaxW), 86, 228);
   }
 
   // Chessboard
@@ -205,11 +222,12 @@ export async function renderShareCardBlob(input: ShareCardInput): Promise<Blob> 
       if (piece) {
         const glyph = PIECE_UNICODE[piece];
         const isWhitePiece = piece === piece.toUpperCase();
-        ctx.font = `700 ${Math.round(sqSize * 0.76)}px "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", serif`;
+        ctx.font = `700 ${Math.round(sqSize * 0.74)}px "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = isWhitePiece ? '#0F172A' : '#F8FAFC';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = isWhitePiece ? 6 : 4;
+        ctx.strokeStyle = isWhitePiece ? '#0F172A' : 'rgba(248, 250, 252, 0.85)';
         ctx.strokeText(glyph, x + sqSize / 2, y + sqSize / 2 + 4);
         ctx.fillStyle = isWhitePiece ? '#FFFFFF' : '#0B1120';
         ctx.fillText(glyph, x + sqSize / 2, y + sqSize / 2 + 4);
@@ -228,25 +246,37 @@ export async function renderShareCardBlob(input: ShareCardInput): Promise<Blob> 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 
-  // Footer info strip
+  // Footer info strip (reserve right-side width so player names & move/eval never overlap)
   const footY = boardY + boardSize + 58;
+  const rightText = [input.moveText, input.evalText].filter(Boolean).join('  ·  ');
+  let rightReserved = 0;
+  if (rightText) {
+    ctx.font = '800 28px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = '#2DD4BF';
+    const rw = Math.min(380, ctx.measureText(rightText).width);
+    const fittedRight = fitTextWithEllipsis(ctx, rightText, 380);
+    const actualRw = ctx.measureText(fittedRight).width;
+    ctx.fillText(fittedRight, width - 86 - actualRw, footY);
+    rightReserved = Math.max(rw, actualRw) + 28;
+  }
+
   ctx.font = '800 30px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.fillStyle = '#E2E8F0';
-  const playersLine = `${input.whiteName} vs ${input.blackName}`.slice(0, 42);
+  const playersLine = fitTextWithEllipsis(
+    ctx,
+    `${input.whiteName} vs ${input.blackName}`,
+    innerMaxW - rightReserved
+  );
   ctx.fillText(playersLine, 86, footY);
-
-  if (input.moveText || input.evalText) {
-    const rightText = [input.moveText, input.evalText].filter(Boolean).join('  ·  ');
-    ctx.font = '800 30px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.fillStyle = '#2DD4BF';
-    const rw = ctx.measureText(rightText).width;
-    ctx.fillText(rightText, width - 86 - rw, footY);
-  }
 
   ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748B';
   ctx.fillText(
-    (input.footerMeta || 'Analyzed locally on-device with Stockfish WASM · BrillyDer').slice(0, 74),
+    fitTextWithEllipsis(
+      ctx,
+      input.footerMeta || 'Analyzed locally on-device with Stockfish WASM · BrillyDer',
+      innerMaxW
+    ),
     86,
     footY + 46
   );
@@ -292,6 +322,7 @@ export async function shareOrDownloadCard(input: ShareCardInput): Promise<'share
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Defer revocation so Safari/WebKit finishes reading the blob before cleanup
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   return 'downloaded';
 }

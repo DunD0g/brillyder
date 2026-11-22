@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js';
 import type { AnalyzedGame, PlayerColor } from '../types/chess';
 import { countTotalPieces } from '../utils/chessMath';
-import { resolveUserColor, type UserHandleSpec } from '../utils/player';
+import { isUserGame, resolveUserColor, type UserHandleSpec } from '../utils/player';
 
 export type EndgameLabCategory = 'Pawn' | 'Rook' | 'Minor Piece' | 'Queen' | 'Rook+Minor';
 
@@ -29,14 +29,14 @@ export interface EndgameDrill {
 export const THEORETICAL_ENDGAME_DRILLS: EndgameDrill[] = [
   {
     id: 'eg_pawn_opposition',
-    title: 'King & Pawn — Take the Opposition',
+    title: 'King & Pawn — Outflank from the 5th Rank',
     category: 'Pawn',
     goal: 'win',
     difficulty: 'Essential',
-    fen: '4k3/8/8/4P3/4K3/8/8/8 w - - 0 1',
+    fen: '4k3/8/8/4K3/4P3/8/8/8 w - - 0 1',
     userColor: 'w',
-    keyIdea: 'Lead with your king in front of the pawn. Reach the 6th rank first (Kd5/Kf5) so Black cannot hold direct opposition.',
-    firstHintSan: 'Kd5',
+    keyIdea: 'Your king is ahead of the pawn! Step onto a key 6th-rank square (Kd6 or Kf6) to seize the outflanking squares and escort the pawn to promotion.',
+    firstHintSan: 'Kd6',
     botElo: 1800,
     source: 'theory',
   },
@@ -94,13 +94,13 @@ export const THEORETICAL_ENDGAME_DRILLS: EndgameDrill[] = [
   },
   {
     id: 'eg_rook_philidor',
-    title: 'Philidor Defense (3rd Rank + Back-Rank Checks)',
+    title: 'Philidor Defense (Back-Rank Checks)',
     category: 'Rook',
     goal: 'draw',
     difficulty: 'Essential',
-    fen: '4k3/8/3PK3/8/8/r7/8/5R2 b - - 0 1',
+    fen: '4k3/8/3P4/4K3/8/r7/5R2/8 b - - 0 1',
     userColor: 'b',
-    keyIdea: 'Once the pawn reaches the 6th rank, swing your rook behind the enemy king (Ra1!) and deliver endless checks from behind.',
+    keyIdea: 'Once the pawn reaches the 6th rank, swing your rook to the 1st rank (Ra1!) so you can deliver endless checks from behind when White’s king steps to e6.',
     firstHintSan: 'Ra1',
     botElo: 1950,
     source: 'theory',
@@ -120,14 +120,14 @@ export const THEORETICAL_ENDGAME_DRILLS: EndgameDrill[] = [
   },
   {
     id: 'eg_rook_vancura',
-    title: 'Rook Pawn Defense — Side Checks',
+    title: 'Vancura Defense — Side Attack on a7',
     category: 'Rook',
     goal: 'draw',
     difficulty: 'Master',
-    fen: '1R6/P4k2/8/8/8/r7/8/6K1 b - - 0 1',
+    fen: 'R7/P4k2/5r2/8/8/8/6K1/8 b - - 0 1',
     userColor: 'b',
-    keyIdea: 'Keep the black king near g7/f7 and harass the a-pawn laterally or from behind so White’s rook stays tied to a8/a7.',
-    firstHintSan: 'Kg7',
+    keyIdea: 'Attack the a7 pawn laterally with Ra6! Keep White’s rook tied to a8 while your king stays tucked safely on g7/f7.',
+    firstHintSan: 'Ra6',
     botElo: 1950,
     source: 'theory',
   },
@@ -137,10 +137,10 @@ export const THEORETICAL_ENDGAME_DRILLS: EndgameDrill[] = [
     category: 'Minor Piece',
     goal: 'draw',
     difficulty: 'Essential',
-    fen: '8/6k1/8/7P/6KB/8/8/8 b - - 0 1',
+    fen: '8/6k1/8/7P/6K1/5B2/8/8 b - - 0 1',
     userColor: 'b',
-    keyIdea: 'The h8 corner is dark, while White’s bishop is light-squared! Tuck your king into h8/g8 and refuse to leave the corner.',
-    firstHintSan: 'Kh7',
+    keyIdea: 'The h8 corner is dark, while White’s bishop on f3 is light-squared! Tuck your king into h8/g8 and refuse to leave the corner.',
+    firstHintSan: 'Kh8',
     botElo: 1900,
     source: 'theory',
   },
@@ -163,23 +163,23 @@ export const THEORETICAL_ENDGAME_DRILLS: EndgameDrill[] = [
     category: 'Queen',
     goal: 'win',
     difficulty: 'Club',
-    fen: '8/8/8/1Q6/8/5K2/3pk3/8 w - - 0 1',
+    fen: '8/8/8/1Q6/8/6K1/3p4/2k5 w - - 0 1',
     userColor: 'w',
-    keyIdea: 'Give stair-step checks to force Black’s king onto d1 in front of its own pawn, then gain a free tempo to bring your king closer.',
-    firstHintSan: 'Qe2+',
+    keyIdea: 'Give stair-step checks (Qc4+!) to force Black’s king onto d1 in front of its own pawn, winning a free tempo to walk your king closer.',
+    firstHintSan: 'Qc4+',
     botElo: 1950,
     source: 'theory',
   },
   {
     id: 'eg_rook_minor_convert',
-    title: 'Rook + Bishop vs Rook — Active King Squeeze',
+    title: 'Rook + Bishop vs Rook — 6th-Rank Squeeze',
     category: 'Rook+Minor',
     goal: 'win',
     difficulty: 'Master',
-    fen: '3k4/8/3K4/3B4/8/8/7r/5R2 w - - 0 1',
+    fen: '4k3/8/3K4/3B4/8/8/5r2/R7 w - - 0 1',
     userColor: 'w',
-    keyIdea: 'Black’s king is pinned to the back rank with your king directly opposite. Threaten mate with Rf8+ or drive the rook off the rank.',
-    firstHintSan: 'Rf8+',
+    keyIdea: 'Drive Black’s king into the corner with Re1+ / Ra8+, coordinating king, rook, and bishop to force a mating net or win the rook.',
+    firstHintSan: 'Re1+',
     botElo: 1950,
     source: 'theory',
   },
@@ -210,8 +210,8 @@ export function extractUserEndgameDrills(
   const seenFens = new Set<string>();
 
   for (const ag of analyzedGames) {
+    if (!isUserGame(ag.game, username)) continue;
     const userColor = resolveUserColor(ag.game, username);
-    if (!userColor) continue;
     const opp = userColor === 'w' ? ag.game.black.name : ag.game.white.name;
 
     for (const ply of ag.plies) {
@@ -219,8 +219,18 @@ export function extractUserEndgameDrills(
       if (ply.classification !== 'blunder' && ply.classification !== 'mistake') continue;
       const pieces = countTotalPieces(ply.beforeFen);
       if (pieces < 3 || pieces > 7) continue;
-      const fenKey = ply.beforeFen.split(' ').slice(0, 4).join(' ');
+      const fenKey = ply.beforeFen.split(' ').slice(0, 5).join(' ');
       if (seenFens.has(fenKey)) continue;
+
+      const cpFromUser = userColor === 'w' ? ply.evalBefore.cpWhite : -ply.evalBefore.cpWhite;
+      const userMate =
+        ply.evalBefore.mateWhite !== null
+          ? userColor === 'w'
+            ? ply.evalBefore.mateWhite
+            : -ply.evalBefore.mateWhite
+          : null;
+      // Skip already-lost positions so we don't ask users to "hold a draw" from a dead-lost FEN
+      if ((userMate !== null && userMate < 0) || (userMate === null && cpFromUser < -100)) continue;
 
       try {
         const c = new Chess(ply.beforeFen);
@@ -232,8 +242,7 @@ export function extractUserEndgameDrills(
       }
 
       seenFens.add(fenKey);
-      const cpFromUser = userColor === 'w' ? ply.evalBefore.cpWhite : -ply.evalBefore.cpWhite;
-      const goal: 'win' | 'draw' = cpFromUser >= 120 || (ply.evalBefore.mateWhite !== null && (userColor === 'w' ? ply.evalBefore.mateWhite > 0 : ply.evalBefore.mateWhite < 0))
+      const goal: 'win' | 'draw' = cpFromUser >= 180 || (userMate !== null && userMate > 0)
         ? 'win'
         : 'draw';
 

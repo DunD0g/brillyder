@@ -9,6 +9,13 @@ class SoundEngine {
 
   constructor() {
     this.muted = this.readPref();
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.ctx && this.ctx.state !== 'running') {
+          this.ctx.resume().catch(() => undefined);
+        }
+      });
+    }
   }
 
   private readPref(): boolean {
@@ -28,7 +35,8 @@ class SoundEngine {
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => undefined);
+    // Check !== 'running' so iOS WebKit's 'interrupted' state recovers cleanly after calls/backgrounding
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => undefined);
     return this.ctx;
   }
 

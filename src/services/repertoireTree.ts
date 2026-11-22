@@ -61,7 +61,12 @@ export function buildRepertoireTree(
     for (let i = 0; i < line.moves.length; i++) {
       const san = line.moves[i];
       const beforeNormFen = chess.fen().split(' ').slice(0, 4).join(' ');
-      const mv = chess.move(san);
+      let mv;
+      try {
+        mv = chess.move(san);
+      } catch {
+        break;
+      }
       if (!mv) break;
 
       const isUserMove =
@@ -128,7 +133,12 @@ function formatLineMovesToPgn(line: OpeningLine): string {
   for (let i = 0; i < line.moves.length; i++) {
     const moveNum = Math.floor(i / 2) + 1;
     const isWhite = i % 2 === 0;
-    const mv = chess.move(line.moves[i]);
+    let mv;
+    try {
+      mv = chess.move(line.moves[i]);
+    } catch {
+      break;
+    }
     if (!mv) break;
     const san = mv.san;
     if (isWhite) {
