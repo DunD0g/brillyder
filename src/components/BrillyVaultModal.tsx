@@ -1,6 +1,11 @@
 import React, { useEffect } from 'react';
 import { Gem, X } from 'lucide-react';
-import type { BoardThemeId, BrillyVaultEntry, BrillyVaultStats } from '../types/chess';
+import type {
+  BoardThemeId,
+  BrillyVaultEntry,
+  BrillyVaultStats,
+  SavedPositionBookmark,
+} from '../types/chess';
 import { BrillyVaultView } from './BrillyVaultView';
 
 interface Props {
@@ -10,7 +15,10 @@ interface Props {
   stats: BrillyVaultStats;
   username: string;
   boardTheme: BoardThemeId;
+  savedPositions?: SavedPositionBookmark[];
   onOpenEntry: (entry: BrillyVaultEntry) => void;
+  onOpenBookmark?: (bookmark: SavedPositionBookmark) => void;
+  onRemoveBookmark?: (bookmarkId: string) => void;
   onOpenGames: () => void;
 }
 
@@ -21,7 +29,10 @@ export const BrillyVaultModal: React.FC<Props> = ({
   stats,
   username,
   boardTheme,
+  savedPositions = [],
   onOpenEntry,
+  onOpenBookmark,
+  onRemoveBookmark,
   onOpenGames,
 }) => {
   useEffect(() => {
@@ -83,10 +94,20 @@ export const BrillyVaultModal: React.FC<Props> = ({
             username={username}
             boardTheme={boardTheme}
             inModal
+            savedPositions={savedPositions}
             onOpenEntry={(entry) => {
               onClose();
               onOpenEntry(entry);
             }}
+            onOpenBookmark={
+              onOpenBookmark
+                ? (bm) => {
+                    onClose();
+                    onOpenBookmark(bm);
+                  }
+                : undefined
+            }
+            onRemoveBookmark={onRemoveBookmark}
             onOpenGames={() => {
               onClose();
               onOpenGames();

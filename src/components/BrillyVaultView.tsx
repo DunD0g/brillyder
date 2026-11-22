@@ -1,16 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Bookmark,
   Calendar,
+  Check,
   Filter,
   Gem,
   Orbit,
+  Share2,
   ShieldCheck,
   Sparkles,
   Swords,
+  Trash2,
   Trophy,
   UserRound,
 } from 'lucide-react';
-import type { BoardThemeId, BrillyVaultEntry, BrillyVaultStats, VaultCategory } from '../types/chess';
+import type {
+  BoardThemeId,
+  BrillyVaultEntry,
+  BrillyVaultStats,
+  SavedPositionBookmark,
+  VaultCategory,
+} from '../types/chess';
+import { shareOrDownloadCard } from '../utils/shareCard';
 import { useVibe } from '../utils/vibeCopy';
 import { MiniBoard } from './MiniBoard';
 
@@ -20,17 +31,22 @@ interface Props {
   username: string;
   boardTheme: BoardThemeId;
   inModal?: boolean;
+  savedPositions?: SavedPositionBookmark[];
   onOpenEntry: (entry: BrillyVaultEntry) => void;
+  onOpenBookmark?: (bookmark: SavedPositionBookmark) => void;
+  onRemoveBookmark?: (bookmarkId: string) => void;
   onOpenGames: () => void;
 }
 
 type Scope = 'mine' | 'opponent';
+type VaultTab = VaultCategory | 'saved';
 
-const CATEGORY_TABS: Array<{ id: VaultCategory; label: string; Icon: typeof Gem }> = [
+const CATEGORY_TABS: Array<{ id: VaultTab; label: string; Icon: typeof Gem }> = [
   { id: 'brilliant', label: '!! Brilliant', Icon: Gem },
   { id: 'clutch', label: 'Clutch Saves', Icon: ShieldCheck },
   { id: 'traps', label: 'Traps Punished', Icon: Swords },
   { id: 'clean', label: 'Clean Sweeps', Icon: Trophy },
+  { id: 'saved', label: 'Saved', Icon: Bookmark },
 ];
 
 export const BrillyVaultView: React.FC<Props> = ({
@@ -39,15 +55,19 @@ export const BrillyVaultView: React.FC<Props> = ({
   username,
   boardTheme,
   inModal = false,
+  savedPositions = [],
   onOpenEntry,
+  onOpenBookmark,
+  onRemoveBookmark,
   onOpenGames,
 }) => {
   const { copy } = useVibe();
-  const [category, setCategory] = useState<VaultCategory>('brilliant');
+  const [category, setCategory] = useState<VaultTab>('brilliant');
   const [scope, setScope] = useState<Scope>('mine');
   const [opening, setOpening] = useState('');
   const [month, setMonth] = useState('');
   const [visible, setVisible] = useState(12);
+  const [sharedId, setSharedId] = useState<string | null>(null);
 
   const categoryEntries = useMemo(
     () => entries.filter((e) => (e.category ?? 'brilliant') === category),
@@ -97,19 +117,44 @@ export const BrillyVaultView: React.FC<Props> = ({
       .sort((a, b) => (a.key < b.key ? 1 : -1));
   }, [scopeEntries]);
 
-  const countForCategory = (cat: VaultCategory) => {
+  const countForCategory = (cat: VaultTab) => {
     if (cat === 'brilliant') return stats.userMoves;
     if (cat === 'clutch') return stats.clutchSaves;
     if (cat === 'traps') return stats.trapsPunished;
+    if (cat === 'saved') return savedPositions.length;
     return stats.cleanSweeps;
   };
 
   const resetVisible = () => setVisible(12);
-  const switchCategory = (next: VaultCategory) => {
+  const switchCategory = (next: VaultTab) => {
     setCategory(next);
     setOpening('');
     setMonth('');
     resetVisible();
+  };
+
+  const handleShareEntry = (e: React.MouseEvent, entry: BrillyVaultEntry) => {
+    e.stopPropagation();
+    const moveLabel = `${entry.moveNumber}${entry.color === 'w' ? '.' : '…'} ${entry.san}`;
+    void shareOrDownloadCard({
+      title: entry.category === 'brilliant' ? `Brilliant ${moveLabel}` : `${entry.badgeText || 'Highlight'} ${moveLabel}`,
+      subtitle: entry.reason || `${entry.openingEco ? `${entry.openingEco} · ` : ''}${entry.openingName}`,
+      badgeText: entry.badgeText || '!! BRILLIANT',
+      badgeColor: entry.category === 'brilliant' ? '#2DD4BF' : '#A855F7',
+      fen: entry.afterFen,
+      orientation: entry.color,
+      lastMove: [entry.from, entry.to],
+      moveText: moveLabel,
+      whiteName: entry.color === 'w' ? entry.playerName : entry.opponentName,
+      blackName: entry.color === 'b' ? entry.playerName : entry.opponentName,
+      footerMeta: `${entry.openingEco ? `${entry.openingEco} · ` : ''}${entry.openingName} · BrillyDer`,
+      boardTheme,
+    })
+      .then(() => {
+        setSharedId(entry.id);
+        window.setTimeout(() => setSharedId((id) => (id === entry.id ? null : id)), 1600);
+      })
+      .catch(() => undefined);
   };
   const switchScope = (next: Scope) => {
     setScope(next);
@@ -177,7 +222,97 @@ export const BrillyVaultView: React.FC<Props> = ({
         </div>
       </section>
 
-      {entries.length === 0 ? (
+      {category === 'saved' ? (
+        savedPositions.length === 0 ? (
+          <section className="glass-card p-7 text-center">
+            <Bookmark className="mx-auto h-9 w-9 text-slate-600" />
+            <h2 className="mt-2 text-sm font-bold text-slate-200">No bookmarked positions yet</h2>
+            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
+              Tap the Bookmark icon on any move inside Analyze to save instructive moments here for quick review.
+            </p>
+          </section>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {savedPositions.map((bm) => (
+              <div
+                key={bm.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenBookmark?.(bm)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onOpenBookmark?.(bm);
+                  }
+                }}
+                className="glass-card glass-card-hover group flex cursor-pointer flex-col overflow-hidden text-left"
+              >
+                <div className="relative p-2 pb-0">
+                  <MiniBoard fen={bm.fen} orientation={bm.color} theme={boardTheme} />
+                  {bm.evalDisplay && (
+                    <span className="pointer-events-none absolute right-3 top-3 rounded-full border border-amber-400/40 bg-void/85 px-2 py-0.5 font-mono text-[9px] font-black text-amber-200 backdrop-blur">
+                      {bm.evalDisplay}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-1 flex-col p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-extrabold text-white">
+                      {bm.ply > 0 ? `${bm.moveNumber}${bm.color === 'w' ? '.' : '…'} ${bm.san}` : 'Position'}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void shareOrDownloadCard({
+                            title: bm.label,
+                            subtitle: `Bookmarked move ${bm.moveNumber}${bm.color === 'w' ? '.' : '…'} ${bm.san}`,
+                            badgeText: 'SAVED',
+                            badgeColor: '#F59E0B',
+                            fen: bm.fen,
+                            orientation: bm.color,
+                            evalText: bm.evalDisplay,
+                            moveText: bm.ply > 0 ? `${bm.moveNumber}${bm.color === 'w' ? '.' : '…'} ${bm.san}` : undefined,
+                            whiteName: bm.label.split(' vs ')[0] || 'White',
+                            blackName: bm.label.split(' vs ')[1] || 'Black',
+                            boardTheme,
+                          }).then(() => {
+                            setSharedId(bm.id);
+                            window.setTimeout(() => setSharedId((id) => (id === bm.id ? null : id)), 1600);
+                          }).catch(() => undefined);
+                        }}
+                        aria-label="Share position PNG card"
+                        className="rounded-lg border border-slate-800 bg-void/70 p-1 text-slate-400 hover:border-teal-400/50 hover:text-teal-200"
+                      >
+                        {sharedId === bm.id ? <Check className="h-3 w-3 text-clean" /> : <Share2 className="h-3 w-3" />}
+                      </button>
+                      {onRemoveBookmark && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRemoveBookmark(bm.id);
+                          }}
+                          aria-label="Remove bookmark"
+                          className="rounded-lg border border-slate-800 bg-void/70 p-1 text-slate-500 hover:border-rose-400/50 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-300">{bm.label}</div>
+                  <div className="mt-auto flex items-center justify-between pt-2 text-[10px] text-slate-500">
+                    <span>{new Date(bm.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <span className="font-bold text-brilly">Open position →</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : entries.length === 0 ? (
         <section className="glass-card p-7 text-center">
           <Orbit className="mx-auto h-9 w-9 text-slate-600" />
           <h2 className="mt-2 text-sm font-bold text-slate-200">The vault is waiting for its first highlight</h2>
@@ -269,11 +404,18 @@ export const BrillyVaultView: React.FC<Props> = ({
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {filtered.slice(0, visible).map((entry) => (
-                  <button
+                  <div
                     key={entry.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onOpenEntry(entry)}
-                    className="glass-card glass-card-hover group flex flex-col overflow-hidden text-left"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onOpenEntry(entry);
+                      }
+                    }}
+                    className="glass-card glass-card-hover group flex cursor-pointer flex-col overflow-hidden text-left"
                   >
                     <div className="relative p-2 pb-0">
                       <MiniBoard
@@ -324,11 +466,22 @@ export const BrillyVaultView: React.FC<Props> = ({
                           {new Date(entry.playedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
-                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-brilly opacity-80 group-hover:opacity-100">
-                        <Sparkles className="h-3 w-3" /> Replay this moment →
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brilly opacity-80 group-hover:opacity-100">
+                          <Sparkles className="h-3 w-3" /> Replay →
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleShareEntry(e, entry)}
+                          title="Share or save PNG highlight card"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-void/75 px-2 py-0.5 text-[9px] font-bold text-slate-300 transition hover:border-teal-400/50 hover:text-teal-200"
+                        >
+                          {sharedId === entry.id ? <Check className="h-2.5 w-2.5 text-clean" /> : <Share2 className="h-2.5 w-2.5" />}
+                          {sharedId === entry.id ? 'Ready' : 'Share'}
+                        </button>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
 

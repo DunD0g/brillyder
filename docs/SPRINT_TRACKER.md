@@ -169,3 +169,39 @@
 ### Verified
 - `npm test`: **17 test files, 96 tests passed** (including all 33 `starterCourses.test.ts` chess.js legality checks, `puzzleSequence.test.ts`, and `repertoireLines.test.ts`).
 - `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly with zero oversized chunk warnings.
+
+---
+
+## v2.2 — Daily-First Power Suite: Endgame Lab, Move Tree, Board Editor, Share Cards & PWA Polish
+**Status:** Completed & Verified
+
+### Information Architecture ("Daily Core Front & Center")
+- Kept **15m Daily Coach**, **Woodpecker**, **Advantage Conversion**, and **Mistake Deck** front-and-center as the primary daily improvement flow, while tucking specialty tools cleanly one tap away so they never clutter daily training:
+  - **Train → `Labs`** pill houses **Syzygy Endgame Lab**, **60s Board Vision**, and **Puzzle Rush**.
+  - **Openings → Walkthrough** keeps a clean `Line | Tree` toggle for the **Repertoire Move Tree**, plus a compact `PGN` export button beside `Import`.
+  - **Games** tucks **Board / FEN Editor** neatly next to `Paste PGN`.
+  - **Analyze** adds single-tap `Save` (Bookmark) and `Card` (PNG Share) pills beside `FEN` / `PGN`; saved positions live cleanly in **Brilly Vault → Saved** (preserving the 5-tab nav and keeping the Vault headline count strictly user `!!` moves).
+  - **Insights** renders **Scout Gameplan ("How to Beat `<opponent>`")** strictly when Scout Mode is active.
+  - **Settings** houses **Engine Depth Presets (`Fast D12 | Balanced D14→18 | Deep D18→20`)** and the **Local Maia `.onnx` Model Uploader**.
+
+### Built
+- **Phase A (`2b96a20`) — PWA Polish, Depth Presets & Local Maia ONNX:**
+  - Non-intrusive PWA `"New BrillyDer update ready · Reload"` banner (`SKIP_WAITING` + `controllerchange`) and header `Offline` badge (`public/sw.js`, `src/main.tsx`, `src/App.tsx`).
+  - Added `D12` Fast single-pass preset alongside `D14 → D18` Balanced and `D18 → D20` Deep (`analysisRunner.ts`, `AnalysisView.tsx`, `SettingsMenu.tsx`).
+  - Added Cache Storage (`brillyder-maia-models-v1`, preserved across SW cache bumps) local `.onnx` upload/remove + `ArrayBuffer` worker inference in `MaiaService.ts`, `maia.worker.ts`, and `SettingsMenu.tsx`.
+- **Phase B (`0ae0e3f`) — Syzygy Endgame Lab & 60s Board Vision:**
+  - Built `src/data/endgameDrills.ts` (+ `chess.js` & `<=7`-piece Syzygy eligibility test `endgameDrills.test.ts`) with 12 classic theoretical endgames across all 5 categories (`Pawn`, `Rook`, `Minor Piece`, `Queen`, `Rook+Minor`) plus automatic extraction of user's own `<=7`-piece game slips.
+  - Built `EndgameLabView.tsx` (Syzygy live WDL/DTZ grading, promotion picker, Stockfish fallback, persisted mastery) and `BoardVisionView.tsx` (60s Coordinate Sniper with White/Black/Flip modes, Hide Coordinates toggle, personal bests), wired under `Train → Labs` and linked directly from Insights' Endgame Weakness Tracker.
+- **Phase C (`9108893`) — Walkthrough Auto-Play, Visual Move Tree & PGN Export:**
+  - Added `Play / Pause` auto-stepping to `GuidedWalkthrough.tsx`.
+  - Built `src/services/repertoireTree.ts` (+ round-trip test `repertoireTree.test.ts` verifying all 8 starter courses export canonical PGN and re-import identically) and `RepertoireTreeView.tsx` showing branching lines with per-node FSRS Signal Strength dots.
+- **Phase D — Position/FEN Editor, Bookmarks, Shareable PNG Cards & Scout Gameplan:**
+  - Built lazy-loaded `PositionEditorModal.tsx` + `src/utils/customFen.ts` (piece palette, presets, castling/turn toggles, live `chess.js` validation, instant Analyze launch with custom-FEN support fixed in `AnalysisView.tsx`).
+  - Built `src/services/bookmarks.ts` persisted inside IndexedDB prefs + JSON backups, wired into `AnalysisView.tsx` and `BrillyVaultView.tsx` (`Saved` tab).
+  - Built pure client-side `<canvas>` PNG card renderer `src/utils/shareCard.ts` (+ `shareCard.test.ts`) with native iOS Web Share API + desktop download fallback, wired into `AnalysisView.tsx` and every card in `BrillyVaultView.tsx`.
+  - Built `src/services/scoutReport.ts` (+ `scoutReport.test.ts`) and `ScoutGameplanCard.tsx` surfacing opponent favorite openings, softest ECO targets, and clock/tilt exploits exclusively in Scout Mode.
+  - Bumped `public/sw.js` to `brillyder-v20`.
+
+### Verified
+- `npm test`: **21 test files, 102 tests passed** (including all 33 starter course SAN tests, 12 Syzygy endgame drills, 8-course PGN round-trip tests, share card tests, and scout gameplan tests).
+- `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly with lazy chunks preserved.

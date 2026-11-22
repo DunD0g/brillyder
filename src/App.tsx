@@ -21,6 +21,7 @@ import type {
   BoardThemeId,
   GamePlatform,
   LichessGameRecord,
+  SavedPositionBookmark,
   ScoutState,
 } from './types/chess';
 import type { FsrsOpeningCard, OpeningCourse, WoodpeckerCycleRecord } from './types/openings';
@@ -73,6 +74,12 @@ import {
 } from './lib/fsrsOpening';
 import { addPatchedLineToCourse } from './services/repertoireCoverage';
 import type { RepertoireDeviation } from './services/deviationDetector';
+import {
+  loadSavedPositions,
+  saveSavedPositions,
+  toggleBookmarkInList,
+} from './services/bookmarks';
+import { createCustomFenGame } from './utils/customFen';
 import { GameListView, type BatchState } from './components/GameListView';
 import type { TrainSection } from './components/MistakeTrainerView';
 import { SettingsMenu, type ExplorerPrefSettings } from './components/SettingsMenu';
@@ -94,6 +101,9 @@ const BrillyVaultModal = lazy(() =>
 );
 const GravityCheckModal = lazy(() =>
   import('./components/train/GravityCheckModal').then((m) => ({ default: m.GravityCheckModal }))
+);
+const PositionEditorModal = lazy(() =>
+  import('./components/PositionEditorModal').then((m) => ({ default: m.PositionEditorModal }))
 );
 
 const TabLoadingCard: React.FC = () => (
@@ -168,6 +178,8 @@ export const App: React.FC = () => {
   );
   const [vaultOpen, setVaultOpen] = useState(false);
   const [gravityCheckOpen, setGravityCheckOpen] = useState(false);
+  const [positionEditorOpen, setPositionEditorOpen] = useState(false);
+  const [savedPositions, setSavedPositions] = useState<SavedPositionBookmark[]>(() => loadSavedPositions());
   const [trainSection, setTrainSection] = useState<TrainSection>('daily');
   const [trainMotif, setTrainMotif] = useState<string | null>(null);
   const [trainNavToken, setTrainNavToken] = useState(0);
@@ -307,6 +319,7 @@ export const App: React.FC = () => {
     setExplorerPrefs(
       getPref<ExplorerPrefSettings>('brillyder_explorer_prefs', { ratingBand: 1400, speeds: ['blitz', 'rapid'] })
     );
+    setSavedPositions(loadSavedPositions());
     hydratedRef.current = true;
     setStorageRevision((r) => r + 1);
     for (const ag of refreshed) void saveAnalyzedGame(ag);
@@ -541,6 +554,80 @@ export const App: React.FC = () => {
 
   const closeVault = useCallback(() => setVaultOpen(false), []);
   const closeGravityCheck = useCallback(() => setGravityCheckOpen(false), []);
+  const closePositionEditor = useCallback(() => setPositionEditorOpen(false), []);
+
+  const savedBookmarkIds = useMemo(
+    () => new Set(savedPositions.map((b) => b.id)),
+    [savedPositions]
+  );
+
+  const handleToggleBookmark = useCallback(
+    (item: Omit<SavedPositionBookmark, 'id' | 'createdAt'>) => {
+      setSavedPositions((prev) => {
+        const { next, added } = toggleBookmarkInList(prev, item);
+        saveSavedPositions(next);
+        setNotice({
+          kind: 'info',
+          text: added
+            ? `Position bookmarked — view anytime in Brilly Vault → Saved.`
+            : 'Removed position bookmark.',
+        });
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleRemoveBookmark = useCallback((bookmarkId: string) => {
+    setSavedPositions((prev) => {
+      const next = prev.filter((b) => b.id !== bookmarkId);
+      saveSavedPositions(next);
+      return next;
+    });
+  }, []);
+
+  const handleAnalyzeCustomPosition = useCallback(
+    (customGame: LichessGameRecord) => {
+      setGamesByPlatform((prev) => ({
+        ...prev,
+        [platform]: [customGame, ...prev[platform].filter((g) => g.id !== customGame.id)],
+      }));
+      setSelectedGame(customGame);
+      setInitialJump(null);
+      setTab('analyze');
+      setNotice({
+        kind: 'info',
+        text: 'Custom position loaded — drag pieces in Sandbox, check Syzygy Tablebase, or play against the bot.',
+      });
+    },
+    [platform]
+  );
+
+  const handleOpenSavedBookmark = useCallback(
+    (bm: SavedPositionBookmark) => {
+      if (analyzedMap.has(bm.gameId) || games.some((g) => g.id === bm.gameId)) {
+        const found =
+          analyzedMap.get(bm.gameId)?.game ?? games.find((g) => g.id === bm.gameId) ?? null;
+        if (found) {
+          setSelectedGame(found);
+          jumpNonceRef.current += 1;
+          setInitialJump({ ply: bm.ply, nonce: jumpNonceRef.current });
+          setTab('analyze');
+          return;
+        }
+      }
+      // Fallback: open the exact bookmarked FEN directly as a custom position
+      try {
+        const synthetic = createCustomFenGame(bm.fen, bm.label);
+        setSelectedGame(synthetic);
+        setInitialJump(null);
+        setTab('analyze');
+      } catch {
+        setNotice({ kind: 'error', text: 'Could not reopen that bookmarked position.' });
+      }
+    },
+    [analyzedMap, games]
+  );
 
   const handleBackupImported = useCallback((summary: BackupImportSummary) => {
     void reloadFromIndexedDb();
@@ -1191,6 +1278,7 @@ export const App: React.FC = () => {
             onSync={(u) => void syncGames(platform, u)}
             onSelectGame={handleSelectGame}
             onImportInput={handleImportInput}
+            onOpenPositionEditor={() => setPositionEditorOpen(true)}
             onBatchAnalyze={() => void runBatchAnalysis()}
             onBatchPauseToggle={toggleBatchPause}
             onBatchCancel={cancelBatch}
@@ -1224,6 +1312,8 @@ export const App: React.FC = () => {
                   explorerPrefs={explorerPrefs}
                   onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
                   onPatchDeviationGap={handlePatchDeviationGap}
+                  savedBookmarkIds={savedBookmarkIds}
+                  onToggleBookmark={handleToggleBookmark}
                 />
               </Suspense>
             );
@@ -1349,8 +1439,22 @@ export const App: React.FC = () => {
               stats={vault.stats}
               username={username}
               boardTheme={boardTheme}
+              savedPositions={savedPositions}
               onOpenEntry={(entry) => openReviewedPly(entry.gameId, entry.ply)}
+              onOpenBookmark={handleOpenSavedBookmark}
+              onRemoveBookmark={handleRemoveBookmark}
               onOpenGames={() => setTab('games')}
+            />
+          </Suspense>
+        )}
+
+        {positionEditorOpen && (
+          <Suspense fallback={null}>
+            <PositionEditorModal
+              open={positionEditorOpen}
+              boardTheme={boardTheme}
+              onClose={closePositionEditor}
+              onAnalyzeFen={handleAnalyzeCustomPosition}
             />
           </Suspense>
         )}

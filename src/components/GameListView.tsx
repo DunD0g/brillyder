@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
+  Grid3X3,
   Layers,
   Pause,
   Play,
@@ -44,6 +45,7 @@ interface Props {
   onSync: (usernameOverride?: string) => void;
   onSelectGame: (game: LichessGameRecord, autoAnalyze: boolean) => void;
   onImportInput: (input: string) => Promise<void>;
+  onOpenPositionEditor?: () => void;
   onBatchAnalyze: () => void;
   onBatchPauseToggle: () => void;
   onBatchCancel: () => void;
@@ -62,6 +64,7 @@ export const GameListView: React.FC<Props> = ({
   onSync,
   onSelectGame,
   onImportInput,
+  onOpenPositionEditor,
   onBatchAnalyze,
   onBatchPauseToggle,
   onBatchCancel,
@@ -131,14 +134,28 @@ export const GameListView: React.FC<Props> = ({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowImport((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-2 py-1.5 text-xs font-semibold text-cyan-300"
-          >
-            <FileText className="w-3.5 h-3.5" />
-            {showImport ? 'Close' : 'Paste PGN'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenPositionEditor && (
+              <button
+                type="button"
+                onClick={onOpenPositionEditor}
+                title="Set up custom board or paste a FEN to analyze"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-teal-400/40 hover:text-teal-200"
+              >
+                <Grid3X3 className="h-3.5 w-3.5 text-brilly" />
+                <span className="hidden sm:inline">Board / FEN</span>
+                <span className="sm:hidden">FEN</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowImport((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-2 py-1.5 text-xs font-semibold text-cyan-300"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              {showImport ? 'Close' : 'Paste PGN'}
+            </button>
+          </div>
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); onSync(username); }} className="mt-2.5 space-y-2.5">

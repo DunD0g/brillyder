@@ -29,6 +29,8 @@ import { useVibe } from '../utils/vibeCopy';
 import type { TrainSection } from './MistakeTrainerView';
 import { ActivityTrendChart } from './ActivityTrendChart';
 import { TimeTroubleCard } from './TimeTroubleCard';
+import { buildScoutGameplan } from '../services/scoutReport';
+import { ScoutGameplanCard } from './ScoutGameplanCard';
 
 interface Props {
   analyzedGames: AnalyzedGame[];
@@ -81,6 +83,13 @@ export const InsightsView: React.FC<Props> = ({
   const activeUsername: UserHandleSpec = scoutActive ? scout.username : (userHandles ?? username);
   const insights = useMemo(() => computeMultiGameInsights(activeGames, activeUsername), [activeGames, activeUsername]);
   const bestGame = insights.bestGames[0] ?? null;
+  const scoutGameplan = useMemo(
+    () =>
+      scoutActive && scout && scout.games.length > 0
+        ? buildScoutGameplan(scout.username, scout.games, insights)
+        : null,
+    [scoutActive, scout, insights]
+  );
   const streakVisible = insights.currentStreak.count >= 2 && insights.currentStreak.kind !== 'none';
 
   const axes = useMemo(() => ([
@@ -249,6 +258,11 @@ export const InsightsView: React.FC<Props> = ({
         </section>
       ) : (
         <>
+          {/* Scout Mode Gameplan — shown ONLY when scouting an opponent */}
+          {scoutGameplan && (
+            <ScoutGameplanCard gameplan={scoutGameplan} onOpenGame={onOpenGame} />
+          )}
+
           {/* Tilt Guard Stop-Loss Alert */}
           {!scoutActive && insights.tiltGuard.activeWarning && (
             <section className="glass-card border-rose-400/50 bg-rose-500/[0.09] p-3.5">

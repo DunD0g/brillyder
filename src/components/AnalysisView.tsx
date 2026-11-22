@@ -3,12 +3,14 @@ import { Chess, type PieceSymbol, type Square } from 'chess.js';
 import {
   ArrowLeft,
   BarChart3,
+  Bookmark,
   Check,
   Copy,
   FlaskConical,
   Gem,
   Loader2,
   RotateCcw,
+  Share2,
   Sparkles,
   Square as StopIcon,
   X,
@@ -25,7 +27,10 @@ import {
   type MoveClassification,
   type PlayerColor,
   type RetrySession,
+  type SavedPositionBookmark,
 } from '../types/chess';
+import { buildBookmarkId } from '../services/bookmarks';
+import { shareOrDownloadCard } from '../utils/shareCard';
 import { isSacrificeMove, loadPgnSafely } from '../chess/classification';
 import { buildOpeningReport } from '../chess/openingBook';
 import type { OpeningCourse } from '../types/openings';
@@ -80,6 +85,8 @@ interface Props {
   explorerPrefs?: ExplorerPrefSettings;
   onBoostDeviationToFsrs?: (deviation: RepertoireDeviation) => Promise<void>;
   onPatchDeviationGap?: (deviation: RepertoireDeviation) => Promise<void>;
+  savedBookmarkIds?: Set<string>;
+  onToggleBookmark?: (item: Omit<SavedPositionBookmark, 'id' | 'createdAt'>) => void;
 }
 
 type BoardMode = 'bot' | 'retry' | 'sandbox';
@@ -124,19 +131,27 @@ export const AnalysisView: React.FC<Props> = ({
   explorerPrefs,
   onBoostDeviationToFsrs,
   onPatchDeviationGap,
+  savedBookmarkIds,
+  onToggleBookmark,
 }) => {
   const { vibe } = useVibe();
   const userColor = useMemo(() => resolveUserColor(game, username), [game, username]);
   const targetInitialPly = initialJump?.ply ?? initialPly ?? null;
   const jumpNonce = initialJump?.nonce ?? 0;
 
-  const rawMoves = useMemo(() => {
-    try { return loadPgnSafely(game.pgn).history({ verbose: true }); } catch { return []; }
+  const { rawMoves, pgnStartFen } = useMemo(() => {
+    try {
+      const c = loadPgnSafely(game.pgn);
+      const hist = c.history({ verbose: true });
+      return { rawMoves: hist, pgnStartFen: hist[0]?.before ?? c.fen() };
+    } catch {
+      return { rawMoves: [], pgnStartFen: START_FEN };
+    }
   }, [game.pgn]);
 
   const startFen = useMemo(
-    () => analyzed?.plies[0]?.beforeFen ?? rawMoves[0]?.before ?? START_FEN,
-    [analyzed, rawMoves]
+    () => analyzed?.plies[0]?.beforeFen ?? pgnStartFen,
+    [analyzed, pgnStartFen]
   );
 
   const [currentPlyIndex, setCurrentPlyIndex] = useState(0);
@@ -151,7 +166,7 @@ export const AnalysisView: React.FC<Props> = ({
   const [speed, setSpeed] = useState<1 | 2>(1);
   const [celebration, setCelebration] = useState<CelebrationState | null>(null);
   const [tablebase, setTablebase] = useState<TablebaseResult | null>(null);
-  const [copiedKind, setCopiedKind] = useState<'fen' | 'pgn' | null>(null);
+  const [copiedKind, setCopiedKind] = useState<'fen' | 'pgn' | 'share' | null>(null);
   const celebratedInitialRef = useRef('');
   const botGenerationRef = useRef(0);
   const retryGenerationRef = useRef(0);
@@ -1026,6 +1041,83 @@ export const AnalysisView: React.FC<Props> = ({
           >
             {copiedKind === 'pgn' ? <Check className="h-2.5 w-2.5 text-clean" /> : <Copy className="h-2.5 w-2.5" />}
             PGN
+          </button>
+          {onToggleBookmark && (() => {
+            const isSaved = Boolean(savedBookmarkIds?.has(buildBookmarkId(game.id, currentPlyIndex)));
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  const rawMv = currentPlyIndex > 0 ? rawMoves[currentPlyIndex - 1] : null;
+                  onToggleBookmark({
+                    gameId: game.id,
+                    ply: currentPlyIndex,
+                    fen: activeFen,
+                    san: currentPly?.san ?? rawMv?.san ?? 'Start',
+                    moveNumber: currentPly?.moveNumber ?? Math.max(1, Math.ceil(currentPlyIndex / 2)),
+                    color: currentPly?.color ?? (rawMv?.color ?? orientation),
+                    label: `${game.white.name} vs ${game.black.name}`,
+                    evalDisplay: activeScore.display,
+                    classification: currentPly?.classification,
+                  });
+                }}
+                className={`inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[9px] font-bold transition ${
+                  isSaved
+                    ? 'border-amber-400/50 bg-amber-500/15 text-amber-200'
+                    : 'border-slate-800 bg-hull/80 text-slate-300 hover:border-amber-400/40 hover:text-amber-200'
+                }`}
+                title={isSaved ? 'Remove position bookmark' : 'Bookmark this position into Vault → Saved'}
+                aria-label={isSaved ? 'Remove bookmark' : 'Bookmark position'}
+              >
+                <Bookmark className={`h-2.5 w-2.5 ${isSaved ? 'fill-amber-300 text-amber-300' : ''}`} />
+                <span className="hidden sm:inline">{isSaved ? 'Saved' : 'Save'}</span>
+              </button>
+            );
+          })()}
+          <button
+            type="button"
+            onClick={() => {
+              const rawMv = currentPlyIndex > 0 ? rawMoves[currentPlyIndex - 1] : null;
+              const moveLabel = currentPly
+                ? `${currentPly.moveNumber}${currentPly.color === 'w' ? '.' : '…'} ${currentPly.san}`
+                : rawMv
+                  ? `${Math.ceil(currentPlyIndex / 2)}${rawMv.color === 'w' ? '.' : '…'} ${rawMv.san}`
+                  : undefined;
+              const badge =
+                currentPly?.classification === 'brilliant'
+                  ? '!! BRILLIANT'
+                  : currentPly?.isClutchSave
+                    ? 'CLUTCH SAVE'
+                    : currentPly?.classification === 'great'
+                      ? '! GREAT'
+                      : undefined;
+              void shareOrDownloadCard({
+                title: currentPly?.coaching.headline || game.openingName || 'Chess Highlight',
+                subtitle: currentPly?.coaching.detail || `${game.openingEco ? `${game.openingEco} · ` : ''}${game.timeControlLabel}`,
+                badgeText: badge,
+                badgeColor: currentPly?.classification === 'brilliant' ? '#2DD4BF' : '#A855F7',
+                fen: activeFen,
+                orientation,
+                lastMove: currentPly ? [currentPly.from, currentPly.to] : rawMv ? [rawMv.from, rawMv.to] : undefined,
+                evalText: activeScore.display,
+                moveText: moveLabel,
+                whiteName: game.white.name,
+                blackName: game.black.name,
+                footerMeta: analyzed
+                  ? `Accuracy: White ${analyzed.whiteSummary.accuracy}% · Black ${analyzed.blackSummary.accuracy}% · BrillyDer`
+                  : 'Analyzed locally with Stockfish WASM · BrillyDer',
+                boardTheme,
+              }).then(() => {
+                setCopiedKind('share');
+                window.setTimeout(() => setCopiedKind((k) => (k === 'share' ? null : k)), 1600);
+              }).catch(() => undefined);
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-hull/80 px-1.5 py-0.5 text-[9px] font-bold text-slate-300 transition hover:border-teal-400/50 hover:text-teal-200"
+            title="Share or save PNG highlight card"
+            aria-label="Share highlight PNG card"
+          >
+            {copiedKind === 'share' ? <Check className="h-2.5 w-2.5 text-clean" /> : <Share2 className="h-2.5 w-2.5" />}
+            <span className="hidden sm:inline">Card</span>
           </button>
         </div>
       </div>
