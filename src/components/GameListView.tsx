@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { AnalyzedGame, GamePlatform, LichessGameRecord } from '../types/chess';
 import { formatTimeAgo } from '../utils/chessMath';
+import { isCustomFenGame } from '../utils/customFen';
 import { resolveUserColor } from '../utils/player';
 import { PLATFORM_META, platformLabel } from '../services/gameSource';
 
@@ -76,7 +77,7 @@ export const GameListView: React.FC<Props> = ({
   const [gameFilter, setGameFilter] = useState<'all' | 'analyzed' | 'unanalyzed' | 'brilliant' | 'losses'>('all');
   const [query, setQuery] = useState('');
 
-  const unanalyzed = useMemo(() => games.filter((g) => !analyzedMap.has(g.id) && g.variant === 'standard').length, [games, analyzedMap]);
+  const unanalyzed = useMemo(() => games.filter((g) => !analyzedMap.has(g.id) && g.variant === 'standard' && !isCustomFenGame(g)).length, [games, analyzedMap]);
 
   const filteredGames = useMemo(() => {
     const q = query.trim().toLowerCase();

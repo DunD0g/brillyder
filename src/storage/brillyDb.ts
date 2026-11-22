@@ -83,6 +83,11 @@ export interface StorageStats {
 
 let dbPromise: Promise<IDBPDatabase<BrillyDbSchema>> | null = null;
 const prefCache = new Map<string, unknown>();
+let prefWriteQueue: Promise<void> = Promise.resolve();
+
+export function flushPrefWrites(): Promise<void> {
+  return prefWriteQueue;
+}
 
 function canUseIndexedDb(): boolean {
   return typeof indexedDB !== 'undefined';
@@ -125,7 +130,12 @@ export async function getBrillyDb(): Promise<IDBPDatabase<BrillyDbSchema>> {
           db.createObjectStore('training_logs', { keyPath: 'id' });
         }
       },
-      blocking() {
+      blocking(_currentVersion, _blockedVersion, event) {
+        try {
+          (event.target as IDBDatabase | null)?.close();
+        } catch {
+          // ignore
+        }
         dbPromise = null;
       },
     }).catch((err) => {
@@ -262,8 +272,11 @@ export function setPrefSync<T>(key: string, value: T): void {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
   }
   if (canUseIndexedDb()) {
-    void getBrillyDb()
-      .then((db) => db.put('prefs', { key, value, updatedAt: Date.now() }))
+    const updatedAt = Date.now();
+    prefWriteQueue = prefWriteQueue
+      .then(() => getBrillyDb())
+      .then((db) => db.put('prefs', { key, value, updatedAt }))
+      .then(() => undefined)
       .catch(() => undefined);
   }
 }
@@ -455,6 +468,7 @@ export function validateBackupPayload(input: unknown): BrillyBackupPayload {
 }
 
 export async function exportFullBackup(): Promise<BrillyBackupPayload> {
+  await flushPrefWrites();
   const db = await getBrillyDb();
   const tx = db.transaction(
     ['analyzed_games', 'prefs', 'repertoires', 'fsrs_cards', 'woodpecker_cycles', 'training_logs'],
@@ -484,10 +498,91 @@ export async function exportFullBackup(): Promise<BrillyBackupPayload> {
   };
 }
 
+function mergePrefValue(key: string, existing: unknown, incoming: unknown): unknown {
+  if (existing === undefined) return incoming;
+  // Numeric high-score personal bests: keep max
+  if (
+    key === 'brillyder_rush_best' ||
+    key === 'brillyder_rush_survival_best' ||
+    key.startsWith('brillyder_vision_best_')
+  ) {
+    const a = typeof existing === 'number' ? existing : 0;
+    const b = typeof incoming === 'number' ? incoming : 0;
+    return Math.max(a, b);
+  }
+  // String-ID set arrays (endgame mastered IDs)
+  if (key === 'brillyder_endgame_mastered_v1' && Array.isArray(existing) && Array.isArray(incoming)) {
+    return Array.from(new Set([...existing, ...incoming].filter((x): x is string => typeof x === 'string')));
+  }
+  // Bookmarks array: union by id keeping newest createdAt
+  if (key === 'brillyder_saved_positions_v1' && Array.isArray(existing) && Array.isArray(incoming)) {
+    const byId = new Map<string, { id: string; createdAt?: number }>();
+    for (const item of [...existing, ...incoming]) {
+      if (!item || typeof item !== 'object' || typeof (item as { id?: unknown }).id !== 'string') continue;
+      const typed = item as { id: string; createdAt?: number };
+      const prev = byId.get(typed.id);
+      if (!prev || (typed.createdAt ?? 0) >= (prev.createdAt ?? 0)) byId.set(typed.id, typed);
+    }
+    return Array.from(byId.values())
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      .slice(0, 120);
+  }
+  // Mistake progress map: union per puzzleId keeping solved: a || b and max attempts/lastAt
+  if (
+    key === 'brillyder_mistake_progress' &&
+    existing &&
+    incoming &&
+    typeof existing === 'object' &&
+    typeof incoming === 'object' &&
+    !Array.isArray(existing) &&
+    !Array.isArray(incoming)
+  ) {
+    const out: Record<string, { solved?: boolean; attempts?: number; lastAt?: number }> = {
+      ...(existing as Record<string, { solved?: boolean; attempts?: number; lastAt?: number }>),
+    };
+    for (const [id, rec] of Object.entries(
+      incoming as Record<string, { solved?: boolean; attempts?: number; lastAt?: number }>
+    )) {
+      const prev = out[id];
+      if (!prev) {
+        out[id] = rec;
+      } else {
+        out[id] = {
+          ...prev,
+          ...rec,
+          solved: Boolean(prev.solved || rec.solved),
+          attempts: Math.max(prev.attempts ?? 0, rec.attempts ?? 0),
+          lastAt: Math.max(prev.lastAt ?? 0, rec.lastAt ?? 0),
+        };
+      }
+    }
+    return out;
+  }
+  // Drill streak: preserve best and most recent active day
+  if (
+    key === 'brillyder_mistake_streak' &&
+    existing &&
+    incoming &&
+    typeof existing === 'object' &&
+    typeof incoming === 'object'
+  ) {
+    const a = existing as { current?: number; best?: number; lastDate?: string };
+    const b = incoming as { current?: number; best?: number; lastDate?: string };
+    const newest = (b.lastDate ?? '') >= (a.lastDate ?? '') ? b : a;
+    return {
+      current: newest.current ?? 0,
+      best: Math.max(a.best ?? 0, b.best ?? 0),
+      lastDate: newest.lastDate ?? '',
+    };
+  }
+  return incoming;
+}
+
 export async function importFullBackup(
   rawJson: string,
   options: { mode?: 'merge' | 'replace' } = {}
 ): Promise<BackupImportSummary> {
+  await flushPrefWrites();
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawJson);
@@ -532,8 +627,19 @@ export async function importFullBackup(
   }
   for (const p of payload.stores.prefs) {
     if (p && typeof p.key === 'string') {
-      await tx.objectStore('prefs').put(p);
-      writtenPrefs.push(p);
+      let recordToWrite = p;
+      if (mode === 'merge') {
+        const existing = await tx.objectStore('prefs').get(p.key);
+        if (existing) {
+          recordToWrite = {
+            key: p.key,
+            value: mergePrefValue(p.key, existing.value, p.value),
+            updatedAt: Math.max(existing.updatedAt ?? 0, p.updatedAt ?? Date.now()),
+          };
+        }
+      }
+      await tx.objectStore('prefs').put(recordToWrite);
+      writtenPrefs.push(recordToWrite);
       prefsWritten++;
     }
   }
@@ -557,7 +663,18 @@ export async function importFullBackup(
   }
   for (const t of payload.stores.training_logs) {
     if (t && typeof t.id === 'string') {
-      await tx.objectStore('training_logs').put(t);
+      let logToWrite = t;
+      if (mode === 'merge' && t.id === 'conversion_completed') {
+        const existing = await tx.objectStore('training_logs').get(t.id);
+        const oldIds = Array.isArray(existing?.data?.ids) ? (existing.data.ids as string[]) : [];
+        const newIds = Array.isArray(t.data?.ids) ? (t.data.ids as string[]) : [];
+        logToWrite = {
+          ...t,
+          updatedAt: Math.max(existing?.updatedAt ?? 0, t.updatedAt ?? Date.now()),
+          data: { ...(existing?.data ?? {}), ...(t.data ?? {}), ids: Array.from(new Set([...oldIds, ...newIds])) },
+        };
+      }
+      await tx.objectStore('training_logs').put(logToWrite);
       logsWritten++;
     }
   }

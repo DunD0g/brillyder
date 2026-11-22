@@ -5,6 +5,7 @@ import { EngineCancelledError, stockfishService } from '../engine/StockfishServi
 import { saveAnalyzedGame } from '../storage/gameDb';
 import { computeGameProgressFraction } from '../utils/analysisProgress';
 import { getMoverWinPercent } from '../utils/chessMath';
+import { isCustomFenGame } from '../utils/customFen';
 
 const TURNING_POINT_CP_SWING = 100; // >= 1.0 pawn eval swing triggers Pass 2 deepening
 const MAX_PASS2_FENS = 28; // paired (before, after) positions capped for smooth mobile runtime
@@ -194,6 +195,8 @@ export async function analyzeGameToReview(
   }
 
   const analyzed = buildAnalyzedGame(targetGame, evals, depth, deepenedIndices);
-  if (persist) await saveAnalyzedGame(analyzed);
+  if (persist && moves.length > 0 && !isCustomFenGame(targetGame)) {
+    await saveAnalyzedGame(analyzed);
+  }
   return analyzed;
 }

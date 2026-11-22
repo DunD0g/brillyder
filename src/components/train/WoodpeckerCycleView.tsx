@@ -459,7 +459,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
           <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
               <span className="min-w-0 truncate font-bold text-slate-200">
-                Puzzle {doneInCycle + 1}/{totalInCycle} · Cycle #{activeCycle.currentCycle}
+                Puzzle {Math.min(doneInCycle + (pinnedPuzzle ? 0 : 1), totalInCycle)}/{totalInCycle} · Cycle #{activeCycle.currentCycle}
               </span>
               <button
                 type="button"

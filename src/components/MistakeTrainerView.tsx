@@ -250,7 +250,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
     if (next) selectPuzzle(next);
   };
 
-  const solve = (puzzle: MistakePuzzle, fenAfter: string, san: string, detail: string, mover?: { to: string; piece: PieceSymbol; captured?: PieceSymbol }) => {
+  const solve = (puzzle: MistakePuzzle, fenAfter: string, san: string, detail: string, mover?: { to: string; piece: PieceSymbol; captured?: PieceSymbol; promotion?: PieceSymbol }) => {
     setProgress((prev) => recordAttempt(prev, puzzle.id, true));
     setStreak(recordDrillSolve());
     if (dailyPuzzle?.id === puzzle.id) setDailyDoneDate(markDailyDone());
@@ -258,7 +258,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
     setStatus('solved');
     setFeedback(`${san} — ${detail}`);
     soundManager.playSuccess();
-    if (mover && isSacrificeMove(puzzle.beforeFen, fenAfter, puzzle.color, mover.to, mover.piece, mover.captured)) {
+    if (mover && isSacrificeMove(puzzle.beforeFen, fenAfter, puzzle.color, mover.to, mover.piece, mover.captured, mover.promotion)) {
       setCelebration({
         trigger: Date.now(),
         message:
@@ -454,7 +454,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
 
         <button
           type="button"
-          onClick={() => setSection('labs')}
+          onClick={() => { setSection('labs'); setMode('practice'); }}
           title="Specialty drills: Syzygy Endgame Lab, 60s Board Vision, Puzzle Rush"
           className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
             section === 'labs'
@@ -467,14 +467,16 @@ export const MistakeTrainerView: React.FC<Props> = ({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onOpenGravityCheck}
-        className="inline-flex items-center gap-1.5 rounded-xl border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-[11px] font-extrabold text-purple-200 transition hover:bg-purple-500/25"
-      >
-        <Rocket className="h-3.5 w-3.5 text-brilly" />{' '}
-        {copy.gravityCheckTitle.startsWith('60s') ? copy.gravityCheckTitle : `60s ${copy.gravityCheckTitle}`}
-      </button>
+      {section !== 'daily' && (
+        <button
+          type="button"
+          onClick={onOpenGravityCheck}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-purple-400/40 bg-purple-500/15 px-3 py-1.5 text-[11px] font-extrabold text-purple-200 transition hover:bg-purple-500/25"
+        >
+          <Rocket className="h-3.5 w-3.5 text-brilly" />{' '}
+          {copy.gravityCheckTitle.startsWith('60s') ? copy.gravityCheckTitle : `60s ${copy.gravityCheckTitle}`}
+        </button>
+      )}
     </div>
   );
 
@@ -515,10 +517,13 @@ export const MistakeTrainerView: React.FC<Props> = ({
             username={username}
             boardTheme={boardTheme}
             initialCategory={endgameCategoryFilter}
+            storageRevision={storageRevision}
             onOpenGame={onOpenGame}
           />
         )}
-        {labTab === 'vision' && <BoardVisionView boardTheme={boardTheme} />}
+        {labTab === 'vision' && (
+          <BoardVisionView boardTheme={boardTheme} storageRevision={storageRevision} />
+        )}
         {labTab === 'rush' && (
           deck.length === 0 ? (
             <div className="glass-card p-6 text-center">
@@ -537,6 +542,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
             <PuzzleRush
               puzzles={deck}
               boardTheme={boardTheme}
+              storageRevision={storageRevision}
               onSolved={handleRushSolved}
               onWrong={handleRushWrong}
               onExit={() => setLabTab('endgame')}
@@ -556,6 +562,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
           analyzedGames={analyzedGames}
           username={username}
           deck={deck}
+          mistakeProgress={progress}
           courses={courses}
           fsrsCards={fsrsCards}
           activeCycle={woodpeckerCycles[0] ?? null}
@@ -632,6 +639,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
         <PuzzleRush
           puzzles={deck}
           boardTheme={boardTheme}
+          storageRevision={storageRevision}
           onExit={() => setMode('practice')}
           onSolved={handleRushSolved}
           onWrong={handleRushWrong}
@@ -656,7 +664,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">
-              <Target className="h-4 w-4" /> Woodpecker deck
+              <Target className="h-4 w-4" /> Mistake Deck
             </div>
             <h1 className="mt-1 text-lg font-extrabold text-white">Train your real mistakes</h1>
             <p className="mt-0.5 text-[11px] text-slate-400">{unsolvedCount} unsolved · {solvedCount} mastered · {deck.length} total</p>

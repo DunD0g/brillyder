@@ -13,7 +13,7 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
-import type { AnalyzedGame, BoardThemeId, MistakePuzzle } from '../../types/chess';
+import type { AnalyzedGame, BoardThemeId, MistakeProgressRecord, MistakePuzzle } from '../../types/chess';
 import type {
   BoardArrow,
   FsrsOpeningCard,
@@ -53,6 +53,7 @@ interface Props {
   analyzedGames: AnalyzedGame[];
   username: UserHandleSpec;
   deck: MistakePuzzle[];
+  mistakeProgress?: Record<string, MistakeProgressRecord>;
   courses: OpeningCourse[];
   fsrsCards: FsrsOpeningCard[];
   activeCycle: WoodpeckerCycleRecord | null;
@@ -80,6 +81,7 @@ export const DailyCoachSession: React.FC<Props> = ({
   analyzedGames,
   username,
   deck,
+  mistakeProgress,
   courses,
   fsrsCards,
   activeCycle,
@@ -129,6 +131,7 @@ export const DailyCoachSession: React.FC<Props> = ({
         username,
         activeCycle,
         convertedIds,
+        mistakeProgress,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [duration, planSeed, analyzedGames.length, activeCycle?.id, username]
@@ -419,7 +422,13 @@ export const DailyCoachSession: React.FC<Props> = ({
                 <button
                   key={d}
                   type="button"
-                  onClick={() => { setDuration(d); setStage(1); setItemIndex(0); setCompletedCount(0); }}
+                  onClick={() => {
+                    setDuration(d);
+                    setStage(1);
+                    setItemIndex(0);
+                    setCompletedCount(0);
+                    setCompletedStages(new Set());
+                  }}
                   className={`rounded-lg px-2.5 py-1 font-mono text-[10px] font-black ${
                     duration === d ? 'bg-teal-400/20 text-teal-200' : 'text-slate-400'
                   }`}

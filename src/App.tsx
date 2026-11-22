@@ -79,7 +79,7 @@ import {
   saveSavedPositions,
   toggleBookmarkInList,
 } from './services/bookmarks';
-import { createCustomFenGame } from './utils/customFen';
+import { createCustomFenGame, isCustomFenGame } from './utils/customFen';
 import { GameListView, type BatchState } from './components/GameListView';
 import type { TrainSection } from './components/MistakeTrainerView';
 import { SettingsMenu, type ExplorerPrefSettings } from './components/SettingsMenu';
@@ -109,9 +109,50 @@ const PositionEditorModal = lazy(() =>
 const TabLoadingCard: React.FC = () => (
   <div className="glass-card mx-auto flex max-w-md items-center justify-center gap-2.5 p-8 text-xs font-bold text-teal-200">
     <span className="radar-sweep h-4 w-4 shrink-0" aria-hidden="true" />
-    Loading cockpit module…
+    Loading module…
   </div>
 );
+
+class LazyViewErrorBoundary extends React.Component<
+  { children: React.ReactNode; resetKey?: string },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; resetKey?: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(prevProps: { resetKey?: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="glass-card mx-auto max-w-md p-6 text-center">
+          <div className="text-sm font-extrabold text-white">Module failed to load</div>
+          <p className="mt-1 text-xs text-slate-400">
+            You may be offline or on an older cached build. Reconnect or tap Retry.
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false })}
+            className="mt-3 rounded-xl bg-gradient-to-r from-teal-400 to-cyan-300 px-3.5 py-2 text-xs font-black text-slate-950"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type ActiveTab = 'games' | 'analyze' | 'openings' | 'train' | 'insights';
 
@@ -203,18 +244,16 @@ export const App: React.FC = () => {
   const batchRunRef = useRef(0);
   const scoutCancelRef = useRef(false);
   const scoutRunRef = useRef(0);
+  const userTriggeredUpdateRef = useRef(false);
+  const batchHideTimerRef = useRef<number | null>(null);
 
   const username = usernames[platform];
   const games = gamesByPlatform[platform];
 
   useEffect(() => {
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (isIos && !isStandalone && !getPref('brillyder_ios_tip_dismissed', false)) {
-      setShowIosTip(true);
-    }
+    return () => {
+      if (batchHideTimerRef.current !== null) window.clearTimeout(batchHideTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -294,12 +333,34 @@ export const App: React.FC = () => {
     ]);
     const map = new Map<string, AnalyzedGame>();
     const refreshed: AnalyzedGame[] = [];
+    const cachedByPlatform: Record<GamePlatform, LichessGameRecord[]> = { lichess: [], chesscom: [] };
     for (const ag of cachedGames) {
       const next = refreshBrilliantClassifications(ag);
       if (next !== ag) refreshed.push(next);
       map.set(next.id, next);
+      if (!isCustomFenGame(next.game)) {
+        const gp = gamePlatformOf(next.game);
+        cachedByPlatform[gp].push(next.game);
+      }
     }
     setAnalyzedMap(map);
+    // Hydrate offline / restored games list from IndexedDB so Games tab works seamlessly offline
+    setGamesByPlatform((prev) => {
+      const mergePlatform = (gp: GamePlatform, existing: LichessGameRecord[]) => {
+        const byId = new Map<string, LichessGameRecord>();
+        for (const g of cachedByPlatform[gp]) byId.set(g.id, g);
+        for (const g of existing) {
+          if (g.source === 'sample' && cachedByPlatform[gp].length > 0) continue;
+          if (!byId.has(g.id)) byId.set(g.id, g);
+        }
+        const merged = Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
+        return merged.length > 0 ? merged : gp === 'lichess' ? SAMPLE_GAMES : [];
+      };
+      return {
+        lichess: mergePlatform('lichess', prev.lichess),
+        chesscom: mergePlatform('chesscom', prev.chesscom),
+      };
+    });
     setFsrsCards(cards);
     setCustomRepertoires(reps);
     setWoodpeckerCycles(cycles);
@@ -313,7 +374,9 @@ export const App: React.FC = () => {
     setDepthPreset(getPref<AnalysisDepthPreset>('brillyder_depth', 14));
     setMuted(soundManager.syncFromStorage());
     setVibe(getPref<VibeMode>('brillyder_vibe', 'cosmic'));
-    setMaiaEnabled(maiaService.isEnabled());
+    const nextMaia = maiaService.isEnabled();
+    setMaiaEnabled(nextMaia);
+    if (!nextMaia) maiaService.dispose();
     setBoardTheme(getStoredBoardTheme());
     setCelebrationsEnabled(getPref('brillyder_celebrations', true));
     setExplorerPrefs(
@@ -321,6 +384,16 @@ export const App: React.FC = () => {
     );
     setSavedPositions(loadSavedPositions());
     hydratedRef.current = true;
+    // Evaluate iOS Add-to-Home-Screen tip AFTER IDB hydration and never inside native Capacitor app
+    const isNative = Boolean(
+      typeof window !== 'undefined' &&
+        (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()
+    );
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone === true;
+    setShowIosTip(!isNative && isIos && !isStandalone && !getPref('brillyder_ios_tip_dismissed', false));
     setStorageRevision((r) => r + 1);
     for (const ag of refreshed) void saveAnalyzedGame(ag);
   }, []);
@@ -522,9 +595,11 @@ export const App: React.FC = () => {
     const onOffline = () => setIsOffline(true);
     const onOnline = () => setIsOffline(false);
     const onSwUpdate = () => setSwUpdateReady(true);
+    const hadController = Boolean(navigator.serviceWorker?.controller);
     let reloading = false;
     const onControllerChange = () => {
-      if (reloading) return;
+      // Never auto-reload on first-ever SW claim; only reload when an existing SW is replaced on user action
+      if (reloading || (!hadController && !userTriggeredUpdateRef.current)) return;
       reloading = true;
       window.location.reload();
     };
@@ -544,8 +619,9 @@ export const App: React.FC = () => {
   }, []);
 
   const applySwUpdate = useCallback(() => {
+    userTriggeredUpdateRef.current = true;
     const waiting = (window as { __brillyderWaitingWorker?: ServiceWorker | null }).__brillyderWaitingWorker;
-    if (waiting) {
+    if (waiting && waiting.state === 'installed') {
       waiting.postMessage({ type: 'SKIP_WAITING' });
     } else {
       window.location.reload();
@@ -563,35 +639,37 @@ export const App: React.FC = () => {
 
   const handleToggleBookmark = useCallback(
     (item: Omit<SavedPositionBookmark, 'id' | 'createdAt'>) => {
-      setSavedPositions((prev) => {
-        const { next, added } = toggleBookmarkInList(prev, item);
-        saveSavedPositions(next);
-        setNotice({
-          kind: 'info',
-          text: added
-            ? `Position bookmarked — view anytime in Brilly Vault → Saved.`
-            : 'Removed position bookmark.',
-        });
-        return next;
+      const { next, added } = toggleBookmarkInList(savedPositions, item);
+      saveSavedPositions(next);
+      setSavedPositions(next);
+      setNotice({
+        kind: 'info',
+        text: added
+          ? `Position bookmarked — view anytime in Brilly Vault → Saved.`
+          : 'Removed position bookmark.',
       });
     },
-    []
+    [savedPositions]
   );
 
-  const handleRemoveBookmark = useCallback((bookmarkId: string) => {
-    setSavedPositions((prev) => {
-      const next = prev.filter((b) => b.id !== bookmarkId);
+  const handleRemoveBookmark = useCallback(
+    (bookmarkId: string) => {
+      const next = savedPositions.filter((b) => b.id !== bookmarkId);
       saveSavedPositions(next);
-      return next;
-    });
-  }, []);
+      setSavedPositions(next);
+    },
+    [savedPositions]
+  );
 
   const handleAnalyzeCustomPosition = useCallback(
     (customGame: LichessGameRecord) => {
-      setGamesByPlatform((prev) => ({
-        ...prev,
-        [platform]: [customGame, ...prev[platform].filter((g) => g.id !== customGame.id)],
-      }));
+      if (analyzing) {
+        analysisRunRef.current += 1;
+        cancelAnalysisRef.current = true;
+        void stockfishService.cancelCurrent();
+        setAnalyzing(false);
+        setProgress(null);
+      }
       setSelectedGame(customGame);
       setInitialJump(null);
       setTab('analyze');
@@ -600,23 +678,43 @@ export const App: React.FC = () => {
         text: 'Custom position loaded — drag pieces in Sandbox, check Syzygy Tablebase, or play against the bot.',
       });
     },
-    [platform]
+    [analyzing]
   );
 
   const handleOpenSavedBookmark = useCallback(
     (bm: SavedPositionBookmark) => {
-      if (analyzedMap.has(bm.gameId) || games.some((g) => g.id === bm.gameId)) {
-        const found =
-          analyzedMap.get(bm.gameId)?.game ?? games.find((g) => g.id === bm.gameId) ?? null;
-        if (found) {
-          setSelectedGame(found);
-          jumpNonceRef.current += 1;
-          setInitialJump({ ply: bm.ply, nonce: jumpNonceRef.current });
-          setTab('analyze');
-          return;
+      if (analyzing && selectedGame?.id !== bm.gameId) {
+        analysisRunRef.current += 1;
+        cancelAnalysisRef.current = true;
+        void stockfishService.cancelCurrent();
+        setAnalyzing(false);
+        setProgress(null);
+      }
+      const allLoadedGames = [...gamesByPlatform.lichess, ...gamesByPlatform.chesscom];
+      const analyzedGame = analyzedMap.get(bm.gameId);
+      const found = analyzedGame?.game ?? allLoadedGames.find((g) => g.id === bm.gameId) ?? null;
+
+      // If this bookmark was saved from Sandbox/Bot variation (FEN diverges from mainline at bm.ply),
+      // open the exact bookmarked FEN directly instead of discarding the variation!
+      let matchesMainline = Boolean(found);
+      if (analyzedGame && bm.fen) {
+        const mainlineFen =
+          bm.ply <= 0
+            ? analyzedGame.plies[0]?.beforeFen
+            : analyzedGame.plies[bm.ply - 1]?.afterFen;
+        if (mainlineFen && mainlineFen.split(' ').slice(0, 4).join(' ') !== bm.fen.split(' ').slice(0, 4).join(' ')) {
+          matchesMainline = false;
         }
       }
-      // Fallback: open the exact bookmarked FEN directly as a custom position
+
+      if (found && matchesMainline) {
+        setSelectedGame(found);
+        jumpNonceRef.current += 1;
+        setInitialJump({ ply: bm.ply, nonce: jumpNonceRef.current });
+        setTab('analyze');
+        return;
+      }
+      // Fallback / variation bookmark: open the exact bookmarked FEN directly as a custom position
       try {
         const synthetic = createCustomFenGame(bm.fen, bm.label);
         setSelectedGame(synthetic);
@@ -626,10 +724,22 @@ export const App: React.FC = () => {
         setNotice({ kind: 'error', text: 'Could not reopen that bookmarked position.' });
       }
     },
-    [analyzedMap, games]
+    [analyzedMap, analyzing, gamesByPlatform, selectedGame?.id]
   );
 
   const handleBackupImported = useCallback((summary: BackupImportSummary) => {
+    analysisRunRef.current += 1;
+    cancelAnalysisRef.current = true;
+    batchRunRef.current += 1;
+    batchCancelRef.current = true;
+    batchPauseRef.current = false;
+    scoutRunRef.current += 1;
+    scoutCancelRef.current = true;
+    setAnalyzing(false);
+    setProgress(null);
+    setBatch(null);
+    setScout(null);
+    void stockfishService.cancelCurrent();
     void reloadFromIndexedDb();
     setNotice({
       kind: 'info',
@@ -719,21 +829,22 @@ export const App: React.FC = () => {
       setNotice({ kind: 'error', text: 'A single-game review is running. Stop it before starting a batch.' });
       return;
     }
-    abortScout();
-    await stockfishService.cancelCurrent();
     const queue = games
-      .filter((g) => g.variant === 'standard' && !analyzedMap.has(g.id))
+      .filter((g) => g.variant === 'standard' && !isCustomFenGame(g) && !analyzedMap.has(g.id))
       .slice(0, 5);
     if (queue.length === 0) {
       setNotice({ kind: 'info', text: 'All loaded games are already analyzed.' });
       return;
     }
 
+    abortScout();
     const runId = batchRunRef.current + 1;
     batchRunRef.current = runId;
     batchCancelRef.current = false;
     batchPauseRef.current = false;
     const isStale = () => batchRunRef.current !== runId || batchCancelRef.current;
+    await stockfishService.cancelCurrent();
+    if (isStale()) return;
     const waitIfPaused = async () => {
       while (batchPauseRef.current && !isStale()) await wait(160);
     };
@@ -822,7 +933,8 @@ export const App: React.FC = () => {
     batchCancelRef.current = false;
     batchPauseRef.current = false;
     setBatch((prev) => (prev ? { ...prev, active: false, paused: false, currentLabel: '', percent: 100 } : prev));
-    window.setTimeout(() => setBatch((prev) => (prev && !prev.active ? null : prev)), 900);
+    if (batchHideTimerRef.current !== null) window.clearTimeout(batchHideTimerRef.current);
+    batchHideTimerRef.current = window.setTimeout(() => setBatch((prev) => (prev && !prev.active ? null : prev)), 900);
 
     setNotice({
       kind: failed > 0 ? 'error' : 'info',
@@ -855,11 +967,12 @@ export const App: React.FC = () => {
       return;
     }
     abortBatch();
-    await stockfishService.cancelCurrent();
     scoutCancelRef.current = false;
     const runId = scoutRunRef.current + 1;
     scoutRunRef.current = runId;
     const isStale = () => scoutRunRef.current !== runId || scoutCancelRef.current;
+    await stockfishService.cancelCurrent();
+    if (isStale()) return;
     setNotice(null);
     setScout({
       username: target,
@@ -941,6 +1054,8 @@ export const App: React.FC = () => {
 
   const handlePlatformChange = useCallback((next: GamePlatform) => {
     if (next === platform) return;
+    syncRunRef.current += 1;
+    setLoadingGames(false);
     setPlatform(next);
     setSyncError(null);
     abortScout();
@@ -1291,38 +1406,40 @@ export const App: React.FC = () => {
             const scoutAnalyzed = !localAnalyzed ? scout?.games.find((g) => g.id === selectedGame.id) ?? null : null;
             const effectiveUsername = !localAnalyzed && scoutAnalyzed && scout ? scout.username : usernames;
             return (
-              <Suspense fallback={<TabLoadingCard />}>
-                <AnalysisView
-                  game={selectedGame}
-                  username={effectiveUsername}
-                  analyzed={localAnalyzed ?? scoutAnalyzed}
-                  analyzing={analyzing}
-                  progress={progress}
-                  depthPreset={depthPreset}
-                  onDepthPresetChange={handleDepthChange}
-                  onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
-                  onCancelAnalysis={cancelAnalysis}
-                  onBackToGames={() => setTab('games')}
-                  onOpenInsights={() => setTab('insights')}
-                  onOpenVault={() => setVaultOpen(true)}
-                  initialJump={initialJump}
-                  boardTheme={boardTheme}
-                  celebrationsEnabled={celebrationsEnabled}
-                  courses={allCourses}
-                  explorerPrefs={explorerPrefs}
-                  onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
-                  onPatchDeviationGap={handlePatchDeviationGap}
-                  savedBookmarkIds={savedBookmarkIds}
-                  onToggleBookmark={handleToggleBookmark}
-                />
-              </Suspense>
+              <LazyViewErrorBoundary resetKey={`${tab}:${selectedGame.id}`}>
+                <Suspense fallback={<TabLoadingCard />}>
+                  <AnalysisView
+                    game={selectedGame}
+                    username={effectiveUsername}
+                    analyzed={localAnalyzed ?? scoutAnalyzed}
+                    analyzing={analyzing}
+                    progress={progress}
+                    depthPreset={depthPreset}
+                    onDepthPresetChange={handleDepthChange}
+                    onStartAnalysis={() => void runSingleAnalysis(selectedGame, depthPreset)}
+                    onCancelAnalysis={cancelAnalysis}
+                    onBackToGames={() => setTab('games')}
+                    onOpenInsights={() => setTab('insights')}
+                    onOpenVault={() => setVaultOpen(true)}
+                    initialJump={initialJump}
+                    boardTheme={boardTheme}
+                    celebrationsEnabled={celebrationsEnabled}
+                    courses={allCourses}
+                    explorerPrefs={explorerPrefs}
+                    onBoostDeviationToFsrs={handleBoostDeviationToFsrs}
+                    onPatchDeviationGap={handlePatchDeviationGap}
+                    savedBookmarkIds={savedBookmarkIds}
+                    onToggleBookmark={handleToggleBookmark}
+                  />
+                </Suspense>
+              </LazyViewErrorBoundary>
             );
           })() : (
             <div className="glass-card mx-auto max-w-lg p-8 text-center">
               <Sparkles className="mx-auto h-9 w-9 text-cyan-300/70" />
               <h1 className="mt-2 text-base font-extrabold text-white">No game selected</h1>
               <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
-                Pick a game from Games — or open a Brilliant from the Vault — to launch the analysis cockpit.
+                Pick a game from Games — or open a Brilliant from the Vault — to review moves.
               </p>
               <button
                 type="button"
@@ -1336,70 +1453,76 @@ export const App: React.FC = () => {
         )}
 
         {tab === 'openings' && (
-          <Suspense fallback={<TabLoadingCard />}>
-            <OpeningsView
-              courses={allCourses}
-              modifiedStarterIds={modifiedStarterIds}
-              fsrsCards={fsrsCards}
-              analyzedGames={analyzedGamesList}
-              username={usernames}
-              boardTheme={boardTheme}
-              explorerPrefs={explorerPrefs}
-              onSaveCourse={handleSaveCourse}
-              onDeleteCourse={handleDeleteCourse}
-              onDeleteLine={handleDeleteLine}
-              onUnlockCards={upsertFsrsCards}
-              onCardReviewed={handleCardReviewed}
-              onOpenGame={openReviewedPly}
-            />
-          </Suspense>
+          <LazyViewErrorBoundary resetKey={tab}>
+            <Suspense fallback={<TabLoadingCard />}>
+              <OpeningsView
+                courses={allCourses}
+                modifiedStarterIds={modifiedStarterIds}
+                fsrsCards={fsrsCards}
+                analyzedGames={analyzedGamesList}
+                username={usernames}
+                boardTheme={boardTheme}
+                explorerPrefs={explorerPrefs}
+                onSaveCourse={handleSaveCourse}
+                onDeleteCourse={handleDeleteCourse}
+                onDeleteLine={handleDeleteLine}
+                onUnlockCards={upsertFsrsCards}
+                onCardReviewed={handleCardReviewed}
+                onOpenGame={openReviewedPly}
+              />
+            </Suspense>
+          </LazyViewErrorBoundary>
         )}
 
         {tab === 'train' && (
-          <Suspense fallback={<TabLoadingCard />}>
-            <MistakeTrainerView
-              analyzedGames={analyzedGamesList}
-              username={usernames}
-              boardTheme={boardTheme}
-              courses={allCourses}
-              fsrsCards={fsrsCards}
-              woodpeckerCycles={woodpeckerCycles}
-              convertedIds={convertedIds}
-              initialSection={trainSection}
-              initialMotifFilter={trainMotif}
-              navToken={trainNavToken}
-              storageRevision={storageRevision}
-              onCardReviewed={handleCardReviewed}
-              onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
-              onMarkConverted={handleMarkConverted}
-              onUnlockStarterCards={handleUnlockAllStarterCards}
-              onOpenGravityCheck={() => setGravityCheckOpen(true)}
-              onDailySessionComplete={handleDailySessionComplete}
-              onOpenGame={openReviewedPly}
-              onOpenGames={() => setTab('games')}
-            />
-          </Suspense>
+          <LazyViewErrorBoundary resetKey={tab}>
+            <Suspense fallback={<TabLoadingCard />}>
+              <MistakeTrainerView
+                analyzedGames={analyzedGamesList}
+                username={usernames}
+                boardTheme={boardTheme}
+                courses={allCourses}
+                fsrsCards={fsrsCards}
+                woodpeckerCycles={woodpeckerCycles}
+                convertedIds={convertedIds}
+                initialSection={trainSection}
+                initialMotifFilter={trainMotif}
+                navToken={trainNavToken}
+                storageRevision={storageRevision}
+                onCardReviewed={handleCardReviewed}
+                onSaveWoodpeckerCycle={handleSaveWoodpeckerCycle}
+                onMarkConverted={handleMarkConverted}
+                onUnlockStarterCards={handleUnlockAllStarterCards}
+                onOpenGravityCheck={() => setGravityCheckOpen(true)}
+                onDailySessionComplete={handleDailySessionComplete}
+                onOpenGame={openReviewedPly}
+                onOpenGames={() => setTab('games')}
+              />
+            </Suspense>
+          </LazyViewErrorBoundary>
         )}
 
         {tab === 'insights' && (
-          <Suspense fallback={<TabLoadingCard />}>
-            <InsightsView
-              analyzedGames={analyzedGamesList}
-              username={username}
-              userHandles={usernames}
-              platform={platform}
-              scout={scout}
-              onPlatformChange={handlePlatformChange}
-              onScout={(name) => void runScout(name)}
-              onCancelScout={cancelScout}
-              onClearScout={() => setScout(null)}
-              onOpenGames={() => setTab('games')}
-              onOpenOpenings={() => setTab('openings')}
-              onOpenGravityCheck={() => setGravityCheckOpen(true)}
-              onOpenTrainer={(section, motif) => openTrainerFocus(section ?? 'daily', motif)}
-              onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
-            />
-          </Suspense>
+          <LazyViewErrorBoundary resetKey={tab}>
+            <Suspense fallback={<TabLoadingCard />}>
+              <InsightsView
+                analyzedGames={analyzedGamesList}
+                username={username}
+                userHandles={usernames}
+                platform={platform}
+                scout={scout}
+                onPlatformChange={handlePlatformChange}
+                onScout={(name) => void runScout(name)}
+                onCancelScout={cancelScout}
+                onClearScout={() => setScout(null)}
+                onOpenGames={() => setTab('games')}
+                onOpenOpenings={() => setTab('openings')}
+                onOpenGravityCheck={() => setGravityCheckOpen(true)}
+                onOpenTrainer={(section, motif) => openTrainerFocus(section ?? 'daily', motif)}
+                onOpenGame={(gameId, ply) => openReviewedPly(gameId, ply)}
+              />
+            </Suspense>
+          </LazyViewErrorBoundary>
         )}
       </main>
 

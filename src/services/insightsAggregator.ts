@@ -18,6 +18,7 @@ import type {
 } from '../types/chess';
 import { clamp, computeMoveTimeSpent, parsePgnTimeControl } from '../utils/chessMath';
 import { resultForUserStrict, resolveUserColor, type UserHandleSpec } from '../utils/player';
+import { isCustomFenGame } from '../utils/customFen';
 import { classifyEndgameCategory } from '../chess/tacticalMotifs';
 import { ADVANTAGE_THRESHOLD_CP, userPerspectiveCp } from './advantageConversion';
 
@@ -186,7 +187,9 @@ function computeCheckpointSlice(games: AnalyzedGame[], username: UserHandleSpec)
   };
 }
 
-export function computeMultiGameInsights(games: AnalyzedGame[], username: UserHandleSpec): MultiGameInsights {
+export function computeMultiGameInsights(rawGames: AnalyzedGame[], username: UserHandleSpec): MultiGameInsights {
+  // Exclude 0-ply custom FEN sandbox positions so they never skew accuracy, trends, or worst-opening stats
+  const games = rawGames.filter((ag) => ag.plies.length > 0 && !isCustomFenGame(ag.game));
   if (games.length === 0) {
     return {
       gamesCount: 0,

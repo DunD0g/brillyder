@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Eye, EyeOff, Play, RotateCcw, Trophy } from 'lucide-react';
+import { Crosshair, Eye, EyeOff, Play, RotateCcw, Square as StopIcon, Trophy } from 'lucide-react';
 import { BOARD_THEME_LIST, BOARD_THEMES } from '../../chess/boardThemes';
 import type { BoardThemeId } from '../../types/chess';
 import { getPref, setPref } from '../../storage/gameDb';
@@ -7,6 +7,7 @@ import { soundManager } from '../../utils/sound';
 
 interface Props {
   boardTheme: BoardThemeId;
+  storageRevision?: number;
 }
 
 type PerspectiveMode = 'white' | 'black' | 'mixed';
@@ -30,7 +31,7 @@ function bestPrefKey(mode: PerspectiveMode): string {
   return `brillyder_vision_best_${mode}`;
 }
 
-export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
+export const BoardVisionView: React.FC<Props> = ({ boardTheme, storageRevision = 0 }) => {
   const palette = BOARD_THEMES[boardTheme] ?? BOARD_THEME_LIST[0];
   const [perspective, setPerspective] = useState<PerspectiveMode>('white');
   const [hideCoords, setHideCoords] = useState(true);
@@ -49,38 +50,41 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
   );
 
   const flashTimerRef = useRef<number | null>(null);
+  const endsAtRef = useRef<number>(0);
+  const scoreRef = useRef<number>(0);
+  const perspectiveRef = useRef<PerspectiveMode>(perspective);
+  perspectiveRef.current = perspective;
 
   useEffect(() => {
     setPersonalBest(getPref<number>(bestPrefKey(perspective), 0));
     if (!running) {
       setOrientation(perspective === 'black' ? 'black' : 'white');
     }
-  }, [perspective, running]);
+  }, [perspective, running, storageRevision]);
 
   useEffect(() => {
     if (!running) return;
-    const id = window.setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(id);
-          setRunning(false);
-          setFinished(true);
-          return 0;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        setRunning(false);
+        setFinished(true);
+        const key = bestPrefKey(perspectiveRef.current);
+        const existingBest = getPref<number>(key, 0);
+        const finalScore = scoreRef.current;
+        if (finalScore > existingBest) {
+          setPref(key, finalScore);
+          setPersonalBest(finalScore);
+          soundManager.playBrilliantChord();
+        } else {
+          setPersonalBest(existingBest);
         }
-        return prev - 1;
-      });
-    }, 1000);
+      }
+    };
+    const id = window.setInterval(tick, 200);
     return () => window.clearInterval(id);
   }, [running]);
-
-  useEffect(() => {
-    if (!finished) return;
-    if (score > personalBest) {
-      setPersonalBest(score);
-      setPref(bestPrefKey(perspective), score);
-      soundManager.playBrilliantChord();
-    }
-  }, [finished, score, personalBest, perspective]);
 
   useEffect(() => {
     return () => {
@@ -88,12 +92,27 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
     };
   }, []);
 
-  const startSession = () => {
+  const switchPerspective = (mode: PerspectiveMode) => {
+    if (running || mode === perspective) return;
+    setPerspective(mode);
+    setFinished(false);
     setScore(0);
+    scoreRef.current = 0;
     setMisses(0);
     setStreak(0);
     setBestStreak(0);
     setTimeLeft(DURATION_SECONDS);
+    setFlash(null);
+  };
+
+  const startSession = () => {
+    setScore(0);
+    scoreRef.current = 0;
+    setMisses(0);
+    setStreak(0);
+    setBestStreak(0);
+    setTimeLeft(DURATION_SECONDS);
+    endsAtRef.current = Date.now() + DURATION_SECONDS * 1000;
     setFinished(false);
     setRunning(true);
     setFlash(null);
@@ -107,6 +126,13 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
     setTarget(randomSquare());
   };
 
+  const stopSession = () => {
+    setRunning(false);
+    setFinished(false);
+    setTimeLeft(DURATION_SECONDS);
+    setFlash(null);
+  };
+
   const handleSquareTap = (sq: string) => {
     if (!running) return;
     const ok = sq === target;
@@ -116,12 +142,12 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
 
     if (ok) {
       soundManager.playSonarPing();
-      setScore((s) => s + 1);
-      setStreak((st) => {
-        const next = st + 1;
-        setBestStreak((b) => Math.max(b, next));
-        return next;
-      });
+      const nextScore = scoreRef.current + 1;
+      scoreRef.current = nextScore;
+      setScore(nextScore);
+      const nextStreak = streak + 1;
+      setStreak(nextStreak);
+      setBestStreak((b) => Math.max(b, nextStreak));
       setTarget((prev) => randomSquare(prev));
       if (perspective === 'mixed') {
         setOrientation(Math.random() < 0.5 ? 'white' : 'black');
@@ -160,6 +186,16 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
             <span className={timeLeft <= 10 && running ? 'text-rose-400' : 'text-slate-300'}>
               {timeLeft}s
             </span>
+            {running && (
+              <button
+                type="button"
+                onClick={stopSession}
+                aria-label="Stop drill"
+                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-200 hover:bg-rose-500/25"
+              >
+                <StopIcon className="h-2.5 w-2.5" /> Stop
+              </button>
+            )}
           </div>
         </div>
 
@@ -184,9 +220,9 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
         </div>
 
         {/* Interactive 8x8 Coordinate Board */}
-        <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-22rem))] lg:max-w-none">
+        <div className="relative mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-22rem)))] lg:max-w-none">
           <div
-            className="grid aspect-square w-full grid-cols-8 overflow-hidden rounded-xl border border-slate-700/80 shadow-xl"
+            className="grid aspect-square w-full grid-cols-8 grid-rows-8 overflow-hidden rounded-xl border border-slate-700/80 shadow-xl"
             style={{ touchAction: 'manipulation' }}
           >
             {displayRanks.map((rank, rIdx) =>
@@ -211,7 +247,7 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
                     onClick={() => handleSquareTap(sq)}
                     aria-label={sq}
                     style={{ backgroundColor: bg }}
-                    className="relative flex aspect-square items-center justify-center transition-colors duration-100 active:brightness-110"
+                    className="relative flex min-h-0 min-w-0 aspect-square items-center justify-center transition-colors duration-100 active:brightness-110"
                   >
                     {showRankLabel && (
                       <span
@@ -286,8 +322,8 @@ export const BoardVisionView: React.FC<Props> = ({ boardTheme }) => {
                 key={mode}
                 type="button"
                 disabled={running}
-                onClick={() => setPerspective(mode)}
-                className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold capitalize transition disabled:opacity-50 ${
+                onClick={() => switchPerspective(mode)}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold capitalize transition disabled:opacity-50 ${
                   perspective === mode
                     ? 'border-teal-400/50 bg-teal-400/15 text-teal-200'
                     : 'border-slate-800 bg-void/60 text-slate-400 hover:border-slate-600'

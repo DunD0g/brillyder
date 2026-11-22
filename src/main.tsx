@@ -6,10 +6,15 @@ import './index.css';
 declare global {
   interface Window {
     __brillyderWaitingWorker?: ServiceWorker | null;
+    Capacitor?: { isNativePlatform?: () => boolean };
   }
 }
 
-if ('serviceWorker' in navigator) {
+const isNativeApp = Boolean(
+  typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
+);
+
+if (!isNativeApp && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     const notifyUpdate = (worker: ServiceWorker | null) => {
       if (!worker) return;
@@ -31,6 +36,13 @@ if ('serviceWorker' in navigator) {
               notifyUpdate(reg.waiting ?? installing);
             }
           });
+        });
+
+        // Standalone iOS PWAs can stay suspended for days — check for updates when returning to foreground
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            reg.update().catch(() => undefined);
+          }
         });
       })
       .catch(() => undefined);

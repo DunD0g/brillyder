@@ -3,6 +3,7 @@ import type { AnalyzedGame, PlayerColor } from '../types/chess';
 import type { OpeningCourse, Side } from '../types/openings';
 import { buildOpeningCardId, normalizeFenKey } from '../lib/fsrsOpening';
 import { resolveUserColor, resultForUserStrict, type UserHandleSpec } from '../utils/player';
+import { isCustomFenGame } from '../utils/customFen';
 
 export interface RepertoireMoveTarget {
   courseId: string;
@@ -282,6 +283,7 @@ export function buildOpeningReportCards(
   >();
 
   for (const ag of analyzedGames) {
+    if (ag.plies.length === 0 || isCustomFenGame(ag.game)) continue;
     const uc = resolveUserColor(ag.game, username);
     const result = resultForUserStrict(ag.game, uc);
     const sum = uc === 'w' ? ag.whiteSummary : ag.blackSummary;

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brillyder-v21';
+const CACHE_NAME = 'brillyder-v22';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -13,7 +13,7 @@ const CORE_ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS).catch(() => undefined))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
   );
 });
 
@@ -25,7 +25,8 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
+    caches
+      .keys()
       .then((keys) =>
         Promise.all(
           keys
@@ -43,20 +44,48 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Never cache huge optional ONNX runtime WASM in SW cache (avoids iOS Safari QuotaExceededError)
+  if (url.pathname.includes('ort-wasm')) return;
+
   if (url.pathname.endsWith('stockfish.wasm') || url.pathname.endsWith('stockfish.js')) {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request).then((res) => {
-        if (res.ok) caches.open(CACHE_NAME).then((c) => c.put(request, res.clone()));
-        return res;
-      }))
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              event.waitUntil(
+                caches.open(CACHE_NAME).then((c) => c.put(request, copy)).catch(() => undefined)
+              );
+            }
+            return res;
+          })
+      )
     );
     return;
   }
 
   event.respondWith(
-    fetch(request).then((res) => {
-      if (res.ok) caches.open(CACHE_NAME).then((c) => c.put(request, res.clone()));
-      return res;
-    }).catch(() => caches.match(request).then((c) => c || caches.match('./index.html')))
+    fetch(request)
+      .then((res) => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          event.waitUntil(
+            caches.open(CACHE_NAME).then((c) => c.put(request, copy)).catch(() => undefined)
+          );
+        }
+        return res;
+      })
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        // Only fall back to index.html for top-level document navigations — never return HTML for .js/.css modules!
+        if (request.mode === 'navigate') {
+          const shell = await caches.match('./index.html');
+          if (shell) return shell;
+        }
+        return new Response('Offline', { status: 503, statusText: 'Offline' });
+      })
   );
 });

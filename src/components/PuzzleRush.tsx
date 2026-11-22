@@ -24,6 +24,7 @@ import { ChessgroundBoard } from './ChessgroundBoard';
 interface Props {
   puzzles: MistakePuzzle[];
   boardTheme: BoardThemeId;
+  storageRevision?: number;
   onExit: () => void;
   onSolved: (puzzle: MistakePuzzle) => void;
   onWrong: (puzzle: MistakePuzzle) => void;
@@ -50,7 +51,7 @@ function formatClock(seconds: number): string {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
-export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSolved, onWrong, onFinished }) => {
+export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, storageRevision = 0, onExit, onSolved, onWrong, onFinished }) => {
   const [rushMode, setRushMode] = useState<PuzzleRushMode>('blitz');
   const [phase, setPhase] = useState<RushPhase>('ready');
   const [queue, setQueue] = useState<MistakePuzzle[]>([]);
@@ -79,7 +80,7 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
 
   useEffect(() => {
     setBest(loadRushBest(rushMode));
-  }, [rushMode]);
+  }, [rushMode, storageRevision]);
 
   const clearAdvanceTimer = () => {
     if (advanceTimerRef.current) {
