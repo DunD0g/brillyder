@@ -3,7 +3,10 @@ import {
   BarChart2,
   BookOpen,
   BookPlus,
+  Check,
   Compass,
+  Download,
+  GitBranch,
   Layers,
   Orbit,
   Pencil,
@@ -18,11 +21,13 @@ import type { FsrsOpeningCard, OpeningCourse, OpeningLine, Side } from '../types
 import { hydrateCourseCards, hydrateLineCards, isCardDue } from '../lib/fsrsOpening';
 import { addPatchedLineToCourse, type RepertoireGap } from '../services/repertoireCoverage';
 import { removeLineFromCourse, upsertLineInCourse } from '../services/repertoireLines';
+import { exportCourseToPgn } from '../services/repertoireTree';
 import { useVibe } from '../utils/vibeCopy';
 import type { UserHandleSpec } from '../utils/player';
 import type { ExplorerPrefSettings } from './SettingsMenu';
 import { MothershipCard } from './openings/MothershipCard';
 import { GuidedWalkthrough } from './openings/GuidedWalkthrough';
+import { RepertoireTreeView } from './openings/RepertoireTreeView';
 import { LineEditorPanel } from './openings/LineEditorPanel';
 import { OpeningDrillView } from './openings/OpeningDrillView';
 import { CoverageGapPanel } from './openings/CoverageGapPanel';
@@ -72,6 +77,8 @@ export const OpeningsView: React.FC<Props> = ({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [lineEditorMode, setLineEditorMode] = useState<'closed' | 'add' | 'edit'>('closed');
   const [confirmDeleteLineId, setConfirmDeleteLineId] = useState<string | null>(null);
+  const [walkthroughMode, setWalkthroughMode] = useState<'steps' | 'tree'>('steps');
+  const [exportedPgn, setExportedPgn] = useState(false);
 
   const sideCourses = useMemo(
     () => courses.filter((c) => c.side === side),
@@ -179,6 +186,22 @@ export const OpeningsView: React.FC<Props> = ({
     }
   };
 
+  const handleExportCoursePgn = () => {
+    if (!selectedCourse) return;
+    const pgn = exportCourseToPgn(selectedCourse);
+    const blob = new Blob([pgn], { type: 'application/x-chess-pgn;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedCourse.id}.pgn`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setExportedPgn(true);
+    window.setTimeout(() => setExportedPgn(false), 1800);
+  };
+
   return (
     <div className="space-y-3 pb-24">
       {/* Studio Header */}
@@ -219,8 +242,20 @@ export const OpeningsView: React.FC<Props> = ({
               onClick={() => setImportOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-xl border border-teal-400/35 bg-teal-400/10 px-3 py-1.5 text-[11px] font-bold text-teal-200 transition hover:bg-teal-400/20"
             >
-              <BookPlus className="h-3.5 w-3.5" /> Import PGN / Study
+              <BookPlus className="h-3.5 w-3.5" /> Import
             </button>
+
+            {selectedCourse && (
+              <button
+                type="button"
+                onClick={handleExportCoursePgn}
+                title={`Export ${selectedCourse.name} as multi-chapter PGN`}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-800 bg-void/70 px-2.5 py-1.5 text-[11px] font-bold text-slate-300 transition hover:border-slate-600 hover:text-white"
+              >
+                {exportedPgn ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Download className="h-3.5 w-3.5 text-slate-400" />}
+                <span className="hidden sm:inline">{exportedPgn ? 'Exported' : 'PGN'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -392,6 +427,26 @@ export const OpeningsView: React.FC<Props> = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
+              <div className="inline-flex rounded-xl border border-slate-800 bg-void/70 p-0.5 text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setWalkthroughMode('steps')}
+                  className={`rounded-lg px-2 py-1 transition ${
+                    walkthroughMode === 'steps' ? 'bg-teal-400/20 text-teal-200' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Line
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWalkthroughMode('tree')}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
+                    walkthroughMode === 'tree' ? 'bg-teal-400/20 text-teal-200' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <GitBranch className="h-3 w-3" /> Tree
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -456,18 +511,35 @@ export const OpeningsView: React.FC<Props> = ({
             />
           )}
 
-          {selectedLine && (
-            <GuidedWalkthrough
+          {walkthroughMode === 'tree' ? (
+            <RepertoireTreeView
               course={selectedCourse}
-              line={selectedLine}
+              cards={fsrsCards}
               boardTheme={boardTheme}
-              unlocked={isLineUnlocked(selectedCourse, selectedLine)}
-              onUnlockLine={(l) => void handleUnlockLine(l)}
-              onStartDrillForLine={(l) => {
-                setDrillFocusLineId(l.id);
+              onOpenLineWalkthrough={(lineId) => {
+                setSelectedLineId(lineId);
+                setWalkthroughMode('steps');
+              }}
+              onDrillLine={(lineId) => {
+                setSelectedLineId(lineId);
+                setDrillFocusLineId(lineId);
                 setSubTab('drill');
               }}
             />
+          ) : (
+            selectedLine && (
+              <GuidedWalkthrough
+                course={selectedCourse}
+                line={selectedLine}
+                boardTheme={boardTheme}
+                unlocked={isLineUnlocked(selectedCourse, selectedLine)}
+                onUnlockLine={(l) => void handleUnlockLine(l)}
+                onStartDrillForLine={(l) => {
+                  setDrillFocusLineId(l.id);
+                  setSubTab('drill');
+                }}
+              />
+            )
           )}
         </div>
       )}

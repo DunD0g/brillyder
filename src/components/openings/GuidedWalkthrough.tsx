@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LockOpen,
+  Pause,
   Play,
   RotateCcw,
   Sparkles,
@@ -44,6 +45,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
 }) => {
   const { vibe } = useVibe();
   const [step, setStep] = useState(0);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [trapPlayback, setTrapPlayback] = useState<TrapPlayback | null>(null);
   const timersRef = useRef<number[]>([]);
 
@@ -55,6 +57,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
   useEffect(() => {
     clearTimers();
     setStep(0);
+    setAutoPlay(false);
     setTrapPlayback(null);
     return clearTimers;
   }, [line.id]);
@@ -84,13 +87,31 @@ export const GuidedWalkthrough: React.FC<Props> = ({
   const atEnd = step >= line.moves.length;
   const orientation = course.side === 'white' ? 'w' : 'b';
 
-  const stepTo = (next: number) => {
+  const stepTo = (next: number, keepAutoPlay = false) => {
     clearTimers();
+    if (!keepAutoPlay) setAutoPlay(false);
     setTrapPlayback(null);
     const clamped = Math.max(0, Math.min(line.moves.length, next));
     setStep(clamped);
     if (clamped > step) soundManager.playMove();
   };
+
+  useEffect(() => {
+    if (!autoPlay) return;
+    if (trapPlayback || step >= line.moves.length) {
+      setAutoPlay(false);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      setStep((prev) => {
+        const next = Math.min(line.moves.length, prev + 1);
+        if (next > prev) soundManager.playMove();
+        if (next >= line.moves.length) setAutoPlay(false);
+        return next;
+      });
+    }, 1150);
+    return () => window.clearTimeout(id);
+  }, [autoPlay, step, line.moves.length, trapPlayback]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -214,6 +235,28 @@ export const GuidedWalkthrough: React.FC<Props> = ({
             aria-label="Back to start"
           >
             <RotateCcw className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearTimers();
+              setTrapPlayback(null);
+              if (!autoPlay && atEnd) {
+                setStep(0);
+                setAutoPlay(true);
+              } else {
+                setAutoPlay((p) => !p);
+              }
+            }}
+            className={`rounded-xl border p-2.5 transition active:scale-95 ${
+              autoPlay
+                ? 'border-purple-400/50 bg-purple-500/20 text-purple-200'
+                : 'border-slate-800 bg-void/70 text-slate-300 hover:border-slate-600'
+            }`}
+            aria-label={autoPlay ? 'Pause auto-play' : 'Auto-play walkthrough'}
+            title={autoPlay ? 'Pause auto-play' : 'Auto-play moves'}
+          >
+            {autoPlay ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </button>
           <button
             type="button"
