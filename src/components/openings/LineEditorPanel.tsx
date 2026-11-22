@@ -118,7 +118,7 @@ export const LineEditorPanel: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-[1fr_92px]">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_92px]">
         <input
           type="text"
           value={title}

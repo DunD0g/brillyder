@@ -308,14 +308,14 @@ export const AdvantageConversionView: React.FC<Props> = ({
       )}
 
       {activePos && (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-          <div className="glass-card glass-card-strong p-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+          <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
-              <span className="truncate font-bold text-slate-200">
+              <span className="min-w-0 truncate font-bold text-slate-200">
                 Move {activePos.moveNumber} vs {activePos.opponentName}
               </span>
               <span
-                className={`font-mono font-black ${
+                className={`shrink-0 font-mono font-black ${
                   verdict === 'won'
                     ? 'text-clean'
                     : verdict === 'slipping'
@@ -340,7 +340,7 @@ export const AdvantageConversionView: React.FC<Props> = ({
               />
             </div>
 
-            <div className="relative">
+            <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
               <ChessgroundBoard
                 fen={fen || activePos.fen}
                 orientation={activePos.userColor}
@@ -360,7 +360,7 @@ export const AdvantageConversionView: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="glass-card p-4 space-y-3">
+          <div className="min-w-0 glass-card p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-white">
                 <Bot className="h-4 w-4 text-brilly" /> Conversion Cockpit

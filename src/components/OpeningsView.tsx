@@ -225,7 +225,7 @@ export const OpeningsView: React.FC<Props> = ({
         </div>
 
         {/* Course Selector Strip */}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
           {sideCourses.map((course) => {
             const active = selectedCourse?.id === course.id;
             const courseCards = hydrateCourseCards(course, cardMap);
@@ -248,7 +248,7 @@ export const OpeningsView: React.FC<Props> = ({
                     setConfirmDeleteLineId(null);
                   }
                 }}
-                className={`group relative cursor-pointer rounded-xl border p-2.5 text-left transition ${
+                className={`group relative min-w-0 cursor-pointer rounded-xl border p-2.5 text-left transition active:scale-[0.98] ${
                   active
                     ? 'border-teal-400/60 bg-teal-400/12 shadow-lg shadow-teal-500/10'
                     : 'border-slate-800 bg-void/55 hover:border-slate-600'
@@ -363,33 +363,35 @@ export const OpeningsView: React.FC<Props> = ({
 
       {selectedCourse && subTab === 'walkthrough' && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {selectedCourse.lines.map((line) => {
-              const active = selectedLine?.id === line.id;
-              const unlocked = isLineUnlocked(selectedCourse, line);
-              return (
-                <button
-                  key={line.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedLineId(line.id);
-                    setLineEditorMode('closed');
-                    setConfirmDeleteLineId(null);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
-                    active
-                      ? 'border-teal-400/55 bg-teal-400/15 text-teal-100'
-                      : 'border-slate-800 bg-hull/70 text-slate-400 hover:border-slate-600 hover:text-slate-200'
-                  }`}
-                >
-                  {line.eco && <span className="font-mono text-[9px] text-slate-500">{line.eco}</span>}
-                  <span>{line.title}</span>
-                  {unlocked && <span className="h-1.5 w-1.5 rounded-full bg-clean" />}
-                </button>
-              );
-            })}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1 nice-scroll sm:flex-wrap sm:overflow-visible sm:pb-0">
+              {selectedCourse.lines.map((line) => {
+                const active = selectedLine?.id === line.id;
+                const unlocked = isLineUnlocked(selectedCourse, line);
+                return (
+                  <button
+                    key={line.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLineId(line.id);
+                      setLineEditorMode('closed');
+                      setConfirmDeleteLineId(null);
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition active:scale-[0.98] ${
+                      active
+                        ? 'border-teal-400/55 bg-teal-400/15 text-teal-100'
+                        : 'border-slate-800 bg-hull/70 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                    }`}
+                  >
+                    {line.eco && <span className="font-mono text-[9px] text-slate-500">{line.eco}</span>}
+                    <span>{line.title}</span>
+                    {unlocked && <span className="h-1.5 w-1.5 rounded-full bg-clean" />}
+                  </button>
+                );
+              })}
+            </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
               <button
                 type="button"
                 onClick={() => {
@@ -420,7 +422,7 @@ export const OpeningsView: React.FC<Props> = ({
                       onClick={() => void handleConfirmDeleteLine(selectedLine.id)}
                       className="rounded-lg border border-rose-500/50 bg-rose-500/20 px-2 py-1 text-[10px] font-extrabold text-rose-200 hover:bg-rose-500/30"
                     >
-                      Remove line
+                      Remove
                     </button>
                     <button
                       type="button"

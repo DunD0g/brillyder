@@ -513,31 +513,33 @@ export const DailyCoachSession: React.FC<Props> = ({
         </section>
       ) : stage === 1 ? (
         activeStage1Card ? (
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-            <div className="glass-card glass-card-strong p-3">
-              <div className="mb-2 flex items-center justify-between text-[10px]">
-                <span className="inline-flex items-center gap-1 font-bold text-purple-200">
-                  <Orbit className="h-3.5 w-3.5" /> Stage 1 · Opening {itemIndex + 1}/{plan.stage1Cards.length}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+            <div className="min-w-0 glass-card glass-card-strong p-3">
+              <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
+                <span className="inline-flex min-w-0 items-center gap-1 truncate font-bold text-purple-200">
+                  <Orbit className="h-3.5 w-3.5 shrink-0" /> Stage 1 · Opening {itemIndex + 1}/{plan.stage1Cards.length}
                 </span>
-                <span className="font-mono text-brilly">
+                <span className="shrink-0 font-mono text-brilly">
                   {activeStage1Card.attempts > 0 ? copy.recallProbability(getRecallProbability(activeStage1Card)) : 'Due'}
                 </span>
               </div>
-              <ChessgroundBoard
-                fen={fen || activeStage1Card.fen}
-                orientation={activeStage1Card.side === 'white' ? 'w' : 'b'}
-                lastMove={lastMove}
-                interactive={status !== 'solved'}
-                turnColor={activeStage1Card.side === 'white' ? 'w' : 'b'}
-                showBestArrow={false}
-                showPlayedArrow={false}
-                customArrows={customArrows}
-                theme={boardTheme}
-                onUserMove={(from, to) => void handleStage1Move(from, to)}
-              />
+              <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+                <ChessgroundBoard
+                  fen={fen || activeStage1Card.fen}
+                  orientation={activeStage1Card.side === 'white' ? 'w' : 'b'}
+                  lastMove={lastMove}
+                  interactive={status !== 'solved'}
+                  turnColor={activeStage1Card.side === 'white' ? 'w' : 'b'}
+                  showBestArrow={false}
+                  showPlayedArrow={false}
+                  customArrows={customArrows}
+                  theme={boardTheme}
+                  onUserMove={(from, to) => void handleStage1Move(from, to)}
+                />
+              </div>
             </div>
 
-            <div className="glass-card p-4 space-y-3">
+            <div className="min-w-0 glass-card p-4 space-y-3">
               <div className="text-[10px] font-black uppercase tracking-[0.16em] text-purple-300">
                 Stage 1: Due Opening FSRS
               </div>
@@ -626,10 +628,10 @@ export const DailyCoachSession: React.FC<Props> = ({
           />
         </div>
       ) : activePuzzle ? (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-          <div className="glass-card glass-card-strong p-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+          <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
-              <span className="font-bold text-slate-200">
+              <span className="min-w-0 truncate font-bold text-slate-200">
                 Stage {stage} · {stage === 2 ? 'Blunder Rewind' : stage === 3 ? 'Frozen Woodpecker' : plan.stage4FocusLabel} ({itemIndex + 1}/
                 {stage === 2 ? stageCounts.s2 : stage === 3 ? stageCounts.s3 : stageCounts.s4})
               </span>
@@ -641,7 +643,7 @@ export const DailyCoachSession: React.FC<Props> = ({
                     setRadarPingEnabled(next);
                     if (!next) setRadarCleared(true);
                   }}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
                     radarPingEnabled ? 'border-teal-400/45 bg-teal-400/15 text-teal-200' : 'border-slate-700 text-slate-400'
                   }`}
                 >
@@ -650,23 +652,25 @@ export const DailyCoachSession: React.FC<Props> = ({
               )}
             </div>
 
-            <ChessgroundBoard
-              fen={fen || activePuzzle.beforeFen}
-              orientation={activePuzzle.color}
-              lastMove={lastMove}
-              interactive={status === 'idle' && (stage !== 2 || !radarPingEnabled || radarCleared)}
-              turnColor={activePuzzle.color}
-              showBestArrow={false}
-              showPlayedArrow={false}
-              customArrows={customArrows}
-              squareHighlights={radarHighlights}
-              theme={boardTheme}
-              onSquareClick={stage === 2 && radarPingEnabled && !radarCleared ? handleRadarTap : undefined}
-              onUserMove={(from, to) => void handlePuzzleMove(from, to)}
-            />
+            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+              <ChessgroundBoard
+                fen={fen || activePuzzle.beforeFen}
+                orientation={activePuzzle.color}
+                lastMove={lastMove}
+                interactive={status === 'idle' && (stage !== 2 || !radarPingEnabled || radarCleared)}
+                turnColor={activePuzzle.color}
+                showBestArrow={false}
+                showPlayedArrow={false}
+                customArrows={customArrows}
+                squareHighlights={radarHighlights}
+                theme={boardTheme}
+                onSquareClick={stage === 2 && radarPingEnabled && !radarCleared ? handleRadarTap : undefined}
+                onUserMove={(from, to) => void handlePuzzleMove(from, to)}
+              />
+            </div>
           </div>
 
-          <div className="glass-card p-4 space-y-3">
+          <div className="min-w-0 glass-card p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1 rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">

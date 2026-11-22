@@ -406,7 +406,7 @@ export const PuzzleRush: React.FC<Props> = ({ puzzles, boardTheme, onExit, onSol
     <div className="space-y-3 pb-24">
       {rushHeader}
 
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">
         <section className="min-w-0">
           <div className="mx-auto w-full lg:max-w-[calc(100dvh-23rem)]">
             {current && (

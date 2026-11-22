@@ -586,8 +586,8 @@ export const OpeningDrillView: React.FC<Props> = ({
       </div>
 
       {drillMode === 'sparring' ? (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-          <div className="glass-card glass-card-strong p-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+          <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between text-[10px]">
               <span className="inline-flex items-center gap-1 font-bold text-teal-200">
                 <Swords className="h-3.5 w-3.5" />
@@ -596,7 +596,7 @@ export const OpeningDrillView: React.FC<Props> = ({
               <span className="font-mono text-slate-400">Bot {sparringElo}</span>
             </div>
 
-            <div className="relative">
+            <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
               <ChessgroundBoard
                 fen={sparringFen}
                 orientation={orientation}
@@ -616,7 +616,7 @@ export const OpeningDrillView: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="glass-card p-4 space-y-3">
+          <div className="min-w-0 glass-card p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-extrabold text-white">
                 <Bot className="h-4 w-4 text-brilly" /> Opening Sparring Arena
@@ -706,10 +706,10 @@ export const OpeningDrillView: React.FC<Props> = ({
           </div>
         </div>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-          <div className="glass-card glass-card-strong p-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+          <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
-              <span className="truncate font-bold text-slate-200">
+              <span className="min-w-0 truncate font-bold text-slate-200">
                 {activeMeta?.courseName ?? activeCard.courseId} · Move {Math.floor(activeCard.ply / 2) + 1}
               </span>
               <span className="shrink-0 font-mono font-bold text-purple-300">
@@ -717,21 +717,23 @@ export const OpeningDrillView: React.FC<Props> = ({
               </span>
             </div>
 
-            <ChessgroundBoard
-              fen={boardFen || activeCard.fen}
-              orientation={orientation}
-              lastMove={lastMove}
-              interactive={!solvedInfo && !trapState?.animating}
-              turnColor={orientation}
-              showBestArrow={false}
-              showPlayedArrow={false}
-              customArrows={customArrows}
-              theme={boardTheme}
-              onUserMove={(from, to) => void handleDrillMove(from, to)}
-            />
+            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+              <ChessgroundBoard
+                fen={boardFen || activeCard.fen}
+                orientation={orientation}
+                lastMove={lastMove}
+                interactive={!solvedInfo && !trapState?.animating}
+                turnColor={orientation}
+                showBestArrow={false}
+                showPlayedArrow={false}
+                customArrows={customArrows}
+                theme={boardTheme}
+                onUserMove={(from, to) => void handleDrillMove(from, to)}
+              />
+            </div>
           </div>
 
-          <div className="glass-card p-4 space-y-3">
+          <div className="min-w-0 glass-card p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-brilly">

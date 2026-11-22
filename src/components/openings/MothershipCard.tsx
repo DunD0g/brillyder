@@ -71,8 +71,8 @@ export const MothershipCard: React.FC<Props> = ({
   const orientation = course.side === 'white' ? 'w' : 'b';
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-      <div className="glass-card glass-card-strong p-3">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <div className="min-w-0 glass-card glass-card-strong p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1 rounded-full border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-teal-200">
             <Compass className="h-3 w-3" /> {copy.mothershipBadge}
@@ -82,19 +82,21 @@ export const MothershipCard: React.FC<Props> = ({
           </span>
         </div>
 
-        <ChessgroundBoard
-          fen={fen}
-          orientation={orientation}
-          lastMove={lastMove}
-          interactive={false}
-          showBestArrow={false}
-          showPlayedArrow={false}
-          customArrows={atTarget ? arrows : undefined}
-          squareHighlights={atTarget ? highlights : undefined}
-          theme={boardTheme}
-          onSwipePrev={() => setStep((s) => Math.max(0, s - 1))}
-          onSwipeNext={() => setStep((s) => Math.min(previewMoves.length, s + 1))}
-        />
+        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-21rem))] lg:max-w-none">
+          <ChessgroundBoard
+            fen={fen}
+            orientation={orientation}
+            lastMove={lastMove}
+            interactive={false}
+            showBestArrow={false}
+            showPlayedArrow={false}
+            customArrows={atTarget ? arrows : undefined}
+            squareHighlights={atTarget ? highlights : undefined}
+            theme={boardTheme}
+            onSwipePrev={() => setStep((s) => Math.max(0, s - 1))}
+            onSwipeNext={() => setStep((s) => Math.min(previewMoves.length, s + 1))}
+          />
+        </div>
 
         <div className="mt-2.5 flex items-center gap-1.5">
           <button
@@ -153,7 +155,7 @@ export const MothershipCard: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="min-w-0 flex flex-col gap-3">
         <div className="glass-card p-4">
           <div className="flex items-start justify-between gap-2">
             <div>

@@ -171,11 +171,13 @@ export const GuidedWalkthrough: React.FC<Props> = ({
   const activeArrows = trapPlayback ? trapPlayback.arrows : activeAnnotation?.arrows;
   const activeHighlights = trapPlayback ? undefined : activeAnnotation?.highlights;
 
+  const progressPct = line.moves.length > 0 ? Math.round((step / line.moves.length) * 100) : 0;
+
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-      <div className="glass-card glass-card-strong p-3">
-        <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
-          <span className="truncate font-bold text-slate-200">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+      <div className="min-w-0 glass-card glass-card-strong p-3">
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px]">
+          <span className="min-w-0 truncate font-bold text-slate-200">
             {line.eco ? `${line.eco} · ` : ''}{line.title}
           </span>
           <span className="shrink-0 font-mono text-brilly">
@@ -183,26 +185,32 @@ export const GuidedWalkthrough: React.FC<Props> = ({
           </span>
         </div>
 
-        <ChessgroundBoard
-          fen={activeFen}
-          orientation={orientation}
-          lastMove={activeLastMove}
-          interactive={false}
-          showBestArrow={false}
-          showPlayedArrow={false}
-          customArrows={activeArrows}
-          squareHighlights={activeHighlights}
-          theme={boardTheme}
-          onSwipePrev={() => stepTo(step - 1)}
-          onSwipeNext={() => stepTo(step + 1)}
-        />
+        <div className="mb-2 tractor-beam-track h-1 w-full">
+          <div className="tractor-beam-fill" style={{ width: `${progressPct}%` }} />
+        </div>
+
+        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-21rem))] lg:max-w-none">
+          <ChessgroundBoard
+            fen={activeFen}
+            orientation={orientation}
+            lastMove={activeLastMove}
+            interactive={false}
+            showBestArrow={false}
+            showPlayedArrow={false}
+            customArrows={activeArrows}
+            squareHighlights={activeHighlights}
+            theme={boardTheme}
+            onSwipePrev={() => stepTo(step - 1)}
+            onSwipeNext={() => stepTo(step + 1)}
+          />
+        </div>
 
         <div className="mt-2.5 flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => stepTo(0)}
             disabled={step === 0 && !trapPlayback}
-            className="rounded-xl border border-slate-800 bg-void/70 p-2 text-slate-300 hover:border-slate-600 disabled:opacity-40"
+            className="rounded-xl border border-slate-800 bg-void/70 p-2.5 text-slate-300 transition hover:border-slate-600 active:scale-95 disabled:opacity-40"
             aria-label="Back to start"
           >
             <RotateCcw className="h-4 w-4" />
@@ -211,7 +219,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
             type="button"
             onClick={() => stepTo(step - 1)}
             disabled={step === 0}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-800 bg-void/70 py-2 text-xs font-bold text-slate-200 hover:border-slate-600 disabled:opacity-40"
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-800 bg-void/70 py-2.5 text-xs font-bold text-slate-200 transition hover:border-slate-600 active:scale-[0.98] disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" /> Prev
           </button>
@@ -219,7 +227,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
             type="button"
             onClick={() => stepTo(step + 1)}
             disabled={atEnd}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-teal-400/40 bg-teal-400/15 py-2 text-xs font-black text-teal-200 hover:bg-teal-400/25 disabled:opacity-40"
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-teal-400/40 bg-teal-400/15 py-2.5 text-xs font-black text-teal-200 transition hover:bg-teal-400/25 active:scale-[0.98] disabled:opacity-40"
           >
             Next <ChevronRight className="h-4 w-4" />
           </button>
@@ -249,7 +257,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         <div className="glass-card p-4">
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -329,11 +337,11 @@ export const GuidedWalkthrough: React.FC<Props> = ({
               <div className="mt-2 space-y-1.5">
                 {activeAnnotation.wrongMoveTraps.map((trap, idx) => (
                   <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-rose-500/20 bg-void/60 px-2.5 py-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="font-mono text-xs font-bold text-rose-200">
                         Why not {trap.playedSan}?
                       </div>
-                      <div className="truncate text-[10px] text-slate-400">{trap.reason}</div>
+                      <div className="line-clamp-2 text-[10px] leading-snug text-slate-400">{trap.reason}</div>
                     </div>
                     <button
                       type="button"

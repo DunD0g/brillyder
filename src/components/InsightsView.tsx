@@ -301,7 +301,7 @@ export const InsightsView: React.FC<Props> = ({
             {insights.bestGames.length === 0 ? (
               <p className="py-4 text-xs text-slate-500">Your best-game podium appears after one analysed game.</p>
             ) : (
-              <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
                 {insights.bestGames.map((game, index) => (
                   <BestGameCard key={game.gameId} game={game} rank={index + 1} onOpen={() => onOpenGame(game.gameId, game.highlightPly)} />
                 ))}
@@ -322,7 +322,7 @@ export const InsightsView: React.FC<Props> = ({
             )}
           </section>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <ColourSplitCard
               white={insights.scoreByColour.white}
               black={insights.scoreByColour.black}
@@ -383,7 +383,7 @@ export const InsightsView: React.FC<Props> = ({
           </div>
 
           {/* Tilt Guard Curve + 20-Game Checkpoints */}
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <section className="glass-card p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
@@ -501,7 +501,7 @@ export const InsightsView: React.FC<Props> = ({
           </div>
 
           {/* Patterns You Miss Most + Endgame Weakness Tracker */}
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <section className="glass-card p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
@@ -593,7 +593,7 @@ export const InsightsView: React.FC<Props> = ({
             </section>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="glass-card p-3.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-100">
@@ -664,7 +664,7 @@ export const InsightsView: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <TimeTroubleCard
               buckets={insights.timeTrouble}
               clockLeaks={insights.clockLeaks}
@@ -673,7 +673,7 @@ export const InsightsView: React.FC<Props> = ({
             <ActivityTrendChart trend={insights.trend} />
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="glass-card p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-100">Opening repertoire</div>

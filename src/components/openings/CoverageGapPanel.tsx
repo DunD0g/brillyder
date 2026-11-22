@@ -244,9 +244,9 @@ export const CoverageGapPanel: React.FC<Props> = ({
           </p>
         </div>
       ) : report ? (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
           {/* Gap List */}
-          <div className="glass-card p-3.5">
+          <div className="min-w-0 glass-card p-3.5">
             <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
               <ShieldAlert className="h-3.5 w-3.5" /> Top Uncovered Opponent Replies
             </div>
@@ -293,7 +293,7 @@ export const CoverageGapPanel: React.FC<Props> = ({
 
           {/* Selected Gap Patcher */}
           {selectedGap && (
-            <div className="glass-card glass-card-strong p-3.5 space-y-3">
+            <div className="min-w-0 glass-card glass-card-strong p-3.5 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-extrabold text-white">
                   <Sparkles className="h-4 w-4 text-brilly" /> Patch Gap vs {selectedGap.opponentSan}

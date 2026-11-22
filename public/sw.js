@@ -1,4 +1,4 @@
-const CACHE_NAME = 'brillyder-v16';
+const CACHE_NAME = 'brillyder-v17';
 const CORE_ASSETS = [
   './',
   './index.html',

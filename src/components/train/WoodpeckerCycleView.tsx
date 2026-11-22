@@ -455,10 +455,10 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
 
       {/* Active Puzzle Board */}
       {activeCycle && !inCooldown && !allSevenCompleted && activePuzzle && (
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
-          <div className="glass-card glass-card-strong p-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+          <div className="min-w-0 glass-card glass-card-strong p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[10px]">
-              <span className="font-bold text-slate-200">
+              <span className="min-w-0 truncate font-bold text-slate-200">
                 Puzzle {doneInCycle + 1}/{totalInCycle} · Cycle #{activeCycle.currentCycle}
               </span>
               <button
@@ -468,7 +468,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
                   setRadarPingEnabled(next);
                   if (!next) setRadarCleared(true);
                 }}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${
                   radarPingEnabled
                     ? 'border-teal-400/45 bg-teal-400/15 text-teal-200'
                     : 'border-slate-700 bg-void/60 text-slate-400'
@@ -478,24 +478,26 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
               </button>
             </div>
 
-            <ChessgroundBoard
-              fen={fen || activePuzzle.beforeFen}
-              orientation={activePuzzle.color}
-              lastMove={lastMove}
-              interactive={status === 'idle' && (!radarPingEnabled || radarCleared)}
-              turnColor={activePuzzle.color}
-              showBestArrow={status === 'revealed'}
-              bestMoveUci={status === 'revealed' ? (expectedStep?.uci ?? activePuzzle.bestMoveUci) : undefined}
-              showPlayedArrow={false}
-              customArrows={hintArrow}
-              squareHighlights={radarHighlights}
-              theme={boardTheme}
-              onSquareClick={radarPingEnabled && !radarCleared ? handleRadarTap : undefined}
-              onUserMove={(from, to) => void handleMove(from, to)}
-            />
+            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+              <ChessgroundBoard
+                fen={fen || activePuzzle.beforeFen}
+                orientation={activePuzzle.color}
+                lastMove={lastMove}
+                interactive={status === 'idle' && (!radarPingEnabled || radarCleared)}
+                turnColor={activePuzzle.color}
+                showBestArrow={status === 'revealed'}
+                bestMoveUci={status === 'revealed' ? (expectedStep?.uci ?? activePuzzle.bestMoveUci) : undefined}
+                showPlayedArrow={false}
+                customArrows={hintArrow}
+                squareHighlights={radarHighlights}
+                theme={boardTheme}
+                onSquareClick={radarPingEnabled && !radarCleared ? handleRadarTap : undefined}
+                onUserMove={(from, to) => void handleMove(from, to)}
+              />
+            </div>
           </div>
 
-          <div className="glass-card p-4 space-y-3">
+          <div className="min-w-0 glass-card p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 <span className="rounded-lg bg-hull px-2 py-1 text-[10px] font-black uppercase tracking-wider text-brilly">
