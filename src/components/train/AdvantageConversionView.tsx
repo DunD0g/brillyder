@@ -340,7 +340,7 @@ export const AdvantageConversionView: React.FC<Props> = ({
               />
             </div>
 
-            <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+            <div className="relative mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
               <ChessgroundBoard
                 fen={fen || activePos.fen}
                 orientation={activePos.userColor}

@@ -120,7 +120,7 @@ export const GameListView: React.FC<Props> = ({
   return (
     <div className="space-y-4 pb-24">
       <section className="glass-card p-3.5 shadow-xl">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex rounded-xl border border-slate-800 bg-slate-950/60 p-0.5">
             {(['lichess', 'chesscom'] as GamePlatform[]).map((p) => (
               <button

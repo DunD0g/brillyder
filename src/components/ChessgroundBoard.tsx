@@ -47,7 +47,8 @@ function squareToGrid(sq: string, orientation: PlayerColor): { col: number; row:
 function squareToPct(sq: string, orientation: PlayerColor): { left: string; top: string } | null {
   const g = squareToGrid(sq, orientation);
   if (!g) return null;
-  return { left: `${(g.col + 0.5) * 12.5}%`, top: `${g.row * 12.5}%` };
+  // Place inside the upper-right corner of the square so top-rank / edge badges are never clipped by overflow-hidden
+  return { left: `${(g.col + 0.84) * 12.5}%`, top: `${(g.row + 0.18) * 12.5}%` };
 }
 
 const ARROW_COLOR_VAR: Record<BoardArrow['color'], string> = {

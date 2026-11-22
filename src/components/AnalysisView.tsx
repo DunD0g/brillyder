@@ -545,7 +545,13 @@ export const AnalysisView: React.FC<Props> = ({
       if (document.querySelector('[aria-modal="true"]')) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-      if (pendingPromo) return;
+      if (pendingPromo) {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          setPendingPromo(null);
+        }
+        return;
+      }
       if (e.key === 'Escape') {
         botGenerationRef.current += 1;
         retryGenerationRef.current += 1;
@@ -582,9 +588,9 @@ export const AnalysisView: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPlyIndex, totalPlies, botState, retryState, sandbox, pendingPromo, isMistake, playing]);
 
-  const celebrateIfSacrifice = (fenAfter: string, mv: { to: string; piece: PieceSymbol; captured?: PieceSymbol }, mover: PlayerColor) => {
+  const celebrateIfSacrifice = (fenAfter: string, mv: { to: string; piece: PieceSymbol; captured?: PieceSymbol; promotion?: PieceSymbol }, mover: PlayerColor) => {
     if (!currentPly) return;
-    if (isSacrificeMove(currentPly.beforeFen, fenAfter, mover, mv.to, mv.piece, mv.captured)) {
+    if (isSacrificeMove(currentPly.beforeFen, fenAfter, mover, mv.to, mv.piece, mv.captured, mv.promotion)) {
       triggerCelebration(
         'brilliant',
         vibe === 'cosmic'
@@ -954,8 +960,9 @@ export const AnalysisView: React.FC<Props> = ({
             <button
               key={mv.uci}
               type="button"
+              disabled={analyzing}
               onClick={() => playExplorerSan(mv.san)}
-              className="rounded-lg border border-slate-700 bg-void/70 px-2 py-1 font-mono text-[10px] font-bold text-slate-200 hover:border-teal-400/50"
+              className="rounded-lg border border-slate-700 bg-void/70 px-2 py-1 font-mono text-[10px] font-bold text-slate-200 hover:border-teal-400/50 disabled:opacity-40"
             >
               {mv.san} <span className="text-slate-400">({mv.category})</span>
             </button>
@@ -1077,33 +1084,55 @@ export const AnalysisView: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => {
-              const rawMv = currentPlyIndex > 0 ? rawMoves[currentPlyIndex - 1] : null;
-              const moveLabel = currentPly
-                ? `${currentPly.moveNumber}${currentPly.color === 'w' ? '.' : '…'} ${currentPly.san}`
-                : rawMv
-                  ? `${Math.ceil(currentPlyIndex / 2)}${rawMv.color === 'w' ? '.' : '…'} ${rawMv.san}`
-                  : undefined;
-              const badge =
-                currentPly?.classification === 'brilliant'
+              const inVariation = Boolean(sandbox || botState || retryState);
+              const sandboxLast = sandbox && sandbox.cursor > 0 ? sandbox.moves[sandbox.cursor - 1] : null;
+              const rawMv = !inVariation && currentPlyIndex > 0 ? rawMoves[currentPlyIndex - 1] : null;
+              const moveLabel = inVariation
+                ? sandboxLast?.san
+                : currentPly
+                  ? `${currentPly.moveNumber}${currentPly.color === 'w' ? '.' : '…'} ${currentPly.san}`
+                  : rawMv
+                    ? `${Math.ceil(currentPlyIndex / 2)}${rawMv.color === 'w' ? '.' : '…'} ${rawMv.san}`
+                    : undefined;
+              const badge = inVariation
+                ? sandbox
+                  ? 'WHAT IF'
+                  : botState
+                    ? 'VS BOT'
+                    : undefined
+                : currentPly?.classification === 'brilliant'
                   ? '!! BRILLIANT'
                   : currentPly?.isClutchSave
                     ? 'CLUTCH SAVE'
                     : currentPly?.classification === 'great'
                       ? '! GREAT'
                       : undefined;
+              const cardLastMove: [string, string] | undefined = sandboxLast
+                ? [sandboxLast.from, sandboxLast.to]
+                : botState?.lastMove
+                  ? botState.lastMove
+                  : !inVariation && currentPly
+                    ? [currentPly.from, currentPly.to]
+                    : rawMv
+                      ? [rawMv.from, rawMv.to]
+                      : undefined;
               void shareOrDownloadCard({
-                title: currentPly?.coaching.headline || game.openingName || 'Chess Highlight',
-                subtitle: currentPly?.coaching.detail || `${game.openingEco ? `${game.openingEco} · ` : ''}${game.timeControlLabel}`,
+                title: inVariation
+                  ? `${sandbox ? 'What-If Line' : botState ? 'Bot Practice' : 'Retry'} · ${game.openingName || 'Position'}`
+                  : currentPly?.coaching.headline || game.openingName || 'Chess Highlight',
+                subtitle: inVariation
+                  ? `${game.white.name} vs ${game.black.name}`
+                  : currentPly?.coaching.detail || `${game.openingEco ? `${game.openingEco} · ` : ''}${game.timeControlLabel}`,
                 badgeText: badge,
-                badgeColor: currentPly?.classification === 'brilliant' ? '#2DD4BF' : '#A855F7',
+                badgeColor: !inVariation && currentPly?.classification === 'brilliant' ? '#2DD4BF' : '#A855F7',
                 fen: activeFen,
                 orientation,
-                lastMove: currentPly ? [currentPly.from, currentPly.to] : rawMv ? [rawMv.from, rawMv.to] : undefined,
+                lastMove: cardLastMove,
                 evalText: activeScore.display,
                 moveText: moveLabel,
                 whiteName: game.white.name,
                 blackName: game.black.name,
-                footerMeta: analyzed
+                footerMeta: analyzed && !inVariation
                   ? `Accuracy: White ${analyzed.whiteSummary.accuracy}% · Black ${analyzed.blackSummary.accuracy}% · BrillyDer`
                   : 'Analyzed locally with Stockfish WASM · BrillyDer',
                 boardTheme,
@@ -1203,24 +1232,44 @@ export const AnalysisView: React.FC<Props> = ({
                 )}
 
                 {pendingPromo && (
-                  <div className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-slate-950/75 backdrop-blur-sm">
-                    <div className="glass-card-strong flex gap-2 rounded-2xl border border-slate-700 p-3">
-                      {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => {
-                            const { from, to, mode } = pendingPromo;
-                            setPendingPromo(null);
-                            if (mode === 'retry') void executeRetryMove(from, to, p);
-                            else if (mode === 'bot') void executeBotUserMove(from, to, p);
-                            else applySandboxMove(from, to, p);
-                          }}
-                          className="h-11 w-11 rounded-xl border border-slate-700 bg-slate-800 text-lg text-white"
-                        >
-                          {p === 'q' ? '♕' : p === 'r' ? '♖' : p === 'b' ? '♗' : '♘'}
-                        </button>
-                      ))}
+                  <div
+                    className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-slate-950/80 backdrop-blur-sm"
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) setPendingPromo(null);
+                    }}
+                  >
+                    <div className="glass-card-strong rounded-2xl border border-slate-700 p-3">
+                      <div className="flex gap-2">
+                        {([
+                          ['q', 'Queen', activeTurn === 'w' ? '♕' : '♛'],
+                          ['r', 'Rook', activeTurn === 'w' ? '♖' : '♜'],
+                          ['b', 'Bishop', activeTurn === 'w' ? '♗' : '♝'],
+                          ['n', 'Knight', activeTurn === 'w' ? '♘' : '♞'],
+                        ] as Array<[PieceSymbol, string, string]>).map(([p, name, glyph]) => (
+                          <button
+                            key={p}
+                            type="button"
+                            aria-label={`Promote to ${name}`}
+                            onClick={() => {
+                              const { from, to, mode } = pendingPromo;
+                              setPendingPromo(null);
+                              if (mode === 'retry') void executeRetryMove(from, to, p);
+                              else if (mode === 'bot') void executeBotUserMove(from, to, p);
+                              else applySandboxMove(from, to, p);
+                            }}
+                            className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-2xl text-white hover:border-teal-400"
+                          >
+                            {glyph}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPendingPromo(null)}
+                        className="mt-2 w-full rounded-lg border border-slate-800 bg-void/70 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-200"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 )}

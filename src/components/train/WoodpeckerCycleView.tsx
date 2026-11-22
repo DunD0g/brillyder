@@ -478,7 +478,7 @@ export const WoodpeckerCycleView: React.FC<Props> = ({
               </button>
             </div>
 
-            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+            <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
               <ChessgroundBoard
                 fen={fen || activePuzzle.beforeFen}
                 orientation={activePuzzle.color}

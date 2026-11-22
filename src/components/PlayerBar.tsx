@@ -2,7 +2,7 @@ import React from 'react';
 import type { PieceSymbol } from 'chess.js';
 import type { PlayerColor } from '../types/chess';
 
-const SYMBOLS: Record<Exclude<PieceSymbol, 'k'>, string> = { q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+const SYMBOLS: Record<Exclude<PieceSymbol, 'k'>, string> = { q: '♛', r: '♜', b: '♝', n: '♞', p: '♟\uFE0E' };
 
 interface Props {
   name: string;

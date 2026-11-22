@@ -240,6 +240,7 @@ export const BrillyVaultView: React.FC<Props> = ({
                 tabIndex={0}
                 onClick={() => onOpenBookmark?.(bm)}
                 onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     onOpenBookmark?.(bm);
@@ -386,19 +387,32 @@ export const BrillyVaultView: React.FC<Props> = ({
             )}
           </section>
 
-          {scopeEmpty ? (
+          {scopeEmpty || filtered.length === 0 ? (
             <section className="glass-card p-7 text-center">
               <Orbit className="mx-auto h-9 w-9 text-slate-600" />
-              <h2 className="mt-2 text-sm font-bold text-slate-200">No entries in this Vault tab yet</h2>
+              <h2 className="mt-2 text-sm font-bold text-slate-200">
+                {scopeEmpty ? 'No entries in this Vault tab yet' : 'No highlights match those filters'}
+              </h2>
               <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-slate-400">
-                {category === 'clutch'
-                  ? 'Find only-move defensive or tactical saves (≥2.0 pawn MultiPV gap under pressure) to earn Clutch Save badges.'
-                  : category === 'traps'
-                    ? 'Punish opponent opening or early-middlegame blunders with the top engine reply to fill Traps Punished.'
-                    : category === 'clean'
-                      ? 'Win a game with 0 blunders and ≥82% accuracy to log a Clean Sweep.'
-                      : 'Keep analyzing your sharpest games to archive personal brilliancies.'}
+                {!scopeEmpty
+                  ? 'Clear the Opening or Month filter to see all archived moments in this tab.'
+                  : category === 'clutch'
+                    ? 'Find only-move defensive or tactical saves (≥2.0 pawn MultiPV gap under pressure) to earn Clutch Save badges.'
+                    : category === 'traps'
+                      ? 'Punish opponent opening or early-middlegame blunders with the top engine reply to fill Traps Punished.'
+                      : category === 'clean'
+                        ? 'Win a game with 0 blunders and ≥82% accuracy to log a Clean Sweep.'
+                        : 'Keep analyzing your sharpest games to archive personal brilliancies.'}
               </p>
+              {!scopeEmpty && (
+                <button
+                  type="button"
+                  onClick={() => { setOpening(''); setMonth(''); resetVisible(); }}
+                  className="mt-3 rounded-xl border border-teal-400/40 bg-teal-400/15 px-3 py-1.5 text-xs font-bold text-teal-200 hover:bg-teal-400/25"
+                >
+                  Reset filters
+                </button>
+              )}
             </section>
           ) : (
             <>
@@ -410,6 +424,7 @@ export const BrillyVaultView: React.FC<Props> = ({
                     tabIndex={0}
                     onClick={() => onOpenEntry(entry)}
                     onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
                         onOpenEntry(entry);

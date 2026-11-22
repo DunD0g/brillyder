@@ -3,6 +3,7 @@ import { GitBranch, Orbit, Play } from 'lucide-react';
 import type { BoardThemeId } from '../../types/chess';
 import type { FsrsOpeningCard, OpeningCourse } from '../../types/openings';
 import { buildRepertoireTree, type RepertoireTreeNode } from '../../services/repertoireTree';
+import { useVibe } from '../../utils/vibeCopy';
 import { ChessgroundBoard } from '../ChessgroundBoard';
 
 interface Props {
@@ -96,6 +97,7 @@ export const RepertoireTreeView: React.FC<Props> = ({
   onOpenLineWalkthrough,
   onDrillLine,
 }) => {
+  const { copy } = useVibe();
   const tree = useMemo(() => buildRepertoireTree(course, cards), [course, cards]);
   const [selectedNode, setSelectedNode] = useState<RepertoireTreeNode>(
     () => tree.children[0] ?? tree
@@ -131,12 +133,12 @@ export const RepertoireTreeView: React.FC<Props> = ({
           </span>
           {activeNode.isUserMove && (
             <span className="shrink-0 rounded-full border border-teal-400/30 bg-teal-400/10 px-2 py-0.5 font-mono text-[9px] font-bold text-teal-200">
-              {activeNode.recallPct !== null ? `Recall ${activeNode.recallPct}%` : 'Unlocked/New'}
+              {activeNode.recallPct !== null ? `${copy.recallProbability} ${activeNode.recallPct}%` : 'Locked / New'}
             </span>
           )}
         </div>
 
-        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-22rem))] lg:max-w-none">
+        <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-22rem)))] lg:max-w-none">
           <ChessgroundBoard
             fen={activeNode.fen}
             orientation={orientation}

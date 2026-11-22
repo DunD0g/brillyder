@@ -86,9 +86,6 @@ export const SettingsMenu: React.FC<Props> = ({
     setBackupMsg(null);
     setMaiaUploadMsg(null);
     void getStorageStats().then(setStats);
-    if (maiaEnabled && !maiaService.getAvailability().checked) {
-      void maiaService.probeAvailableModels().then(setMaiaStatus);
-    }
 
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -104,6 +101,12 @@ export const SettingsMenu: React.FC<Props> = ({
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKey);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && maiaEnabled && !maiaService.getAvailability().checked) {
+      void maiaService.probeAvailableModels().then(setMaiaStatus);
+    }
   }, [open, maiaEnabled]);
 
   const handleExport = async () => {
@@ -120,7 +123,7 @@ export const SettingsMenu: React.FC<Props> = ({
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setBackupMsg({
         kind: 'ok',
         text: `Exported ${payload.stores.analyzed_games.length} games & ${payload.stores.fsrs_cards.length} FSRS cards.`,

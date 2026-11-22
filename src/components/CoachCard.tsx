@@ -40,7 +40,7 @@ export const CoachCard: React.FC<Props> = ({
         <div className="h-0.5 w-full bg-gradient-to-r from-cyan-400 via-emerald-400 to-transparent" />
         <div className="p-4">
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-cyan-300">
-            <Sparkles className="w-4 h-4" /> Coach cockpit
+            <Sparkles className="w-4 h-4" /> Engine Coach
           </div>
           <h2 className="mt-2 text-base font-extrabold text-white">Ready for review{analyzing ? '…' : '.'}</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-300">

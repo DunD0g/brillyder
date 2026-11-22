@@ -197,7 +197,7 @@ export const OpeningsView: React.FC<Props> = ({
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setExportedPgn(true);
     window.setTimeout(() => setExportedPgn(false), 1800);
   };
@@ -275,6 +275,7 @@ export const OpeningsView: React.FC<Props> = ({
                 tabIndex={0}
                 onClick={() => { setSelectedCourseId(course.id); setDrillFocusLineId(null); setLineEditorMode('closed'); setConfirmDeleteLineId(null); }}
                 onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     setSelectedCourseId(course.id);

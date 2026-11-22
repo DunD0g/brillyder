@@ -596,7 +596,7 @@ export const OpeningDrillView: React.FC<Props> = ({
               <span className="font-mono text-slate-400">Bot {sparringElo}</span>
             </div>
 
-            <div className="relative mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+            <div className="relative mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
               <ChessgroundBoard
                 fen={sparringFen}
                 orientation={orientation}
@@ -717,7 +717,7 @@ export const OpeningDrillView: React.FC<Props> = ({
               </span>
             </div>
 
-            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+            <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
               <ChessgroundBoard
                 fen={boardFen || activeCard.fen}
                 orientation={orientation}

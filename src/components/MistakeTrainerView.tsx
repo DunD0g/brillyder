@@ -777,25 +777,45 @@ export const MistakeTrainerView: React.FC<Props> = ({
                       </div>
                     )}
                     {pendingPromo && (
-                      <div className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-slate-950/75 backdrop-blur-sm">
-                        <div className="flex gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-3">
-                          {(['q', 'r', 'b', 'n'] as PieceSymbol[]).map((p) => (
-                            <button
-                              key={p}
-                              type="button"
-                              onClick={() => { const promo = pendingPromo; setPendingPromo(null); void attemptMove(promo.from, promo.to, p); }}
-                              className="h-11 w-11 rounded-xl border border-slate-700 bg-slate-800 text-lg text-white"
-                            >
-                              {p === 'q' ? '♕' : p === 'r' ? '♖' : p === 'b' ? '♗' : '♘'}
-                            </button>
-                          ))}
+                      <div
+                        className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-slate-950/80 backdrop-blur-sm"
+                        onClick={(e) => {
+                          if (e.target === e.currentTarget) setPendingPromo(null);
+                        }}
+                      >
+                        <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3">
+                          <div className="flex gap-2">
+                            {([
+                              ['q', 'Queen', selected.color === 'w' ? '♕' : '♛'],
+                              ['r', 'Rook', selected.color === 'w' ? '♖' : '♜'],
+                              ['b', 'Bishop', selected.color === 'w' ? '♗' : '♝'],
+                              ['n', 'Knight', selected.color === 'w' ? '♘' : '♞'],
+                            ] as Array<[PieceSymbol, string, string]>).map(([p, name, glyph]) => (
+                              <button
+                                key={p}
+                                type="button"
+                                aria-label={`Promote to ${name}`}
+                                onClick={() => { const promo = pendingPromo; setPendingPromo(null); void attemptMove(promo.from, promo.to, p); }}
+                                className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-2xl text-white hover:border-teal-400"
+                              >
+                                {glyph}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPendingPromo(null)}
+                            className="mt-2 w-full rounded-lg border border-slate-800 bg-void/70 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-1.5 grid grid-cols-3 gap-1.5 lg:hidden">
+                <div className={`mt-1.5 grid gap-1.5 lg:hidden ${status !== 'solved' && status !== 'revealed' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                   {status !== 'solved' && status !== 'revealed' ? (
                     <>
                       <button

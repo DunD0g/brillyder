@@ -119,7 +119,7 @@ const TransportButton: React.FC<{ onClick: () => void; label: string; children: 
     onClick={onClick}
     aria-label={label}
     title={label}
-    className="flex items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 py-2.5 text-slate-300 transition hover:border-slate-500 hover:text-white active:scale-95"
+    className="flex items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/80 px-2.5 py-2.5 text-slate-300 transition hover:border-slate-500 hover:text-white active:scale-95"
   >
     {children}
   </button>

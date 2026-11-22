@@ -841,7 +841,7 @@ const BestGameCard: React.FC<{ game: GameHighlight; rank: number; onOpen: () => 
     <button
       type="button"
       onClick={onOpen}
-      className={`group rounded-xl border bg-slate-950/45 p-2 text-left transition hover:bg-slate-900/70 ${
+      className={`group min-w-0 rounded-xl border bg-slate-950/45 p-2 text-left transition hover:bg-slate-900/70 ${
         rank === 1 ? 'border-amber-400/35' : 'border-slate-800'
       }`}
     >

@@ -532,7 +532,7 @@ export const DailyCoachSession: React.FC<Props> = ({
                   {activeStage1Card.attempts > 0 ? copy.recallProbability(getRecallProbability(activeStage1Card)) : 'Due'}
                 </span>
               </div>
-              <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+              <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
                 <ChessgroundBoard
                   fen={fen || activeStage1Card.fen}
                   orientation={activeStage1Card.side === 'white' ? 'w' : 'b'}
@@ -661,7 +661,7 @@ export const DailyCoachSession: React.FC<Props> = ({
               )}
             </div>
 
-            <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] lg:max-w-none">
+            <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-20rem)))] lg:max-w-none">
               <ChessgroundBoard
                 fen={fen || activePuzzle.beforeFen}
                 orientation={activePuzzle.color}

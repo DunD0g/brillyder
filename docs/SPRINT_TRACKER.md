@@ -205,3 +205,28 @@
 ### Verified
 - `npm test`: **21 test files, 102 tests passed** (including all 33 starter course SAN tests, 12 Syzygy endgame drills, 8-course PGN round-trip tests, share card tests, and scout gameplan tests).
 - `npm run build`: `prepare-assets.mjs` + `tsc --noEmit` + `vite build` passed cleanly with lazy chunks preserved.
+
+---
+
+## v2.2.1 — Final Pre-iOS 4-Agent Swarm Audit & Hardening
+**Status:** Completed & Verified
+
+### Built
+- **Pass 1 — Chess Engine, Endgame Drills, Syzygy, Maia, Board Editor & Share Card (`8423956`):**
+  - Replaced 6 broken/illegal/mate-in-1 theoretical endgame FENs in `src/data/endgameDrills.ts` and added strict non-adjacent-king, non-mover-in-check, wrong-bishop-color, and non-mate-in-1 unit assertions in `endgameDrills.test.ts`; filtered already-lost user slips (`<-1.0`) out of `extractUserEndgameDrills`.
+  - Fixed `EndgameLabView` warning-state piece desync (`turnColor` + `interactive`), soft-lock rollback on engine failure, Undo mastery exploit, stale Syzygy hint leakage, and Escape/backdrop/Cancel promotion picker.
+  - Hardened `PositionEditorModal` to reject adjacent kings, opponent-in-check, and rank 1/8 pawns, auto-prune phantom castling flags, preserve EP/clocks, lock body scroll, and escape PGN headers in `customFen.ts`.
+  - Switched `maia.worker.ts` to `onnxruntime-web/wasm` (cutting worker JS 419 kB → 78 kB and WASM 29.5 MB → 14.8 MB!), serialized worker requests, cached `loadedModelKey` to eliminate 20 MB/move re-transfers, added `AbortSignal` & `dispose()` rejection cleanup; added explicit Stockfish `#wasmUrl` + distinct `EngineTimeoutError`.
+  - Fixed SEE promotion capture sort (`=Q` before `=N` in `tacticalMotifs.ts`), 5-field Syzygy cache key (`tablebaseApi.ts`), `401` backoff (`openingExplorer.ts`), `try/catch` move guards (`repertoireTree.ts`), strict opponent matching (`scoutReport.ts`), iOS WebKit `'interrupted'` audio recovery (`sound.ts`), and Share Card filled monochrome `♟\uFE0E` glyphs + measured text truncation (`shareCard.ts`).
+- **Pass 2 — State, Smart Backup Merge, Offline Hydration, Custom FEN Isolation & PWA Safety (`05801a7`):**
+  - Serialized `setPrefSync` writes with `flushPrefWrites()` before `exportFullBackup`, added smart `merge` semantics for bookmarks/mastered endgames/mistake progress/streaks/PBs/conversion IDs in `brillyDb.ts`, and closed DB handle cleanly on `blocking()`.
+  - Hydrated `gamesByPlatform` from cached `analyzed_games` on boot/restore so Games works fully offline; excluded Custom FEN 0-ply records from Batch Analysis, Insights, Opening Reports, and IDB `analyzed_games`.
+  - Fixed `sw.js` (only fall back to `index.html` for `request.mode === 'navigate'`, skip caching `ort-wasm`, `brillyder-v22`), suppressed involuntary first-install reload & native Capacitor SW/tip registration, added `LazyViewErrorBoundary`, fixed `runBatchAnalysis`/`runScout`/`handlePlatformChange` races, preserved Sandbox FENs on bookmark reopen, fixed `BoardVisionView` PB overwrite + added Stop button, and wired `mistakeProgress` into `DailyCoachSession`.
+- **Pass 3 — Mobile UI, Clipping, Promotion Pickers, Accessibility & Vibe Polish:**
+  - Enforced `font-size: 16px !important` on mobile `<input>/<textarea>/<select>` and added `-webkit-touch-callout: none` on board/buttons while removing `background-attachment: fixed` jank in `src/index.css`.
+  - Repositioned `ChessgroundBoard` move badges inside the upper-right square corner so rank-8 badges are never sliced by `overflow-hidden`; added `max(260px, ...)` floor to all height-capped mobile boards.
+  - Made all 4 promotion pickers dismissible (Escape, backdrop click, Cancel) with side-appropriate glyphs; fixed `SettingsMenu` effect split, `TransportControls` desktop padding, `BrillyVaultView` empty filter state & keyboard target guards, `RepertoireTreeView` Vibe label, `GuidedWalkthrough` timer purity, `PlayerBar` `♟\uFE0E`, and deferred `URL.revokeObjectURL`.
+
+### Verified
+- `npm test`: **21 test files, 102 tests passed**.
+- `npm run build`: clean TypeScript check & Vite chunked production build (`maia.worker` 78.4 kB, `ort-wasm` 14.8 MB, `index` 178 kB).

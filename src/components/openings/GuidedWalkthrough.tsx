@@ -103,12 +103,10 @@ export const GuidedWalkthrough: React.FC<Props> = ({
       return;
     }
     const id = window.setTimeout(() => {
-      setStep((prev) => {
-        const next = Math.min(line.moves.length, prev + 1);
-        if (next > prev) soundManager.playMove();
-        if (next >= line.moves.length) setAutoPlay(false);
-        return next;
-      });
+      const next = Math.min(line.moves.length, step + 1);
+      if (next > step) soundManager.playMove();
+      setStep(next);
+      if (next >= line.moves.length) setAutoPlay(false);
     }, 1150);
     return () => window.clearTimeout(id);
   }, [autoPlay, step, line.moves.length, trapPlayback]);
@@ -210,7 +208,7 @@ export const GuidedWalkthrough: React.FC<Props> = ({
           <div className="tractor-beam-fill" style={{ width: `${progressPct}%` }} />
         </div>
 
-        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-21rem))] lg:max-w-none">
+        <div className="mx-auto w-full max-w-[min(100%,max(260px,calc(100dvh-21rem)))] lg:max-w-none">
           <ChessgroundBoard
             fen={activeFen}
             orientation={orientation}
