@@ -4,6 +4,8 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Compass,
+  Crosshair,
   Flame,
   GraduationCap,
   Lightbulb,
@@ -52,8 +54,13 @@ import { PuzzleRush } from './PuzzleRush';
 import { DailyCoachSession } from './train/DailyCoachSession';
 import { WoodpeckerCycleView } from './train/WoodpeckerCycleView';
 import { AdvantageConversionView } from './train/AdvantageConversionView';
+import { EndgameLabView } from './train/EndgameLabView';
+import { BoardVisionView } from './train/BoardVisionView';
+import type { EndgameLabCategory } from '../data/endgameDrills';
 
-export type TrainSection = 'daily' | 'woodpecker' | 'conversion' | 'deck';
+export type TrainSection = 'daily' | 'woodpecker' | 'conversion' | 'deck' | 'labs';
+type LabSubTab = 'endgame' | 'vision' | 'rush';
+const ENDGAME_CATEGORIES: EndgameLabCategory[] = ['Pawn', 'Rook', 'Minor Piece', 'Queen', 'Rook+Minor'];
 
 interface Props {
   analyzedGames: AnalyzedGame[];
@@ -106,6 +113,8 @@ export const MistakeTrainerView: React.FC<Props> = ({
 }) => {
   const { vibe, copy } = useVibe();
   const [section, setSection] = useState<TrainSection>(initialSection);
+  const [labTab, setLabTab] = useState<LabSubTab>('endgame');
+  const [endgameCategoryFilter, setEndgameCategoryFilter] = useState<EndgameLabCategory | 'All' | null>(null);
   const [motifFilter, setMotifFilter] = useState<string>(initialMotifFilter ?? '');
   const deck = useMemo(() => buildMistakeDeck(analyzedGames, username), [analyzedGames, username]);
   const dailyPuzzle = useMemo(() => pickDailyPuzzle(deck), [deck]);
@@ -120,6 +129,16 @@ export const MistakeTrainerView: React.FC<Props> = ({
   }, [initialSection, navToken]);
 
   useEffect(() => {
+    if (initialSection === 'labs') {
+      setMotifFilter('');
+      if (initialMotifFilter && ENDGAME_CATEGORIES.includes(initialMotifFilter as EndgameLabCategory)) {
+        setLabTab('endgame');
+        setEndgameCategoryFilter(initialMotifFilter as EndgameLabCategory);
+      } else {
+        setEndgameCategoryFilter(null);
+      }
+      return;
+    }
     if (initialMotifFilter) {
       setMotifFilter(initialMotifFilter);
       setSection('deck');
@@ -127,7 +146,7 @@ export const MistakeTrainerView: React.FC<Props> = ({
     } else {
       setMotifFilter('');
     }
-  }, [initialMotifFilter, navToken]);
+  }, [initialSection, initialMotifFilter, navToken]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fen, setFen] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
@@ -405,27 +424,47 @@ export const MistakeTrainerView: React.FC<Props> = ({
 
   const trainHubBar = (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="inline-flex flex-wrap rounded-xl border border-slate-800 bg-void/75 p-0.5">
-        {([
-          ['daily', '15m Daily Coach', Flame],
-          ['woodpecker', 'Woodpecker', Target],
-          ['conversion', copy.advantageConversionShort, Zap],
-          ['deck', 'Mistake Deck', GraduationCap],
-        ] as Array<[TrainSection, string, typeof Flame]>).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => { setSection(id); if (id !== 'deck') setMode('practice'); }}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-black transition ${
-              section === id
-                ? 'bg-gradient-to-r from-teal-400/20 to-purple-500/20 text-teal-200'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="inline-flex flex-wrap rounded-xl border border-slate-800 bg-void/75 p-0.5">
+          {([
+            ['daily', '15m Daily Coach', Flame],
+            ['woodpecker', 'Woodpecker', Target],
+            ['conversion', copy.advantageConversionShort, Zap],
+            ['deck', 'Mistake Deck', GraduationCap],
+          ] as Array<[TrainSection, string, typeof Flame]>).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => { setSection(id); if (id !== 'deck') setMode('practice'); }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-black transition ${
+                section === id
+                  ? id === 'daily'
+                    ? 'bg-gradient-to-r from-teal-400/25 to-purple-500/25 text-teal-100 ring-1 ring-teal-400/35'
+                    : 'bg-gradient-to-r from-teal-400/20 to-purple-500/20 text-teal-200'
+                  : id === 'daily'
+                  ? 'text-teal-300/90 hover:text-teal-100'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSection('labs')}
+          title="Specialty drills: Syzygy Endgame Lab, 60s Board Vision, Puzzle Rush"
+          className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
+            section === 'labs'
+              ? 'border-teal-400/45 bg-teal-400/15 text-teal-200'
+              : 'border-slate-800/90 bg-void/55 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+          }`}
+        >
+          <Compass className="h-3.5 w-3.5" />
+          Labs
+        </button>
       </div>
 
       <button
@@ -438,6 +477,76 @@ export const MistakeTrainerView: React.FC<Props> = ({
       </button>
     </div>
   );
+
+  if (section === 'labs') {
+    return (
+      <div className="space-y-3 pb-24">
+        {trainHubBar}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-800/80 bg-hull/65 px-3 py-2">
+          <div className="inline-flex flex-wrap gap-1">
+            {([
+              ['endgame', 'Endgame Lab', Compass],
+              ['vision', '60s Board Vision', Crosshair],
+              ['rush', 'Puzzle Rush', Flame],
+            ] as Array<[LabSubTab, string, typeof Compass]>).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setLabTab(id)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition ${
+                  labTab === id
+                    ? 'border-teal-400/45 bg-teal-400/15 text-teal-200'
+                    : 'border-slate-800 bg-void/60 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-slate-500">
+            Bonus drills — keep your 15m Daily Coach first.
+          </span>
+        </div>
+
+        {labTab === 'endgame' && (
+          <EndgameLabView
+            analyzedGames={analyzedGames}
+            username={username}
+            boardTheme={boardTheme}
+            initialCategory={endgameCategoryFilter}
+            onOpenGame={onOpenGame}
+          />
+        )}
+        {labTab === 'vision' && <BoardVisionView boardTheme={boardTheme} />}
+        {labTab === 'rush' && (
+          deck.length === 0 ? (
+            <div className="glass-card p-6 text-center">
+              <p className="text-xs text-slate-400">
+                Analyze at least one game to build your personal Puzzle Rush deck.
+              </p>
+              <button
+                type="button"
+                onClick={onOpenGames}
+                className="mt-3 rounded-xl bg-gradient-to-r from-teal-400 to-cyan-300 px-3.5 py-2 text-xs font-black text-slate-950"
+              >
+                Go to Games
+              </button>
+            </div>
+          ) : (
+            <PuzzleRush
+              puzzles={deck}
+              boardTheme={boardTheme}
+              onSolved={handleRushSolved}
+              onWrong={handleRushWrong}
+              onExit={() => setLabTab('endgame')}
+              onFinished={handleRushFinished}
+            />
+          )
+        )}
+      </div>
+    );
+  }
 
   if (section === 'daily') {
     return (

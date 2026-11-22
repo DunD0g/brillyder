@@ -557,10 +557,13 @@ export const InsightsView: React.FC<Props> = ({
                 {!scoutActive && (
                   <button
                     type="button"
-                    onClick={() => onOpenTrainer('conversion')}
+                    onClick={() => {
+                      const weakest = [...insights.endgameCategories].sort((a, b) => a.accuracy - b.accuracy)[0];
+                      onOpenTrainer('labs', weakest?.category ?? null);
+                    }}
                     className="rounded-lg border border-teal-400/35 bg-teal-400/10 px-2 py-0.5 text-[10px] font-bold text-teal-200 hover:bg-teal-400/20"
                   >
-                    Train This →
+                    Endgame Lab →
                   </button>
                 )}
               </div>
