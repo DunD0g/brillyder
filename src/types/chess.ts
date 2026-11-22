@@ -146,7 +146,22 @@ export interface AnalyzedGame {
   openingLineDetected?: string;
 }
 
-export type AnalysisDepthPreset = 14 | 18;
+export type AnalysisDepthPreset = 12 | 14 | 18;
+
+export interface SavedPositionBookmark {
+  id: string;
+  gameId: string;
+  ply: number;
+  fen: string;
+  san: string;
+  moveNumber: number;
+  color: PlayerColor;
+  label: string;
+  note?: string;
+  evalDisplay?: string;
+  classification?: MoveClassification;
+  createdAt: number;
+}
 
 export interface PlayBotConfig {
   active: boolean;

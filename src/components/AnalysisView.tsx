@@ -967,8 +967,15 @@ export const AnalysisView: React.FC<Props> = ({
 
         <div className="flex items-center gap-1.5">
           <div className="inline-flex rounded-xl border border-slate-800 bg-slate-900/70 p-0.5 text-[11px] font-bold">
-            {([14, 18] as AnalysisDepthPreset[]).map((d) => (
-              <button key={d} type="button" disabled={analyzing} onClick={() => onDepthPresetChange(d)} className={`rounded-lg px-2 py-1 ${depthPreset === d ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400'}`}>
+            {([12, 14, 18] as AnalysisDepthPreset[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                disabled={analyzing}
+                onClick={() => onDepthPresetChange(d)}
+                title={d === 12 ? 'Fast single-pass D12' : d === 14 ? 'Balanced two-pass D12 → D18' : 'Deep two-pass D14 → D20'}
+                className={`rounded-lg px-2 py-1 ${depthPreset === d ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400'}`}
+              >
                 D{d}
               </button>
             ))}

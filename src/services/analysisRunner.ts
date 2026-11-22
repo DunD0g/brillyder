@@ -68,6 +68,7 @@ export async function analyzeGameToReview(
   const evals: EngineEval[] = [];
 
   const fastDepth = twoPass ? (depth >= 18 ? 14 : 12) : depth;
+  const deepDepth = depth >= 18 ? 20 : 18;
   let maxGameFraction = 0;
 
   const emitProgress = (
@@ -167,8 +168,8 @@ export async function analyzeGameToReview(
     }
 
     const fenOrder = Array.from(fenSet).sort((a, b) => a - b);
-    const pass2Label = 'Pass 2 · Deepening key moments (D18)';
-    const pass2Short = 'Pass 2 · Deep D18';
+    const pass2Label = `Pass 2 · Deepening key moments (D${deepDepth})`;
+    const pass2Short = `Pass 2 · Deep D${deepDepth}`;
 
     if (fenOrder.length === 0) {
       emitProgress(fens.length, fens.length, 2, 'Finalizing review…', 'Finalizing…');
@@ -180,9 +181,9 @@ export async function analyzeGameToReview(
         const fenIdx = fenOrder[k];
         emitProgress(k, fenOrder.length, 2, pass2Label, pass2Short);
         const deepRes = await runSearch(fens[fenIdx], {
-          depth: 18,
+          depth: deepDepth,
           multiPv: 3,
-          timeoutMs: 24000,
+          timeoutMs: deepDepth >= 20 ? 32000 : 24000,
         });
         if (shouldCancel?.()) throw new AnalysisCancelledError();
         evals[fenIdx] = deepRes;

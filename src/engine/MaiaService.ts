@@ -3,14 +3,36 @@ import { getPref, setPref } from '../storage/gameDb';
 import { stockfishService } from './StockfishService';
 
 export const MAIA_ENABLED_PREF_KEY = 'brillyder_maia_enabled';
+const MAIA_CACHE_NAME = 'brillyder-maia-models-v1';
 const MAIA_RATINGS = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900];
 const FAILED_MODEL_TTL_MS = 5 * 60 * 1000;
+
+export interface MaiaLocalModelInfo {
+  rating: number;
+  name: string;
+  sizeBytes: number;
+}
 
 export interface MaiaAvailability {
   checked: boolean;
   availableRatings: number[];
+  localRatings: number[];
+  localModels: MaiaLocalModelInfo[];
   activeModelUrl: string | null;
   lastError: string | null;
+}
+
+export function parseMaiaRatingFromFilename(filename: string, fallback = 1500): number {
+  const match = filename.match(/(1[1-9]00)/);
+  if (match) {
+    const parsed = parseInt(match[1], 10);
+    if (MAIA_RATINGS.includes(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function localModelCacheUrl(rating: number): string {
+  return `https://brillyder.local/maia-models/maia-${rating}.onnx`;
 }
 
 const PIECE_ORDER: PieceSymbol[] = ['p', 'n', 'b', 'r', 'q', 'k'];
@@ -138,9 +160,12 @@ class MaiaEngineService {
   private worker: Worker | null = null;
   private reqId = 0;
   private failedModels = new Map<string, number>();
+  private memoryModels = new Map<number, { buffer: ArrayBuffer; name: string }>();
   private availability: MaiaAvailability = {
     checked: false,
     availableRatings: [],
+    localRatings: [],
+    localModels: [],
     activeModelUrl: null,
     lastError: null,
   };
@@ -158,12 +183,108 @@ class MaiaEngineService {
     return this.availability;
   }
 
+  private async listCachedLocalModels(): Promise<MaiaLocalModelInfo[]> {
+    const found = new Map<number, MaiaLocalModelInfo>();
+    for (const [rating, entry] of this.memoryModels.entries()) {
+      found.set(rating, { rating, name: entry.name, sizeBytes: entry.buffer.byteLength });
+    }
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(MAIA_CACHE_NAME);
+        for (const rating of MAIA_RATINGS) {
+          const res = await cache.match(localModelCacheUrl(rating));
+          if (!res) continue;
+          const sizeHeader = parseInt(res.headers.get('x-maia-size') ?? '0', 10);
+          const nameHeader = res.headers.get('x-maia-name') || `maia-${rating}.onnx`;
+          found.set(rating, {
+            rating,
+            name: nameHeader,
+            sizeBytes: Number.isFinite(sizeHeader) && sizeHeader > 0 ? sizeHeader : 0,
+          });
+        }
+      } catch {
+        // Cache Storage may be unavailable in restricted contexts
+      }
+    }
+    return Array.from(found.values()).sort((a, b) => a.rating - b.rating);
+  }
+
+  private async readLocalModelBuffer(rating: number): Promise<ArrayBuffer | null> {
+    const inMem = this.memoryModels.get(rating);
+    if (inMem) return inMem.buffer.slice(0);
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(MAIA_CACHE_NAME);
+        const res = await cache.match(localModelCacheUrl(rating));
+        if (res) return await res.arrayBuffer();
+      } catch {
+        // ignore cache read failures
+      }
+    }
+    return null;
+  }
+
+  async importLocalModel(file: File, ratingOverride?: number): Promise<MaiaLocalModelInfo> {
+    if (!file.name.toLowerCase().endsWith('.onnx')) {
+      throw new Error('Please choose a Maia .onnx model file (e.g. maia-1500.onnx).');
+    }
+    const rating = ratingOverride ?? parseMaiaRatingFromFilename(file.name, 1500);
+    const buffer = await file.arrayBuffer();
+    if (buffer.byteLength < 1024) {
+      throw new Error('File looks too small to be a valid ONNX model.');
+    }
+
+    this.memoryModels.set(rating, { buffer: buffer.slice(0), name: file.name });
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(MAIA_CACHE_NAME);
+        const response = new Response(buffer, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'x-maia-name': file.name,
+            'x-maia-size': String(buffer.byteLength),
+          },
+        });
+        await cache.put(localModelCacheUrl(rating), response);
+      } catch {
+        // Fall back cleanly to in-memory buffer for this session
+      }
+    }
+    this.failedModels.delete(`local:${rating}`);
+    await this.probeAvailableModels();
+    return { rating, name: file.name, sizeBytes: buffer.byteLength };
+  }
+
+  async removeLocalModel(rating: number): Promise<MaiaAvailability> {
+    this.memoryModels.delete(rating);
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(MAIA_CACHE_NAME);
+        await cache.delete(localModelCacheUrl(rating));
+      } catch {
+        // ignore
+      }
+    }
+    this.dispose();
+    return this.probeAvailableModels();
+  }
+
   /**
-   * Probes `public/models/maia-*.onnx` cleanly in parallel (ignoring HTML SPA fallbacks).
+   * Probes both locally uploaded Cache Storage models and `public/models/maia-*.onnx` cleanly in parallel.
    */
   async probeAvailableModels(): Promise<MaiaAvailability> {
+    const localModels = await this.listCachedLocalModels();
+    const localRatings = localModels.map((m) => m.rating);
+
     if (typeof window === 'undefined' || typeof fetch === 'undefined') {
-      this.availability = { checked: true, availableRatings: [], activeModelUrl: null, lastError: null };
+      this.availability = {
+        checked: true,
+        availableRatings: localRatings,
+        localRatings,
+        localModels,
+        activeModelUrl: localRatings.length > 0 ? `local:${localRatings[0]}` : null,
+        lastError: null,
+      };
       return this.availability;
     }
 
@@ -180,12 +301,20 @@ class MaiaEngineService {
       })
     );
 
-    const found = checks.filter((r): r is number => r !== null).sort((a, b) => a - b);
+    const hosted = checks.filter((r): r is number => r !== null);
+    const merged = Array.from(new Set([...localRatings, ...hosted])).sort((a, b) => a - b);
 
     this.availability = {
       checked: true,
-      availableRatings: found,
-      activeModelUrl: found.length > 0 ? new URL(`models/maia-${found[0]}.onnx`, document.baseURI).href : null,
+      availableRatings: merged,
+      localRatings,
+      localModels,
+      activeModelUrl:
+        merged.length > 0
+          ? localRatings.includes(merged[0])
+            ? `local:${merged[0]}`
+            : new URL(`models/maia-${merged[0]}.onnx`, document.baseURI).href
+          : null,
       lastError: null,
     };
     return this.availability;
@@ -198,7 +327,11 @@ class MaiaEngineService {
     return this.worker;
   }
 
-  private callWorker<T>(payload: Record<string, unknown>, timeoutMs = 6000): Promise<T> {
+  private callWorker<T>(
+    payload: Record<string, unknown>,
+    timeoutMs = 6000,
+    transfer?: Transferable[]
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       let worker: Worker;
       try {
@@ -235,7 +368,11 @@ class MaiaEngineService {
 
       worker.addEventListener('message', onMsg);
       worker.addEventListener('error', onErr);
-      worker.postMessage({ ...payload, id });
+      if (transfer && transfer.length > 0) {
+        worker.postMessage({ ...payload, id }, transfer);
+      } else {
+        worker.postMessage({ ...payload, id });
+      }
     });
   }
 
@@ -249,15 +386,26 @@ class MaiaEngineService {
     const nearest = this.availability.availableRatings.reduce((best, r) =>
       Math.abs(r - targetElo) < Math.abs(best - targetElo) ? r : best
     );
-    const modelUrl = new URL(`models/maia-${nearest}.onnx`, document.baseURI).href;
-    const failedAt = this.failedModels.get(modelUrl);
+    const isLocal = this.availability.localRatings.includes(nearest);
+    const modelKey = isLocal ? `local:${nearest}` : new URL(`models/maia-${nearest}.onnx`, document.baseURI).href;
+    const failedAt = this.failedModels.get(modelKey);
     if (failedAt && Date.now() - failedAt < FAILED_MODEL_TTL_MS) {
       return null;
     }
 
     try {
-      await this.callWorker({ type: 'load', modelUrl }, 12_000);
-      this.availability = { ...this.availability, activeModelUrl: modelUrl, lastError: null };
+      if (isLocal) {
+        const buffer = await this.readLocalModelBuffer(nearest);
+        if (!buffer) return null;
+        await this.callWorker(
+          { type: 'load', modelUrl: modelKey, modelKey, modelBuffer: buffer },
+          15_000,
+          [buffer]
+        );
+      } else {
+        await this.callWorker({ type: 'load', modelUrl: modelKey, modelKey }, 12_000);
+      }
+      this.availability = { ...this.availability, activeModelUrl: modelKey, lastError: null };
 
       const chess = new Chess(fen);
       const flip = chess.turn() === 'b';
@@ -275,7 +423,7 @@ class MaiaEngineService {
       });
       return res.moveUci || null;
     } catch (err) {
-      this.failedModels.set(modelUrl, Date.now());
+      this.failedModels.set(modelKey, Date.now());
       this.availability = {
         ...this.availability,
         lastError: err instanceof Error ? err.message : 'Maia inference failed',

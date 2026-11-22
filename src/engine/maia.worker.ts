@@ -4,6 +4,8 @@ interface LoadMessage {
   type: 'load';
   id: number;
   modelUrl: string;
+  modelKey?: string;
+  modelBuffer?: ArrayBuffer;
 }
 
 interface InferMessage {
@@ -16,21 +18,28 @@ interface InferMessage {
 type WorkerRequest = LoadMessage | InferMessage;
 
 let session: ort.InferenceSession | null = null;
-let loadedUrl = '';
+let loadedKey = '';
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   try {
     if (msg.type === 'load') {
-      if (session && loadedUrl === msg.modelUrl) {
+      const key = msg.modelKey || msg.modelUrl;
+      if (session && loadedKey === key) {
         self.postMessage({ type: 'loaded', id: msg.id, ok: true });
         return;
       }
       ort.env.wasm.numThreads = 1;
-      session = await ort.InferenceSession.create(msg.modelUrl, {
-        executionProviders: ['wasm'],
-      });
-      loadedUrl = msg.modelUrl;
+      if (msg.modelBuffer) {
+        session = await ort.InferenceSession.create(new Uint8Array(msg.modelBuffer), {
+          executionProviders: ['wasm'],
+        });
+      } else {
+        session = await ort.InferenceSession.create(msg.modelUrl, {
+          executionProviders: ['wasm'],
+        });
+      }
+      loadedKey = key;
       self.postMessage({ type: 'loaded', id: msg.id, ok: true });
       return;
     }

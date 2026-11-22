@@ -7,9 +7,11 @@ import {
   ListChecks,
   Pause,
   Play,
+  RefreshCw,
   Sparkles,
   Volume2,
   VolumeX,
+  WifiOff,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -174,6 +176,10 @@ export const App: React.FC = () => {
   const [customRepertoires, setCustomRepertoires] = useState<OpeningCourse[]>([]);
   const [woodpeckerCycles, setWoodpeckerCycles] = useState<WoodpeckerCycleRecord[]>([]);
   const [convertedIds, setConvertedIds] = useState<string[]>([]);
+  const [swUpdateReady, setSwUpdateReady] = useState(false);
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  );
 
   const hydratedRef = useRef(false);
   const syncRunRef = useRef(0);
@@ -497,6 +503,40 @@ export const App: React.FC = () => {
   const handleSelectNavTab = useCallback((nextTab: ActiveTab) => {
     if (nextTab === 'train') setTrainMotif(null);
     setTab(nextTab);
+  }, []);
+
+  useEffect(() => {
+    const onOffline = () => setIsOffline(true);
+    const onOnline = () => setIsOffline(false);
+    const onSwUpdate = () => setSwUpdateReady(true);
+    let reloading = false;
+    const onControllerChange = () => {
+      if (reloading) return;
+      reloading = true;
+      window.location.reload();
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('brillyder-sw-update', onSwUpdate);
+    if (typeof window !== 'undefined' && (window as { __brillyderWaitingWorker?: ServiceWorker | null }).__brillyderWaitingWorker) {
+      setSwUpdateReady(true);
+    }
+    navigator.serviceWorker?.addEventListener('controllerchange', onControllerChange);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('brillyder-sw-update', onSwUpdate);
+      navigator.serviceWorker?.removeEventListener('controllerchange', onControllerChange);
+    };
+  }, []);
+
+  const applySwUpdate = useCallback(() => {
+    const waiting = (window as { __brillyderWaitingWorker?: ServiceWorker | null }).__brillyderWaitingWorker;
+    if (waiting) {
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      window.location.reload();
+    }
   }, []);
 
   const closeVault = useCallback(() => setVaultOpen(false), []);
@@ -928,6 +968,15 @@ export const App: React.FC = () => {
             </nav>
 
             <div className="ml-auto flex items-center gap-1.5 lg:ml-0">
+              {isOffline && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-xl border border-amber-400/35 bg-amber-500/15 px-2 py-1 text-[10px] font-bold text-amber-200"
+                  title="Offline mode — local Stockfish, openings & IndexedDB remain fully available"
+                >
+                  <WifiOff className="h-3 w-3" />
+                  <span className="hidden sm:inline">Offline</span>
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setVaultOpen(true)}
@@ -947,6 +996,8 @@ export const App: React.FC = () => {
                 onToggleCelebrations={() => setCelebrationsEnabled((v) => !v)}
                 vibe={vibe}
                 onVibeChange={setVibe}
+                depthPreset={depthPreset}
+                onDepthPresetChange={handleDepthChange}
                 maiaEnabled={maiaEnabled}
                 onToggleMaia={() => {
                   const next = !maiaEnabled;
@@ -971,6 +1022,32 @@ export const App: React.FC = () => {
         </header>
 
       <main className="mx-auto w-full max-w-lg px-3 pt-3 sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6 lg:pt-4">
+        {swUpdateReady && (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-teal-400/40 bg-gradient-to-r from-teal-500/15 via-hull/90 to-purple-500/15 px-3 py-2 text-xs text-teal-100 shadow-lg">
+            <span className="flex items-center gap-2 font-semibold">
+              <RefreshCw className="h-3.5 w-3.5 text-brilly" />
+              New BrillyDer update ready
+            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={applySwUpdate}
+                className="rounded-lg bg-gradient-to-r from-teal-400 to-cyan-300 px-2.5 py-1 text-[11px] font-black text-slate-950"
+              >
+                Reload
+              </button>
+              <button
+                type="button"
+                onClick={() => setSwUpdateReady(false)}
+                aria-label="Dismiss update banner"
+                className="rounded-lg p-1 text-slate-400 hover:text-slate-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {showIosTip && (
           <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-100">
             <span>

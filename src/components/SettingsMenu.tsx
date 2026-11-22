@@ -2,16 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Bot,
   Check,
+  Cpu,
   Database,
   Download,
   Orbit,
   Settings2,
   Sparkles,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { BOARD_THEME_LIST } from '../chess/boardThemes';
-import type { BoardThemeId } from '../types/chess';
+import type { AnalysisDepthPreset, BoardThemeId } from '../types/chess';
 import type { VibeMode } from '../utils/vibeCopy';
 import { maiaService, type MaiaAvailability } from '../engine/MaiaService';
 import {
@@ -34,6 +36,8 @@ interface Props {
   onToggleCelebrations: () => void;
   vibe: VibeMode;
   onVibeChange: (vibe: VibeMode) => void;
+  depthPreset: AnalysisDepthPreset;
+  onDepthPresetChange: (depth: AnalysisDepthPreset) => void;
   maiaEnabled: boolean;
   onToggleMaia: () => void;
   explorerPrefs: ExplorerPrefSettings;
@@ -43,6 +47,11 @@ interface Props {
 
 const RATING_OPTIONS = [1000, 1200, 1400, 1600, 1800, 2000, 2200];
 const SPEED_OPTIONS = ['bullet', 'blitz', 'rapid', 'classical'];
+const DEPTH_OPTIONS: Array<{ value: AnalysisDepthPreset; label: string; sub: string }> = [
+  { value: 12, label: 'Fast', sub: 'D12' },
+  { value: 14, label: 'Balanced', sub: 'D14→18' },
+  { value: 18, label: 'Deep', sub: 'D18→20' },
+];
 
 export const SettingsMenu: React.FC<Props> = ({
   theme,
@@ -51,6 +60,8 @@ export const SettingsMenu: React.FC<Props> = ({
   onToggleCelebrations,
   vibe,
   onVibeChange,
+  depthPreset,
+  onDepthPresetChange,
   maiaEnabled,
   onToggleMaia,
   explorerPrefs,
@@ -60,11 +71,14 @@ export const SettingsMenu: React.FC<Props> = ({
   const [open, setOpen] = useState(false);
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [maiaStatus, setMaiaStatus] = useState<MaiaAvailability>(() => maiaService.getAvailability());
+  const [maiaUploadMsg, setMaiaUploadMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [maiaBusy, setMaiaBusy] = useState(false);
   const [backupMsg, setBackupMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const ref = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const maiaInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -142,6 +156,35 @@ export const SettingsMenu: React.FC<Props> = ({
       });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleMaiaFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setMaiaBusy(true);
+    setMaiaUploadMsg(null);
+    try {
+      const info = await maiaService.importLocalModel(file);
+      setMaiaStatus(maiaService.getAvailability());
+      const mb = (info.sizeBytes / (1024 * 1024)).toFixed(1);
+      setMaiaUploadMsg({ kind: 'ok', text: `Cached Maia ${info.rating} (${mb} MB) on-device.` });
+    } catch (err) {
+      setMaiaUploadMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Model load failed.' });
+    } finally {
+      setMaiaBusy(false);
+    }
+  };
+
+  const handleRemoveMaiaModel = async (rating: number) => {
+    setMaiaBusy(true);
+    try {
+      const next = await maiaService.removeLocalModel(rating);
+      setMaiaStatus(next);
+      setMaiaUploadMsg({ kind: 'ok', text: `Removed local Maia ${rating} model.` });
+    } finally {
+      setMaiaBusy(false);
     }
   };
 
@@ -290,6 +333,33 @@ export const SettingsMenu: React.FC<Props> = ({
             </p>
           </div>
 
+          {/* Engine Depth Preset */}
+          <div className="mt-3 border-t border-slate-800/80 pt-2.5">
+            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <Cpu className="h-3.5 w-3.5 text-brilly" /> Engine Depth
+              </span>
+              <span className="font-mono text-brilly">D{depthPreset}</span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-1">
+              {DEPTH_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onDepthPresetChange(opt.value)}
+                  className={`rounded-lg border px-2 py-1.5 text-center transition ${
+                    depthPreset === opt.value
+                      ? 'border-teal-400/50 bg-teal-400/15 text-teal-200'
+                      : 'border-slate-800 bg-void/50 text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="text-[10px] font-black">{opt.label}</div>
+                  <div className="font-mono text-[9px] text-slate-500">{opt.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Optional Maia ONNX Human-Like Bot */}
           <div className="mt-3 border-t border-slate-800/80 pt-2.5">
             <button
@@ -321,10 +391,58 @@ export const SettingsMenu: React.FC<Props> = ({
                 ? maiaStatus.checked
                   ? maiaStatus.availableRatings.length > 0
                     ? `Active models: ${maiaStatus.availableRatings.join(', ')} (ONNX Web Worker).`
-                    : 'No public/models/maia-*.onnx detected — falling back cleanly to rating-capped Stockfish.'
-                  : 'Checking public/models/maia-*.onnx…'
-                : 'Optional ONNX bot for Sparring & Conversion when public/models/maia-*.onnx files are present.'}
+                    : 'No Maia model cached yet — upload a local maia-1500.onnx below or use Stockfish fallback.'
+                  : 'Checking local & bundled Maia models…'
+                : 'Optional local ONNX human-like bot for Sparring & Conversion.'}
             </p>
+            {maiaEnabled && (
+              <div className="mt-2 space-y-1.5 rounded-xl border border-purple-500/20 bg-void/60 p-2">
+                <input
+                  ref={maiaInputRef}
+                  type="file"
+                  accept=".onnx"
+                  onChange={(e) => void handleMaiaFile(e)}
+                  className="hidden"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    disabled={maiaBusy}
+                    onClick={() => maiaInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-lg border border-purple-400/35 bg-purple-500/15 px-2 py-1 text-[10px] font-bold text-purple-200 hover:bg-purple-500/25 disabled:opacity-50"
+                  >
+                    <Upload className="h-3 w-3" /> {maiaBusy ? 'Caching…' : 'Load .onnx file'}
+                  </button>
+                  <span className="text-[9px] text-slate-500">Cached on-device</span>
+                </div>
+                {maiaStatus.localModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {maiaStatus.localModels.map((m) => (
+                      <span
+                        key={m.rating}
+                        className="inline-flex items-center gap-1 rounded-md border border-purple-400/30 bg-purple-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-purple-200"
+                      >
+                        {m.rating}
+                        {m.sizeBytes > 0 ? ` (${(m.sizeBytes / (1024 * 1024)).toFixed(1)}M)` : ''}
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveMaiaModel(m.rating)}
+                          aria-label={`Remove local Maia ${m.rating}`}
+                          className="text-slate-400 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {maiaUploadMsg && (
+                  <p className={`text-[9px] ${maiaUploadMsg.kind === 'ok' ? 'text-teal-300' : 'text-rose-300'}`}>
+                    {maiaUploadMsg.text}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Explorer Target Band */}
