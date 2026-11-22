@@ -70,8 +70,33 @@ export const GameListView: React.FC<Props> = ({
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [gameFilter, setGameFilter] = useState<'all' | 'analyzed' | 'unanalyzed' | 'brilliant' | 'losses'>('all');
+  const [query, setQuery] = useState('');
 
   const unanalyzed = useMemo(() => games.filter((g) => !analyzedMap.has(g.id) && g.variant === 'standard').length, [games, analyzedMap]);
+
+  const filteredGames = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return games.filter((g) => {
+      const analyzed = analyzedMap.get(g.id);
+      const isWhite = resolveUserColor(g, username) === 'w';
+      if (gameFilter === 'analyzed' && !analyzed) return false;
+      if (gameFilter === 'unanalyzed' && (analyzed || g.variant !== 'standard')) return false;
+      if (gameFilter === 'brilliant') {
+        const br = analyzed ? (isWhite ? analyzed.whiteSummary.counts.brilliant : analyzed.blackSummary.counts.brilliant) : 0;
+        if (br <= 0) return false;
+      }
+      if (gameFilter === 'losses') {
+        const lost = (isWhite && g.resultString === '0-1') || (!isWhite && g.resultString === '1-0');
+        if (!lost) return false;
+      }
+      if (q) {
+        const hay = `${g.white.name} ${g.black.name} ${g.openingName} ${g.openingEco} ${g.speed}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [games, analyzedMap, username, gameFilter, query]);
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -264,10 +289,59 @@ export const GameListView: React.FC<Props> = ({
       </section>
 
       <section className="space-y-2.5">
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent games ({games.length})</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Recent games ({filteredGames.length}{filteredGames.length !== games.length ? ` / ${games.length}` : ''})
+          </h2>
           <span className="text-[10px] text-slate-500">{platformLabel(platform)} · Stockfish WASM</span>
         </div>
+
+        {games.length > 0 && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 nice-scroll">
+              {([
+                ['all', 'All'],
+                ['analyzed', 'Analyzed'],
+                ['unanalyzed', 'To analyze'],
+                ['brilliant', '!! Brilliant'],
+                ['losses', 'Losses'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setGameFilter(key)}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold transition ${
+                    gameFilter === key
+                      ? 'border-teal-400/50 bg-teal-400/15 text-teal-200'
+                      : 'border-slate-800 bg-hull/65 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="relative sm:w-52">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter opponent or opening…"
+                className="w-full rounded-xl border border-slate-800 bg-void/75 py-1.5 pl-8 pr-7 text-xs text-slate-200 placeholder-slate-500 focus:border-teal-400/60 focus:outline-none"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear game search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {games.length === 0 && !loading && (
           <div className="glass-card p-6 text-center">
@@ -277,8 +351,21 @@ export const GameListView: React.FC<Props> = ({
           </div>
         )}
 
+        {games.length > 0 && filteredGames.length === 0 && (
+          <div className="glass-card p-5 text-center">
+            <p className="text-xs font-semibold text-slate-300">No games match this filter.</p>
+            <button
+              type="button"
+              onClick={() => { setGameFilter('all'); setQuery(''); }}
+              className="mt-2 rounded-lg border border-teal-400/35 bg-teal-400/10 px-3 py-1 text-[11px] font-bold text-teal-200"
+            >
+              Reset filters
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-3">
-          {games.map((g) => {
+          {filteredGames.map((g) => {
             const isWhite = resolveUserColor(g, username) === 'w';
             const me = isWhite ? g.white : g.black;
             const opp = isWhite ? g.black : g.white;
@@ -286,11 +373,13 @@ export const GameListView: React.FC<Props> = ({
               g.resultString === '1/2-1/2' ? 'DRAW' : (isWhite && g.resultString === '1-0') || (!isWhite && g.resultString === '0-1') ? 'WIN' : g.resultString === '*' ? 'GAME' : 'LOSS';
             const badgeCls =
               res === 'WIN' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' : res === 'LOSS' ? 'border-red-500/30 bg-red-500/15 text-red-300' : 'border-slate-600/40 bg-slate-700/40 text-slate-300';
+            const edgeCls =
+              res === 'WIN' ? 'border-l-2 border-l-emerald-400/60' : res === 'LOSS' ? 'border-l-2 border-l-rose-400/60' : 'border-l-2 border-l-slate-600/60';
             const analyzed = analyzedMap.get(g.id);
             const isVariant = g.variant !== 'standard';
 
             return (
-              <div key={g.id} className="glass-card glass-card-hover flex flex-col p-3.5">
+              <div key={g.id} className={`glass-card glass-card-hover flex min-w-0 flex-col p-3.5 ${edgeCls}`}>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold ${badgeCls}`}>{res}</span>
                   <span className="inline-flex items-center gap-1 rounded bg-slate-800/90 px-1.5 py-0.5 font-mono text-[11px] text-slate-300">
@@ -309,13 +398,13 @@ export const GameListView: React.FC<Props> = ({
                   )}
                 </div>
 
-                <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-100">
+                <div className="mt-2 flex min-w-0 items-center gap-1.5 text-sm font-semibold text-slate-100">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full border ${isWhite ? 'border-slate-300 bg-white' : 'border-slate-500 bg-slate-950'}`} />
                   <span className="truncate">{me.name}</span>
-                  {me.rating && <span className="font-mono text-xs text-slate-400">({me.rating})</span>}
+                  {me.rating && <span className="shrink-0 font-mono text-xs text-slate-400">({me.rating})</span>}
                   <Swords className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                   <span className="truncate">{opp.name}</span>
-                  {opp.rating && <span className="font-mono text-xs text-slate-400">({opp.rating})</span>}
+                  {opp.rating && <span className="shrink-0 font-mono text-xs text-slate-400">({opp.rating})</span>}
                 </div>
 
                 <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-400">

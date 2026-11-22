@@ -3,6 +3,8 @@ import { Chess, type PieceSymbol, type Square } from 'chess.js';
 import {
   ArrowLeft,
   BarChart3,
+  Check,
+  Copy,
   FlaskConical,
   Gem,
   Loader2,
@@ -149,6 +151,7 @@ export const AnalysisView: React.FC<Props> = ({
   const [speed, setSpeed] = useState<1 | 2>(1);
   const [celebration, setCelebration] = useState<CelebrationState | null>(null);
   const [tablebase, setTablebase] = useState<TablebaseResult | null>(null);
+  const [copiedKind, setCopiedKind] = useState<'fen' | 'pgn' | null>(null);
   const celebratedInitialRef = useRef('');
   const botGenerationRef = useRef(0);
   const retryGenerationRef = useRef(0);
@@ -982,12 +985,42 @@ export const AnalysisView: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
-        <span className="truncate">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+        <span className="min-w-0 truncate">
           <span className="font-semibold text-slate-200">{game.white.name}</span> vs <span className="font-semibold text-slate-200">{game.black.name}</span>
           {game.rated && <span className="ml-1.5 rounded bg-slate-800 px-1 py-0.5 text-[9px] text-slate-400">rated</span>}
         </span>
-        <span className="shrink-0 text-[10px] text-slate-500">{game.timeControlLabel} · {game.resultString} · {game.openingEco}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[10px] text-slate-500">{game.timeControlLabel} · {game.resultString}{game.openingEco ? ` · ${game.openingEco}` : ''}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(activeFen).then(() => {
+                setCopiedKind('fen');
+                window.setTimeout(() => setCopiedKind((k) => (k === 'fen' ? null : k)), 1400);
+              }).catch(() => undefined);
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-hull/80 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-300 transition hover:border-teal-400/50 hover:text-teal-200"
+            title="Copy current position FEN"
+          >
+            {copiedKind === 'fen' ? <Check className="h-2.5 w-2.5 text-clean" /> : <Copy className="h-2.5 w-2.5" />}
+            FEN
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(game.pgn).then(() => {
+                setCopiedKind('pgn');
+                window.setTimeout(() => setCopiedKind((k) => (k === 'pgn' ? null : k)), 1400);
+              }).catch(() => undefined);
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-hull/80 px-1.5 py-0.5 font-mono text-[9px] font-bold text-slate-300 transition hover:border-teal-400/50 hover:text-teal-200"
+            title="Copy game PGN"
+          >
+            {copiedKind === 'pgn' ? <Check className="h-2.5 w-2.5 text-clean" /> : <Copy className="h-2.5 w-2.5" />}
+            PGN
+          </button>
+        </div>
       </div>
 
       {analyzing && progress && (() => {

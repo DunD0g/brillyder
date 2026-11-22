@@ -1249,6 +1249,9 @@ export const App: React.FC = () => {
                     tab === id ? 'bg-teal-400/12 text-brilly' : 'text-slate-400 active:bg-slate-800/50'
                   }`}
                 >
+                  {tab === id && (
+                    <span className="absolute top-0 h-0.5 w-6 rounded-full bg-gradient-to-r from-teal-400 to-purple-400" />
+                  )}
                   <Icon className="mb-0.5 h-[18px] w-[18px]" />
                   {label}
                   {id === 'openings' && dueOpeningCount > 0 && (

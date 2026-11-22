@@ -233,6 +233,53 @@ export const GuidedWalkthrough: React.FC<Props> = ({
           </button>
         </div>
 
+        {/* Inline live step callout on mobile so users see the active plan right below the board without scrolling */}
+        <div className="mt-2 rounded-xl border border-slate-800/90 bg-void/70 px-2.5 py-2 lg:hidden">
+          {trapPlayback ? (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-blunder">
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> {trapPlayback.stepLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { clearTimers(); setTrapPlayback(null); }}
+                  className="rounded-md border border-slate-700 bg-hull px-1.5 py-0.5 text-[9px] font-bold text-slate-300"
+                >
+                  Mainline
+                </button>
+              </div>
+              <p className="text-[11px] leading-snug text-rose-100">{trapPlayback.trap.reason}</p>
+            </div>
+          ) : activeAnnotation ? (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded bg-teal-400/15 px-1.5 py-0.5 font-mono text-[10px] font-black text-brilly">
+                  {Math.floor(activeAnnotation.ply / 2) + 1}
+                  {activeAnnotation.ply % 2 === 0 ? '.' : '…'}
+                  {line.moves[activeAnnotation.ply]}
+                </span>
+                {activeAnnotation.wrongMoveTraps && activeAnnotation.wrongMoveTraps.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => previewTrap(activeAnnotation.wrongMoveTraps![0], activeAnnotation.ply)}
+                    className="inline-flex items-center gap-1 rounded-md border border-rose-400/40 bg-rose-500/15 px-2 py-0.5 text-[9px] font-black text-rose-200"
+                  >
+                    <Play className="h-2.5 w-2.5" /> Why not {activeAnnotation.wrongMoveTraps[0].playedSan}?
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] leading-snug text-slate-200">{activeAnnotation.plan}</p>
+            </div>
+          ) : (
+            <p className="text-[11px] leading-snug text-slate-400">
+              {step === 0
+                ? 'Tap Next or swipe the board to step through the line.'
+                : `Development move (${line.moves[step - 1]}). Tap Next for the next key idea.`}
+            </p>
+          )}
+        </div>
+
         <div className="mt-2 flex flex-wrap gap-1">
           {line.moves.map((san, idx) => {
             const isCurrent = step === idx + 1;

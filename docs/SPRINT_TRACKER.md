@@ -160,7 +160,11 @@
   - Added 4 new `chess.js`-verified starter courses to `src/data/starterCourses.json`: **Italian Game**, **Queen's Gambit**, **Accelerated Dragon Sicilian**, and **French Defense** (8 starter courses total: 4 White, 4 Black).
 - **Bundle Code-Splitting & Faster Mobile Startup:**
   - Converted heavy tabs (`AnalysisView`, `OpeningsView`, `MistakeTrainerView`, `InsightsView`) and modals (`BrillyVaultModal`, `GravityCheckModal`) to `React.lazy` + `<Suspense>` in `App.tsx`, and configured vendor/data `manualChunks` in `vite.config.ts`.
-  - Bumped `public/sw.js` to `brillyder-v16`.
+- **Mobile Layout Audit & UI Polish (`5605f24` + UI pass):**
+  - Fixed the Walkthrough mobile board blowout/zoom bug (caused by CSS Grid `auto` track + `truncate` (`white-space: nowrap`) inside `GuidedWalkthrough.tsx` expanding the column past viewport width whenever a trap card mounted) and audited every CSS grid across the app to use explicit `grid-cols-1` + `min-w-0`.
+  - Added global iOS Safari zoom & overflow protections in `src/index.css` (`overflow-x: clip`, `touch-action: manipulation` on buttons/links, `16px` mobile input font-size floor).
+  - Polished mobile UX: inline live plan/trap callout beneath Walkthrough step buttons, height-capped mobile boards, compact 2-column course cards in `OpeningsView`, Games search & quick filter bar + result edge accents in `GameListView`, 1-tap Copy FEN/PGN in `AnalysisView`, `PlayerBar` active turn glow, and active mobile nav indicator.
+  - Bumped `public/sw.js` to `brillyder-v18`.
 
 ### Verified
 - `npm test`: **17 test files, 96 tests passed** (including all 33 `starterCourses.test.ts` chess.js legality checks, `puzzleSequence.test.ts`, and `repertoireLines.test.ts`).
