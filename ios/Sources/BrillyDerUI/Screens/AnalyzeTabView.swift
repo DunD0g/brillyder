@@ -29,6 +29,7 @@ public struct AnalyzeTabView: View {
     @State private var syzygyResult: SyzygyProbeResult? = nil
     @State private var copiedNotice: String? = nil
     @State private var boostedDeviationCardId: String? = nil
+    @State private var activeShareCard: BrillyShareCardPayload? = nil
 
     public var body: some View {
         ZStack {
@@ -82,6 +83,9 @@ public struct AnalyzeTabView: View {
                 botStatusNotice = nil
                 evaluateSandbox(fen: newFen)
             }
+        }
+        .sheet(item: $activeShareCard) { payload in
+            BrillyShareCardSheet(payload: payload, surfaceStyle: store.surfaceStyle)
         }
     }
 
@@ -402,19 +406,34 @@ public struct AnalyzeTabView: View {
             return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
         }()
 
-        // Lazy Transferable share card (zero ImageRenderer calls during ScrollView layout!)
-        let shareItem = BrillyShareCardItem(
-            fen: displayFen,
-            orientation: orientation,
-            theme: store.boardTheme,
-            pieceSet: store.pieceSet,
-            title: "\(ag.game.white.name) vs \(ag.game.black.name)",
-            subtitle: activePly.map { "Move \($0.moveNumber): \($0.san) · \($0.classification.label)" } ?? ag.game.openingName,
-            evalDisplay: score.display,
-            badgeText: activePly?.classification.symbol,
-            classification: activePly?.classification,
-            lastMove: lastMovePair
-        )
+        let sharePayload: () -> BrillyShareCardPayload = {
+            let moverSide = activePly?.color ?? orientation
+            let summary = moverSide == .white ? ag.whiteSummary : ag.blackSummary
+            let accTag = "\(String(format: "%.1f", summary.accuracy))% · ~\(summary.estimatedElo)"
+            let notation = activePly.map { "\($0.moveNumber)\($0.color == .white ? "." : "...") \($0.san)" }
+            let detail = activePly?.coaching.detail ?? activePly?.coaching.headline ?? (ag.openingLineDetected ?? ag.game.openingName)
+            return BrillyShareCardPayload(
+                fen: displayFen,
+                orientation: orientation,
+                theme: store.boardTheme,
+                pieceSet: store.pieceSet,
+                vibe: store.vibeMode,
+                moveNotation: notation,
+                classification: activePly?.classification,
+                title: "\(ag.game.white.name) vs \(ag.game.black.name)",
+                coachingLine: detail,
+                evalDisplay: score.display,
+                evalScore: score,
+                whiteName: ag.game.white.name,
+                blackName: ag.game.black.name,
+                activeSide: moverSide,
+                accuracyTag: accTag,
+                openingName: ag.openingLineDetected ?? ag.game.openingName,
+                lastMove: lastMovePair,
+                showMoveArrow: true,
+                quipIndex: Int.random(in: 0..<12)
+            )
+        }
 
         ScrollView {
             VStack(spacing: 10) {
@@ -600,7 +619,9 @@ public struct AnalyzeTabView: View {
                     }
                     .buttonStyle(.plain)
 
-                    ShareLink(item: shareItem, preview: SharePreview(shareItem.title)) {
+                    Button {
+                        activeShareCard = sharePayload()
+                    } label: {
                         Label("Card", systemImage: "square.and.arrow.up")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(BrillyPalette.brillyTeal)
@@ -608,6 +629,7 @@ public struct AnalyzeTabView: View {
                             .padding(.vertical, 8)
                             .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
                     }
+                    .buttonStyle(.plain)
                 }
 
                 if let copiedNotice {

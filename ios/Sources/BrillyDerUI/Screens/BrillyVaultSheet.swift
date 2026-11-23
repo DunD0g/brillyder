@@ -15,6 +15,7 @@ public struct BrillyVaultSheet: View {
     }
 
     @State private var selectedTab: VaultTab = .brilliant
+    @State private var activeShareCard: BrillyShareCardPayload? = nil
 
     public var body: some View {
         let vault = store.vaultCollection
@@ -88,6 +89,9 @@ public struct BrillyVaultSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .sheet(item: $activeShareCard) { payload in
+                BrillyShareCardSheet(payload: payload, surfaceStyle: store.surfaceStyle)
+            }
         }
     }
 
@@ -104,18 +108,20 @@ public struct BrillyVaultSheet: View {
         } else {
             ForEach(items) { item in
                 let board = (try? ChessBoard(fen: item.fen)) ?? ChessBoard()
-                // Lazy Transferable share card — zero ImageRenderer work while scrolling!
-                let shareItem = BrillyShareCardItem(
-                    fen: item.fen,
-                    orientation: item.color,
-                    theme: store.boardTheme,
-                    pieceSet: store.pieceSet,
-                    title: item.title,
-                    subtitle: item.subtitle,
-                    evalDisplay: item.evalDisplay,
-                    badgeText: item.kind == .brilliant ? "!!" : item.kind.title,
-                    classification: item.kind == .brilliant ? .brilliant : nil
-                )
+                let movePair: (from: Square, to: Square)? = {
+                    if let fStr = item.fromSquare, let tStr = item.toSquare,
+                       let f = Square(algebraic: fStr), let t = Square(algebraic: tStr) {
+                        return (f, t)
+                    }
+                    return nil
+                }()
+                let effectiveClass: MoveClassification? = item.classification ?? (item.kind == .brilliant ? .brilliant : nil)
+                let thumbBadge: MoveBadgeOverlay? = {
+                    if let cls = effectiveClass, let toSq = movePair?.to {
+                        return MoveBadgeOverlay(square: toSq, classification: cls)
+                    }
+                    return nil
+                }()
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 12) {
@@ -124,7 +130,9 @@ public struct BrillyVaultSheet: View {
                             orientation: item.color,
                             theme: store.boardTheme,
                             surfaceStyle: store.surfaceStyle,
-                            interactive: false
+                            interactive: false,
+                            lastMove: movePair,
+                            moveBadge: thumbBadge
                         )
                         .frame(width: 84, height: 84)
 
@@ -156,7 +164,47 @@ public struct BrillyVaultSheet: View {
                         }
                         .buttonStyle(.plain)
 
-                        ShareLink(item: shareItem, preview: SharePreview(item.title)) {
+                        Button {
+                            let accTag: String? = {
+                                if let acc = item.userAccuracy, let elo = item.userEstimatedElo {
+                                    return "\(String(format: "%.1f", acc))% · ~\(elo)"
+                                }
+                                return nil
+                            }()
+                            let notation: String? = item.kind == .cleanSweep
+                                ? nil
+                                : "\(item.moveNumber)\(item.color == .white ? "." : "...") \(item.san)"
+                            let badgeOverride: String? = {
+                                switch item.kind {
+                                case .brilliant: return nil
+                                case .clutchSave: return "Clutch Save"
+                                case .trap: return "Trap Punished"
+                                case .cleanSweep: return "Clean Sweep"
+                                }
+                            }()
+                            activeShareCard = BrillyShareCardPayload(
+                                fen: item.fen,
+                                orientation: item.color,
+                                theme: store.boardTheme,
+                                pieceSet: store.pieceSet,
+                                vibe: store.vibeMode,
+                                moveNotation: notation,
+                                classification: effectiveClass,
+                                badgeLabelOverride: badgeOverride,
+                                title: item.title,
+                                coachingLine: item.subtitle,
+                                evalDisplay: item.evalDisplay,
+                                evalScore: item.evalScore,
+                                whiteName: item.whiteName,
+                                blackName: item.blackName,
+                                activeSide: item.color,
+                                accuracyTag: accTag,
+                                openingName: item.openingName,
+                                lastMove: movePair,
+                                showMoveArrow: true,
+                                quipIndex: Int.random(in: 0..<12)
+                            )
+                        } label: {
                             Label("Share Card", systemImage: "square.and.arrow.up")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
@@ -164,6 +212,7 @@ public struct BrillyVaultSheet: View {
                                 .padding(.vertical, 8)
                                 .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(14)

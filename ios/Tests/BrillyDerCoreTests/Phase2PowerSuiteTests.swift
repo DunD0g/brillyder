@@ -62,6 +62,12 @@ struct Phase2PowerSuiteTests {
         let analyzed = try await GameAnalyzer.analyze(game: sample, engine: BrillyNativeEngine(), preset: .fast)
         let vault = VaultService.buildVault(from: [analyzed], handles: ["You"])
         #expect(vault.headlineBrilliantCount == vault.brilliants.count)
+        let allHighlights = vault.brilliants + vault.clutchSaves + vault.traps + vault.cleanSweeps
+        for hl in allHighlights {
+            #expect(hl.fromSquare != nil && hl.toSquare != nil)
+            #expect(!hl.whiteName.isEmpty && !hl.blackName.isEmpty)
+            #expect(hl.evalScore != nil)
+        }
 
         // When userColor is nil and handles don't match either player, Vault must NOT attribute moves to the user.
         let anonymousGame = GameRecord(

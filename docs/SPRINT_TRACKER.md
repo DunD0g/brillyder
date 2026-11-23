@@ -353,3 +353,21 @@
 
 ### Verified
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.1`, build `6`), verified `UILaunchScreen`, `NSPhotoLibraryAddUsageDescription`, and all 48 PNGs inside `Payload/BrillyDer.app/BrillyDer_BrillyDerUI.bundle`.
+
+---
+
+## v2.6.2 (iOS Cosmic Alien Share Cards & Interactive Share Card Studio)
+**Status:** Completed & Verified
+
+### Built
+- **Native Alien UFO Mascot & Expressive Mood System (`BrillyAlienUFOView.swift`, `AlienCelebrationOverlay.swift`):**
+  - Built a bespoke SwiftUI vector Alien UFO mascot (`BrillyAlienUFOView`) with glowing tractor beam, translucent cockpit dome, porthole rim lights, sparkles, and 6 move-reactive moods (`brilliant` starry-eyed galaxy-brain alien, `great` cyan-visored striker, `best` approving alien, `book` scholar-glasses alien, `mistake` surprised alien, and `blunder` tilted dizzy `× ×`-eyed facepalming alien with sweat drop), plus curated Cosmic & Classic quip pools (`BrillyShareQuips`).
+  - Upgraded `AlienCelebrationBanner` to render `BrillyAlienUFOView` during live Brilliant/Blunder moments in Cosmic mode (cleanly falling back to `BrillyGemIcon` / warning triangle in Classic mode).
+- **Show-Stopping Move Highlight Share Card & Interactive Studio (`ShareCardRenderer.swift`, `VaultService.swift`, `AnalyzeTabView.swift`, `BrillyVaultSheet.swift`):**
+  - Enriched `VaultHighlight` with `fromSquare`, `toSquare`, `classification`, `evalScore`, `whiteName`, `blackName`, `userAccuracy`, `userEstimatedElo`, and `openingName` so **Brilly Vault** share cards (and vault thumbnails) display the exact move played.
+  - Redesigned `BrillyShareCardView` (rendered at `3x` Retina `1200px` wide) with deep starfield & classification-colored nebula backdrop, **BRILLY**`DER` header + signal badge, bold hero move banner (`23. Qxe8 !! BRILLIANT`), Alien UFO reaction quote, `e2 → e8` trajectory & accuracy chips, **dashed origin launch ring + luminous gradient move arrow + destination square glow border + gleaming on-board `!!` badge**, integrated horizontal Eval Bar, full player matchup & unwrapped 2-line coaching insight.
+  - Added **`BrillyShareCardSheet`** interactive Share Card Studio on tapping **Card** / **Share Card** in both `AnalyzeTabView` and `BrillyVaultSheet`, featuring live full-fidelity preview, **Alien Cosmic / Classic** toggle, **New Quip** shuffler, **Arrow** toggle, one-tap **Share Card**, and one-tap **Save Photo** directly to the Camera Roll.
+
+### Verified
+- Rendered & visually inspected real `ImageRenderer` PNG previews for both `23. Qxe8!!` Brilliant (Classic pieces, Slate board) and `4. Qf3??` Blunder (Chessnut pieces, Emerald board).
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed** (including `VaultHighlight` move-square & metadata assertions), Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.2`, build `7`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.

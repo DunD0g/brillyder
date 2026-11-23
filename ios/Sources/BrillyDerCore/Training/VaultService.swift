@@ -27,10 +27,65 @@ public struct VaultHighlight: Hashable, Sendable, Identifiable {
     public let color: PieceColor
     public let fen: String
     public let san: String
+    public let fromSquare: String?
+    public let toSquare: String?
+    public let classification: MoveClassification?
+    public let evalScore: EngineScore?
+    public let whiteName: String
+    public let blackName: String
+    public let userAccuracy: Double?
+    public let userEstimatedElo: Int?
+    public let openingName: String?
     public let title: String
     public let subtitle: String
     public let evalDisplay: String
     public let playedAt: Int64
+
+    public init(
+        id: String,
+        kind: VaultHighlightKind,
+        gameId: String,
+        ply: Int,
+        moveNumber: Int,
+        color: PieceColor,
+        fen: String,
+        san: String,
+        fromSquare: String? = nil,
+        toSquare: String? = nil,
+        classification: MoveClassification? = nil,
+        evalScore: EngineScore? = nil,
+        whiteName: String = "White",
+        blackName: String = "Black",
+        userAccuracy: Double? = nil,
+        userEstimatedElo: Int? = nil,
+        openingName: String? = nil,
+        title: String,
+        subtitle: String,
+        evalDisplay: String,
+        playedAt: Int64
+    ) {
+        self.id = id
+        self.kind = kind
+        self.gameId = gameId
+        self.ply = ply
+        self.moveNumber = moveNumber
+        self.color = color
+        self.fen = fen
+        self.san = san
+        self.fromSquare = fromSquare
+        self.toSquare = toSquare
+        self.classification = classification
+        self.evalScore = evalScore
+        self.whiteName = whiteName
+        self.blackName = blackName
+        self.userAccuracy = userAccuracy
+        self.userEstimatedElo = userEstimatedElo
+        self.openingName = openingName
+        self.title = title
+        self.subtitle = subtitle
+        self.evalDisplay = evalDisplay
+        self.playedAt = playedAt
+    }
 }
 
 public struct VaultCollection: Sendable {
@@ -63,6 +118,7 @@ public enum VaultService {
 
             // Clean Sweep: user won with >= 88% accuracy and 0 blunders
             let res = ag.game.userResult(handles: handles)
+            let openingLabel = ag.openingLineDetected ?? ag.game.openingName
             if res == "W" && summary.accuracy >= 88.0 && summary.count(for: .blunder) == 0 && ag.plies.count >= 16 {
                 let lastUserPly = ag.plies.last { $0.color == userColor } ?? ag.plies.last
                 sweeps.append(VaultHighlight(
@@ -74,8 +130,17 @@ public enum VaultService {
                     color: userColor,
                     fen: lastUserPly?.afterFen ?? ChessBoard.initialFEN,
                     san: lastUserPly?.san ?? "Win",
+                    fromSquare: lastUserPly?.from,
+                    toSquare: lastUserPly?.to,
+                    classification: lastUserPly?.classification,
+                    evalScore: lastUserPly?.evalAfter,
+                    whiteName: ag.game.white.name,
+                    blackName: ag.game.black.name,
+                    userAccuracy: summary.accuracy,
+                    userEstimatedElo: summary.estimatedElo,
+                    openingName: openingLabel,
                     title: "\(String(format: "%.1f", summary.accuracy))% Clean Sweep vs \(opp)",
-                    subtitle: "\(ag.openingLineDetected ?? ag.game.openingName) · 0 blunders",
+                    subtitle: "\(openingLabel) · 0 blunders",
                     evalDisplay: lastUserPly?.evalAfter.display ?? "Win",
                     playedAt: ag.game.createdAt
                 ))
@@ -98,6 +163,15 @@ public enum VaultService {
                         color: p.color,
                         fen: p.afterFen,
                         san: p.san,
+                        fromSquare: p.from,
+                        toSquare: p.to,
+                        classification: .brilliant,
+                        evalScore: p.evalAfter,
+                        whiteName: ag.game.white.name,
+                        blackName: ag.game.black.name,
+                        userAccuracy: summary.accuracy,
+                        userEstimatedElo: summary.estimatedElo,
+                        openingName: openingLabel,
                         title: "\(p.moveNumber)\(p.color == .white ? "." : "...") \(p.san) !! vs \(opp)",
                         subtitle: p.coaching.headline,
                         evalDisplay: p.evalAfter.display,
@@ -115,6 +189,15 @@ public enum VaultService {
                         color: p.color,
                         fen: p.afterFen,
                         san: p.san,
+                        fromSquare: p.from,
+                        toSquare: p.to,
+                        classification: p.classification,
+                        evalScore: p.evalAfter,
+                        whiteName: ag.game.white.name,
+                        blackName: ag.game.black.name,
+                        userAccuracy: summary.accuracy,
+                        userEstimatedElo: summary.estimatedElo,
+                        openingName: openingLabel,
                         title: "Clutch \(p.san) ! vs \(opp)",
                         subtitle: p.coaching.headline,
                         evalDisplay: p.evalAfter.display,
@@ -136,8 +219,17 @@ public enum VaultService {
                             color: p.color,
                             fen: p.afterFen,
                             san: p.san,
+                            fromSquare: p.from,
+                            toSquare: p.to,
+                            classification: p.classification,
+                            evalScore: p.evalAfter,
+                            whiteName: ag.game.white.name,
+                            blackName: ag.game.black.name,
+                            userAccuracy: summary.accuracy,
+                            userEstimatedElo: summary.estimatedElo,
+                            openingName: openingLabel,
                             title: "Punished \(prev.san) with \(p.san)",
-                            subtitle: "\(ag.openingLineDetected ?? ag.game.openingName) vs \(opp)",
+                            subtitle: "\(openingLabel) vs \(opp)",
                             evalDisplay: p.evalAfter.display,
                             playedAt: ag.game.createdAt
                         ))
