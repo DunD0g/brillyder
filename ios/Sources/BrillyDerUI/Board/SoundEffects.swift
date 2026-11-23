@@ -12,7 +12,8 @@ public enum ChessSoundCue: Hashable, CaseIterable, Sendable {
 }
 
 /// Lightweight zero-asset procedural sound engine using AVAudioEngine (obeys iOS silent switch via .ambient).
-/// Pre-caches all synthesized PCM buffers and recovers automatically from calls, Bluetooth route changes, and backgrounding.
+/// Fully lazy-initialized (never starts audio hardware on app launch), pre-caches all 5 PCM buffers,
+/// guards against sampleRate == 0 hardware transitions, and recovers safely from interruptions/route changes.
 @MainActor
 public final class BrillySoundEngine {
     public static let shared = BrillySoundEngine()
@@ -24,31 +25,41 @@ public final class BrillySoundEngine {
     private var format: AVAudioFormat?
     private var buffers: [ChessSoundCue: AVAudioPCMBuffer] = [:]
     private var isConnected = false
+    private var hasPrewarmed = false
     private var observers: [NSObjectProtocol] = []
     #endif
 
     private init() {
         #if canImport(AVFoundation)
-        let fmt = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
-        self.format = fmt
-        setupGraph()
-        if let fmt {
-            prewarmBuffers(format: fmt)
-        }
+        self.format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
         registerLifecycleObservers()
         #endif
     }
 
     public func play(_ cue: ChessSoundCue) {
         #if canImport(AVFoundation)
+        guard let format else { return }
+        if !hasPrewarmed {
+            prewarmBuffers(format: format)
+            hasPrewarmed = true
+        }
         guard let buffer = buffers[cue] else { return }
-        if !isConnected { setupGraph() }
+
+        // Guard against iOS audio hardware transition where outputNode reports 0 Hz (prevents NSException!)
+        let hwFormat = engine.outputNode.outputFormat(forBus: 0)
+        guard hwFormat.sampleRate > 0 && hwFormat.channelCount > 0 else { return }
+
+        if !isConnected {
+            setupGraph(format: format)
+        }
         guard isConnected else { return }
 
         if !engine.isRunning {
+            engine.prepare()
             do {
                 try engine.start()
             } catch {
+                isConnected = false
                 return
             }
         }
@@ -63,6 +74,7 @@ public final class BrillySoundEngine {
 
     public func pause() {
         #if canImport(AVFoundation)
+        guard isConnected else { return }
         if player.isPlaying {
             player.stop()
         }
@@ -72,20 +84,13 @@ public final class BrillySoundEngine {
         #endif
     }
 
+    /// Marks audio graph ready for lazy restart on the next sound cue (never starts hardware eagerly at launch).
     public func resumeIfNeeded() {
-        #if canImport(AVFoundation)
-        if !isConnected {
-            setupGraph()
-        }
-        if !engine.isRunning {
-            try? engine.start()
-        }
-        #endif
+        // Intentionally lazy: audio engine restarts cleanly on the next play(_:) call once hardware is active.
     }
 
     #if canImport(AVFoundation)
-    private func setupGraph() {
-        guard let format else { return }
+    private func setupGraph(format: AVAudioFormat) {
         if !engine.attachedNodes.contains(player) {
             engine.attach(player)
         }
@@ -93,12 +98,15 @@ public final class BrillySoundEngine {
         isConnected = true
     }
 
-    private func rebuildAfterReset() {
-        player.stop()
-        engine.stop()
+    private func invalidateGraph() {
+        if isConnected {
+            player.stop()
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
         engine.reset()
         isConnected = false
-        setupGraph()
     }
 
     private func registerLifecycleObservers() {
@@ -109,8 +117,8 @@ public final class BrillySoundEngine {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                // Never mutate/reconnect inside the config notification; rebuild lazily on next play().
                 self?.isConnected = false
-                self?.setupGraph()
             }
         }
         observers.append(configObs)
@@ -128,7 +136,7 @@ public final class BrillySoundEngine {
                     self?.pause()
                 } else if typeVal == AVAudioSession.InterruptionType.ended.rawValue {
                     try? AVAudioSession.sharedInstance().setActive(true)
-                    self?.resumeIfNeeded()
+                    self?.isConnected = false
                 }
             }
         }
@@ -142,7 +150,7 @@ public final class BrillySoundEngine {
             Task { @MainActor in
                 try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
                 try? AVAudioSession.sharedInstance().setActive(true)
-                self?.rebuildAfterReset()
+                self?.invalidateGraph()
             }
         }
         observers.append(resetObs)

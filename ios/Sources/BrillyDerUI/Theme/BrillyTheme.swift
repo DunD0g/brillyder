@@ -107,6 +107,44 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
     }
 }
 
+public enum PieceSetID: String, Codable, CaseIterable, Sendable, Identifiable {
+    case cburnett
+    case chessnut
+    case spatial
+    case kiwen
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .cburnett: return "Classic"
+        case .chessnut: return "Chessnut"
+        case .spatial:  return "Spatial"
+        case .kiwen:    return "Minimal"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .cburnett: return "Tournament standard"
+        case .chessnut: return "Bold modern Staunton"
+        case .spatial:  return "Sculpted 3D shading"
+        case .kiwen:    return "Clean flat geometric"
+        }
+    }
+}
+
+private struct BrillyPieceSetKey: EnvironmentKey {
+    static let defaultValue: PieceSetID = .cburnett
+}
+
+public extension EnvironmentValues {
+    var brillyPieceSet: PieceSetID {
+        get { self[BrillyPieceSetKey.self] }
+        set { self[BrillyPieceSetKey.self] = newValue }
+    }
+}
+
 public enum BrillyPalette {
     public static let voidBg = Color(hex: 0x070B14)
     public static let hullBg = Color(hex: 0x0F172A)

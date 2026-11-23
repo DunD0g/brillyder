@@ -29,7 +29,10 @@ let package = Package(
         .target(
             name: "BrillyDerUI",
             dependencies: ["BrillyDerCore"],
-            path: "Sources/BrillyDerUI"
+            path: "Sources/BrillyDerUI",
+            resources: [
+                .process("Resources/Pieces"),
+            ]
         ),
         .testTarget(
             name: "BrillyDerCoreTests",

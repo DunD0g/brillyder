@@ -136,20 +136,23 @@ public enum JSONValue: Codable, Hashable, Sendable {
     }
 }
 
-/// Lossy per-element array decoder so one malformed record never wipes an entire persisted array.
+/// Lossy per-element array decoder so one malformed record never wipes an entire persisted array
+/// and can never infinite-loop on non-object JSON elements.
 private struct LossyDecodableArray<Element: Decodable>: Decodable {
     let elements: [Element]
-
-    private struct Dummy: Decodable {}
 
     init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
         var decoded: [Element] = []
         while !container.isAtEnd {
+            let before = container.currentIndex
             if let value = try? container.decode(Element.self) {
                 decoded.append(value)
             } else {
-                _ = try? container.decode(Dummy.self)
+                _ = try? container.decode(JSONValue.self)
+            }
+            if container.currentIndex == before {
+                break
             }
         }
         self.elements = decoded

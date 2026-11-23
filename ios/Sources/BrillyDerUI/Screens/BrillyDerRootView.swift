@@ -60,8 +60,8 @@ public struct BrillyDerRootView: View {
             }
             .tint(BrillyPalette.brillyTeal)
         }
-        // Safe-area-aware floating HUD banners (never obscured by Dynamic Island or notch)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        // Safe-area-aware floating HUD banners (overlay never perturbs TabView safe-area insets)
+        .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 if let celebration = store.activeCelebration {
                     AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
@@ -70,25 +70,28 @@ public struct BrillyDerRootView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
+                    .padding(.top, 8)
                 }
 
                 if store.isBatchAnalyzing && store.selectedTab != .games {
                     globalBatchPill
                         .padding(.horizontal, 16)
-                        .padding(.top, store.activeCelebration == nil ? 6 : 0)
+                        .padding(.top, store.activeCelebration == nil ? 8 : 0)
                 }
             }
         }
+        .environment(\.brillyPieceSet, store.pieceSet)
         .sheet(isPresented: $bindableStore.showingSettings) {
             CockpitSettingsSheet()
                 .environment(store)
+                .environment(\.brillyPieceSet, store.pieceSet)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $bindableStore.showingVault) {
             BrillyVaultSheet()
                 .environment(store)
+                .environment(\.brillyPieceSet, store.pieceSet)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }

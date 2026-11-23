@@ -109,6 +109,7 @@ public struct BrillyVaultSheet: View {
                     fen: item.fen,
                     orientation: item.color,
                     theme: store.boardTheme,
+                    pieceSet: store.pieceSet,
                     title: item.title,
                     subtitle: item.subtitle,
                     evalDisplay: item.evalDisplay,

@@ -407,6 +407,7 @@ public struct AnalyzeTabView: View {
             fen: displayFen,
             orientation: orientation,
             theme: store.boardTheme,
+            pieceSet: store.pieceSet,
             title: "\(ag.game.white.name) vs \(ag.game.black.name)",
             subtitle: activePly.map { "Move \($0.moveNumber): \($0.san) · \($0.classification.label)" } ?? ag.game.openingName,
             evalDisplay: score.display,

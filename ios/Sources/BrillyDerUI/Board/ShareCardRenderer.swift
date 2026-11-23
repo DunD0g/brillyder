@@ -13,6 +13,7 @@ public struct BrillyShareCardItem: Transferable, Sendable {
     public let fen: String
     public let orientation: PieceColor
     public let theme: BoardThemeID
+    public let pieceSet: PieceSetID
     public let title: String
     public let subtitle: String
     public let evalDisplay: String
@@ -25,6 +26,7 @@ public struct BrillyShareCardItem: Transferable, Sendable {
         fen: String,
         orientation: PieceColor,
         theme: BoardThemeID,
+        pieceSet: PieceSetID = .cburnett,
         title: String,
         subtitle: String,
         evalDisplay: String,
@@ -35,6 +37,7 @@ public struct BrillyShareCardItem: Transferable, Sendable {
         self.fen = fen
         self.orientation = orientation
         self.theme = theme
+        self.pieceSet = pieceSet
         self.title = title
         self.subtitle = subtitle
         self.evalDisplay = evalDisplay
@@ -69,6 +72,7 @@ public struct BrillyShareCardItem: Transferable, Sendable {
             board: board,
             orientation: orientation,
             theme: theme,
+            pieceSet: pieceSet,
             title: title,
             subtitle: subtitle,
             evalDisplay: evalDisplay,
@@ -100,6 +104,7 @@ public struct BrillyShareCardView: View {
     let board: ChessBoard
     let orientation: PieceColor
     let theme: BoardThemeID
+    let pieceSet: PieceSetID
     let title: String
     let subtitle: String
     let evalDisplay: String
@@ -113,6 +118,7 @@ public struct BrillyShareCardView: View {
         board: ChessBoard,
         orientation: PieceColor,
         theme: BoardThemeID,
+        pieceSet: PieceSetID = .cburnett,
         title: String,
         subtitle: String,
         evalDisplay: String,
@@ -125,6 +131,7 @@ public struct BrillyShareCardView: View {
         self.board = board
         self.orientation = orientation
         self.theme = theme
+        self.pieceSet = pieceSet
         self.title = title
         self.subtitle = subtitle
         self.evalDisplay = evalDisplay
@@ -181,6 +188,7 @@ public struct BrillyShareCardView: View {
                 lastMove: lastMove,
                 moveBadge: moveBadge
             )
+            .environment(\.brillyPieceSet, pieceSet)
             .frame(width: 320, height: 320)
 
             HStack {

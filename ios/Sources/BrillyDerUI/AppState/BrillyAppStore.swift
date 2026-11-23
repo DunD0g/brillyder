@@ -67,6 +67,9 @@ public final class BrillyAppStore {
     public var boardTheme: BoardThemeID {
         didSet { UserDefaults.standard.set(boardTheme.rawValue, forKey: "brilly_board_theme") }
     }
+    public var pieceSet: PieceSetID {
+        didSet { UserDefaults.standard.set(pieceSet.rawValue, forKey: "brilly_piece_set") }
+    }
     public var analysisPreset: AnalysisDepthPreset {
         didSet { UserDefaults.standard.set(analysisPreset.rawValue, forKey: "brilly_analysis_preset") }
     }
@@ -278,6 +281,7 @@ public final class BrillyAppStore {
         self.surfaceStyle = SurfaceStyle(rawValue: defaults.string(forKey: "brilly_surface_style") ?? "") ?? .liquidGlass
         self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .cosmic
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
+        self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced
         self.hapticsEnabled = defaults.object(forKey: "brilly_haptics_enabled") as? Bool ?? true
         self.soundEnabled = defaults.object(forKey: "brilly_sound_enabled") as? Bool ?? true

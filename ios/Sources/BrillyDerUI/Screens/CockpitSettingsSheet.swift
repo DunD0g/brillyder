@@ -144,7 +144,74 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
-                        // MARK: - 3. Board Theme Swatches
+                        // MARK: - 3. Piece Style Picker (4 Pro Retina Sets)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("CHESS PIECE STYLE")
+                                .font(.caption.weight(.bold))
+                                .tracking(1.0)
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                ForEach(PieceSetID.allCases) { set in
+                                    let selected = store.pieceSet == set
+                                    Button {
+                                        withAnimation(.snappy) {
+                                            store.pieceSet = set
+                                        }
+                                        store.triggerHaptic(.move)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack(spacing: 8) {
+                                                HStack(spacing: 0) {
+                                                    ZStack {
+                                                        store.boardTheme.lightSquare
+                                                        ChessPieceView(piece: Piece(color: .white, type: .knight), squareSize: 34, pieceSet: set)
+                                                    }
+                                                    .frame(width: 38, height: 38)
+                                                    ZStack {
+                                                        store.boardTheme.darkSquare
+                                                        ChessPieceView(piece: Piece(color: .black, type: .queen), squareSize: 34, pieceSet: set)
+                                                    }
+                                                    .frame(width: 38, height: 38)
+                                                }
+                                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                                                Spacer()
+                                                if selected {
+                                                    Image(systemName: "checkmark.circle.fill")
+                                                        .font(.subheadline)
+                                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                                }
+                                            }
+
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(set.title)
+                                                    .font(.subheadline.weight(.bold))
+                                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                                Text(set.subtitle)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        .padding(10)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .fill(Color.white.opacity(selected ? 0.12 : 0.04))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                        .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08), lineWidth: 1.2)
+                                                )
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+
+                        // MARK: - 4. Board Theme Swatches
                         VStack(alignment: .leading, spacing: 10) {
                             Text("BOARD THEME")
                                 .font(.caption.weight(.bold))

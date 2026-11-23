@@ -66,6 +66,7 @@ if [[ "$MODE" == "unsigned" ]]; then
   APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/BrillyDer.app"
   /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP_PATH/Info.plist" >/dev/null
   /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$APP_PATH/Info.plist" >/dev/null
+  find "$APP_PATH" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
 
   rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa
   mkdir -p build/Payload

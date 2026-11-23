@@ -10,13 +10,14 @@ struct BrillyDerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        Self.configureAudioSession()
+        Self.configureAudioSessionAsync()
     }
 
     var body: some Scene {
         WindowGroup {
             BrillyDerRootView()
                 .environment(store)
+                .environment(\.brillyPieceSet, store.pieceSet)
                 .preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -24,7 +25,6 @@ struct BrillyDerApp: App {
             case .background:
                 store.handleScenePhaseChange(isBackground: true)
             case .active:
-                Self.configureAudioSession()
                 store.handleScenePhaseChange(isBackground: false)
             default:
                 break
@@ -32,14 +32,16 @@ struct BrillyDerApp: App {
         }
     }
 
-    private static func configureAudioSession() {
+    private static func configureAudioSessionAsync() {
         #if canImport(AVFoundation) && os(iOS)
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true)
-        } catch {
-            // Non-fatal: app stays functional even if audio session cannot activate.
+        Task.detached(priority: .utility) {
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+                try session.setActive(true)
+            } catch {
+                // Non-fatal: app stays functional even if audio session cannot activate.
+            }
         }
         #endif
     }

@@ -331,3 +331,25 @@
 - `cd ios && swift test`: **5 suites, 28 tests passed** (added regressions for Syzygy perspective inversion, phantom EP transposition equality, strict FEN validation, MultiPV root TT non-poisoning, unresolved Vault ownership, and full Web PWA backup migration with patched starter course & Woodpecker cycles).
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `Release-iphoneos` `arm64` `** BUILD SUCCEEDED **` (`v2.6.0`, build `5`, `UILaunchScreen` & `NSPhotoLibraryAddUsageDescription` verified via `PlistBuddy`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.
 - `npm test`: **21 test files, 102 tests passed** with zero Web PWA regressions.
+
+---
+
+## v2.6.1 (iOS Pro Piece Sets & Launch-Stability Hotfixes)
+**Status:** Completed & Verified
+
+### Built
+- **4 Tournament-Grade Permissively Licensed Retina Piece Sets (`ChessPieceGlyph.swift`, `BrillyTheme.swift`, `BrillyDerUI/Resources/Pieces/`):**
+  - Replaced hand-coded Bézier silhouettes with 48 pre-rendered 256×256 `@3x` transparent Retina PNGs across 4 App-Store-safe (zero GPL, zero NC) piece sets (~796 KB total, documented in `ios/THIRD_PARTY_LICENSES.md`):
+    - **Classic (`cburnett`)** — BSD-3-Clause (Colin M.L. Burnett / Wikimedia Commons, default matching BrillyDer Web)
+    - **Chessnut (`chessnut`)** — Apache 2.0 (Alexis Luengas)
+    - **Spatial (`spatial`)** — MIT (Maurizio Monge)
+    - **Minimal (`kiwen-suwi`)** — CC BY 4.0 (neverRare)
+  - Added `@MainActor` `PieceSpriteCache` (`NSCache`), `@Environment(\.brillyPieceSet)` live propagation across every board, editor, modal, and Share Card (`BrillyShareCardItem`), plus a 2×2 **Chess Piece Style** picker with live two-square board previews inside `CockpitSettingsSheet.swift`.
+- **iOS Launch-Stability Fixes (`BrillyDerApp.swift`, `SoundEffects.swift`, `LocalVaultStore.swift`, `BrillyDerRootView.swift`):**
+  - Moved `AVAudioSession` activation off the main thread (`Task.detached(priority: .utility)`) to eliminate iOS `AVAudioSession Hang Risk` faults on launch.
+  - Made `BrillySoundEngine` 100% lazy (never constructs or starts `AVAudioEngine` at launch), added `hwFormat.sampleRate > 0 && hwFormat.channelCount > 0` guard to prevent real-device ObjC `NSException` (`SIGABRT`) crashes, and stopped mutating the audio graph inside `AVAudioEngineConfigurationChange`.
+  - Fixed a potential infinite-loop hazard in `LossyDecodableArray` when encountering malformed non-object JSON elements (`JSONValue.self` + strict `currentIndex` advance guard).
+  - Replaced `.safeAreaInset(edge: .top)` around `TabView` with non-intrusive `.overlay(alignment: .top)`.
+
+### Verified
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.1`, build `6`), verified `UILaunchScreen`, `NSPhotoLibraryAddUsageDescription`, and all 48 PNGs inside `Payload/BrillyDer.app/BrillyDer_BrillyDerUI.bundle`.
