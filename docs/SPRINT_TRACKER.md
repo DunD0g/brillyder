@@ -230,3 +230,31 @@
 ### Verified
 - `npm test`: **21 test files, 102 tests passed**.
 - `npm run build`: clean TypeScript check & Vite chunked production build (`maia.worker` 78.4 kB, `ort-wasm` 14.8 MB, `index` 178 kB).
+
+---
+
+## v2.3 (iOS Phase 1 — Daily Core MVP) — Native SwiftUI + iOS 26 Liquid Glass App
+**Status:** Completed & Verified
+
+### Built
+- **App-Store-Compliant Pure Swift 6 Core (`ios/Sources/BrillyDerCore/`):**
+  - Zero GPL dependencies: original FIDE-legal `ChessBoard` (Perft-verified, FEN/SAN/UCI, Zobrist hashing), `PGNParser` (`[%clk]` clock extraction & variations), `ChessMath` (exact win%, accuracy, Elo & SEE promotion-ordered capture gain), and BrillyDer v3 `MoveClassifier`.
+  - Original pure-Swift `BrillyNativeEngine` (Alpha-Beta + PVS + Quiescence + Transposition Table + Killer heuristics + PeSTO tapered PST + MultiPV) behind pluggable `ChessEngine` protocol (ready for optional MIT C++ NNUE engine like Caissa in Phase 1.5).
+  - Full `FSRS6Scheduler` (response-time auto-grading `<3s Easy / 3–10s Good / >10s or hint Hard / wrong Again`), `CourseRepository` bundling all 8 starter courses directly from `src/data/starterCourses.json`, `LichessClient`, `ChessComClient`, `GameAnalyzer`, `DailyCoachPlanner` (`10m / 15m / 25m` 4-stage workouts + 60s Gravity Check), and `LocalVaultStore` with 100% Web PWA ↔ iOS `brillyder` `schemaVersion: 2` JSON backup merge/export.
+- **Native SwiftUI + iOS 26 Liquid Glass UI (`ios/Sources/BrillyDerUI/`):**
+  - Authentic iOS 26 `.glassEffect(_:in:)` & `GlassEffectContainer` surfaces with automatic Reduce Transparency & iOS 18 fallback, plus live **`UI Surface Style: Liquid Glass | Cosmic Minimalist`** and **`Vibe: Cosmic | Classic`** toggles in `CockpitSettingsSheet`.
+  - Zero-GPL custom 120Hz `InteractiveChessBoardView` (tap + drag, legal dots, coaching arrows, square highlights, rank-8 safe classification badges, dismissible promotion overlay, 4 board themes, native haptics).
+  - All 5 Daily-First Core tabs (`Train`, `Games`, `Analyze`, `Openings`, `Insights`) + `CockpitSettingsSheet` (with native `fileExporter`/`fileImporter` Web ↔ iOS JSON backup).
+- **App Store Compliance Assets (`ios/App/` & `ios/project.yml`):**
+  - Generated full-bleed opaque 1024×1024 RGB `AppIcon-1024.png` (`hasAlpha: no`, passes `ITMS-90717`).
+  - Added `PrivacyInfo.xcprivacy` (zero tracking, local-only data), `Info.plist` (`ITSAppUsesNonExemptEncryption = false`), `AVAudioSession` (`.ambient` + `.mixWithOthers`), and XcodeGen `project.yml` + `ios/README.md`.
+
+### Verified
+- `cd ios && swift build`: clean zero-error, zero-warning Swift 6.3 / SDK 26.4 compilation across both `BrillyDerCore` and `BrillyDerUI` (type-checking real iOS/macOS 26 `.glassEffect()` & `GlassEffectContainer` APIs).
+- `cd ios && swift test`: **4 suites, 18 tests passed** (Perft depth 1–3 on starting & Kiwipete positions, 100% legal SAN validation across all 8 starter courses & traps, native engine Mate-in-1/Mate-in-2/hanging Queen/full game analysis, FSRS-6 scheduling, Daily Coach quotas, and Web ↔ iOS JSON backup round-trip).
+- `npm test && npm run build`: **21 test files, 102 tests passed** with zero regressions to the web PWA.
+
+### Remaining / Next Up (iOS Phase 2 & 3)
+- **Xcode 26 Device Run & TestFlight:** Install Xcode 26 from the Mac App Store, generate `BrillyDer.xcodeproj` via `xcodegen generate`, sign & run on iPhone Simulator / physical device.
+- **iOS Phase 2:** Plug in MIT C++ NNUE engine (e.g. Caissa) behind `ChessEngine` for 3500+ Elo deep analysis, Syzygy Endgame Lab, Advantage Conversion, Brilly Vault modal, Shareable PNG Cards, and WidgetKit Home/Lock Screen daily streak widgets.
+- **iOS Phase 3:** Visual Repertoire Move Tree, Scout Mode Gameplan, Frozen Woodpecker Cycles, 60s Board Vision, and optional CoreML Maia.
