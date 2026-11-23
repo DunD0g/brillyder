@@ -14,6 +14,48 @@ public struct TrainTabView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
+                    // Hero Dual-Tone Brilly / Der Brand Header
+                    HStack(alignment: .bottom, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            BrillyWordmarkView(fontSize: 33, uppercase: false, showSlash: true)
+                            Text(store.copy(
+                                cosmic: "Cosmic Stockfish probe & opening coach",
+                                classic: "On-device Stockfish chess coach"
+                            ))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        HStack(spacing: 4) {
+                            Text("!!")
+                                .font(.caption2.weight(.black))
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+                            Text("/")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.65))
+                            Text("??")
+                                .font(.caption2.weight(.black))
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(Color.white.opacity(0.06))
+                                .overlay(
+                                    Capsule().strokeBorder(
+                                        LinearGradient(
+                                            colors: [BrillyPalette.brillyTeal.opacity(0.45), BrillyPalette.blunderRose.opacity(0.45)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                                )
+                        )
+                    }
+                    .padding(.top, 2)
+
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(TrainSubMode.allCases) { mode in
@@ -52,7 +94,10 @@ public struct TrainTabView: View {
                 .padding(.bottom, 84)
             }
         }
-        .navigationTitle(store.copy(cosmic: "BrillyDer", classic: "Train"))
+        .navigationTitle("")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .sheet(isPresented: $showingDailySession) {
             DailySessionSheet(plan: store.dailyWorkoutPlan)
                 .environment(store)

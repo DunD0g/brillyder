@@ -64,6 +64,9 @@ public final class BrillyAppStore {
     public var vibeMode: VibeMode {
         didSet { UserDefaults.standard.set(vibeMode.rawValue, forKey: "brilly_vibe_mode") }
     }
+    public var calloutStyle: CalloutStyle {
+        didSet { UserDefaults.standard.set(calloutStyle.rawValue, forKey: "brilly_callout_style") }
+    }
     public var boardTheme: BoardThemeID {
         didSet { UserDefaults.standard.set(boardTheme.rawValue, forKey: "brilly_board_theme") }
     }
@@ -280,6 +283,7 @@ public final class BrillyAppStore {
         let defaults = UserDefaults.standard
         self.surfaceStyle = SurfaceStyle(rawValue: defaults.string(forKey: "brilly_surface_style") ?? "") ?? .liquidGlass
         self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .cosmic
+        self.calloutStyle = CalloutStyle(rawValue: defaults.string(forKey: "brilly_callout_style") ?? "") ?? .brillyDer
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
         self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced
@@ -299,6 +303,40 @@ public final class BrillyAppStore {
 
     public func copy(cosmic: String, classic: String) -> String {
         vibeMode == .cosmic ? cosmic : classic
+    }
+
+    /// Resolves effective callout style: Classic vibe always enforces clean standard chess labels.
+    public var effectiveCalloutStyle: CalloutStyle {
+        vibeMode == .classic ? .standard : calloutStyle
+    }
+
+    public func classificationLabel(_ classification: MoveClassification) -> String {
+        switch effectiveCalloutStyle {
+        case .brillyDer:
+            switch classification {
+            case .brilliant:  return "Brilly!!"
+            case .great:      return "Great!"
+            case .best:       return "Best"
+            case .excellent:  return "Good"
+            case .book:       return "Book"
+            case .inaccuracy: return "Slip"
+            case .mistake:    return "Mini-Der"
+            case .blunder:    return "Blun-DER"
+            }
+        case .cosmicAlien:
+            switch classification {
+            case .brilliant:  return "Galaxy-Brain"
+            case .great:      return "Precision"
+            case .best:       return "Best"
+            case .excellent:  return "Good"
+            case .book:       return "Book"
+            case .inaccuracy: return "Orbit Drift"
+            case .mistake:    return "Course Slip"
+            case .blunder:    return "Hull Breach"
+            }
+        case .standard:
+            return classification.label
+        }
     }
 
     public func handleScenePhaseChange(isBackground: Bool) {
@@ -339,18 +377,18 @@ public final class BrillyAppStore {
         #endif
     }
 
-    public func triggerCelebration(_ kind: CelebrationEvent.Kind) {
+    public func triggerCelebration(_ kind: CelebrationEvent.Kind, forceShow: Bool = false) {
         if soundEnabled {
             BrillySoundEngine.shared.play(kind == .brilliant ? .brilliant : .blunder)
         }
-        guard celebrationsEnabled else { return }
-        let event = CelebrationEvent(kind: kind, vibe: vibeMode)
-        withAnimation(.spring(duration: 0.35)) {
+        guard forceShow || celebrationsEnabled else { return }
+        let event = CelebrationEvent(kind: kind, vibe: vibeMode, calloutStyle: effectiveCalloutStyle)
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
             activeCelebration = event
         }
         let id = event.id
         Task {
-            try? await Task.sleep(for: .milliseconds(kind == .brilliant ? 2600 : 1900))
+            try? await Task.sleep(for: .milliseconds(kind == .brilliant ? 2900 : 2300))
             if activeCelebration?.id == id {
                 withAnimation(.easeOut(duration: 0.25)) {
                     activeCelebration = nil

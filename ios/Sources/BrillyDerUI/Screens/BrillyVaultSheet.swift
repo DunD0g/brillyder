@@ -188,6 +188,7 @@ public struct BrillyVaultSheet: View {
                                 theme: store.boardTheme,
                                 pieceSet: store.pieceSet,
                                 vibe: store.vibeMode,
+                                calloutStyle: store.effectiveCalloutStyle,
                                 moveNotation: notation,
                                 classification: effectiveClass,
                                 badgeLabelOverride: badgeOverride,

@@ -36,6 +36,30 @@ public enum VibeMode: String, Codable, CaseIterable, Sendable, Identifiable {
     }
 }
 
+public enum CalloutStyle: String, Codable, CaseIterable, Sendable, Identifiable {
+    case brillyDer = "brillyDer"
+    case cosmicAlien = "cosmicAlien"
+    case standard = "standard"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .brillyDer: return "Brilly/Der"
+        case .cosmicAlien: return "Alien Probe"
+        case .standard: return "Standard"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .brillyDer: return "Shouts BRILLY!! & BLUN-DER!! alongside the Alien UFO"
+        case .cosmicAlien: return "Space-probe alerts alongside the Alien UFO"
+        case .standard: return "Clean classic chess move callouts"
+        }
+    }
+}
+
 public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable {
     case slate
     case emerald

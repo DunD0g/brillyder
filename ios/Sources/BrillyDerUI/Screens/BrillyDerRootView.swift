@@ -140,6 +140,33 @@ public struct BrillyDerRootView: View {
 
     @ToolbarContentBuilder
     private var cockpitToolbar: some ToolbarContent {
+        #if os(iOS)
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                withAnimation(.snappy) {
+                    store.selectedTab = .train
+                    store.selectedTrainMode = .daily
+                }
+                store.triggerHaptic(.move)
+            } label: {
+                BrillyLogoMark(size: 30, circular: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("BrillyDer Home")
+        }
+        #else
+        ToolbarItem(placement: .navigation) {
+            Button {
+                store.selectedTab = .train
+                store.selectedTrainMode = .daily
+            } label: {
+                BrillyLogoMark(size: 28, circular: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("BrillyDer Home")
+        }
+        #endif
+
         if store.dailyStreakDays > 0 {
             ToolbarItem(placement: .automatic) {
                 Button {

@@ -418,6 +418,7 @@ public struct AnalyzeTabView: View {
                 theme: store.boardTheme,
                 pieceSet: store.pieceSet,
                 vibe: store.vibeMode,
+                calloutStyle: store.effectiveCalloutStyle,
                 moveNotation: notation,
                 classification: activePly?.classification,
                 title: "\(ag.game.white.name) vs \(ag.game.black.name)",
@@ -513,7 +514,7 @@ public struct AnalyzeTabView: View {
                             Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text(ap.classification.label)
+                            Text(store.classificationLabel(ap.classification))
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(BrillyPalette.badgeForeground(for: ap.classification))
                                 .padding(.horizontal, 9)

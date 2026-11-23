@@ -31,6 +31,7 @@ public struct CockpitSettingsSheet: View {
     @State private var exportDoc: BrillyBackupDocument? = nil
     @State private var backupNotice: String? = nil
     @State private var backupError: Bool = false
+    @State private var previewCelebration: CelebrationEvent? = nil
 
     public var body: some View {
         @Bindable var bindableStore = store
@@ -104,6 +105,23 @@ public struct CockpitSettingsSheet: View {
                                 .pickerStyle(.segmented)
                             }
 
+                            if store.vibeMode == .cosmic {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Move Callouts")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    Picker("Move Callouts", selection: $bindableStore.calloutStyle) {
+                                        ForEach(CalloutStyle.allCases) { style in
+                                            Text(style.title).tag(style)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                    Text(store.calloutStyle.subtitle)
+                                        .font(.caption2)
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                }
+                            }
+
                             Divider().overlay(Color.white.opacity(0.1))
 
                             VStack(alignment: .leading, spacing: 8) {
@@ -135,11 +153,73 @@ public struct CockpitSettingsSheet: View {
                             .tint(BrillyPalette.brillyTeal)
 
                             Toggle(isOn: $bindableStore.celebrationsEnabled) {
-                                Text(store.copy(cosmic: "Cosmic UFO Celebrations", classic: "Move Celebrations"))
+                                Text(store.copy(cosmic: "Brilly/Der & UFO Celebrations", classic: "Move Celebrations"))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                             }
                             .tint(BrillyPalette.brillyTeal)
+
+                            // Live Celebration Toast Previewer right inside Settings
+                            HStack(spacing: 8) {
+                                Button {
+                                    if store.soundEnabled {
+                                        BrillySoundEngine.shared.play(.brilliant)
+                                    }
+                                    withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                        previewCelebration = CelebrationEvent(
+                                            kind: .brilliant,
+                                            vibe: store.vibeMode,
+                                            calloutStyle: store.effectiveCalloutStyle
+                                        )
+                                    }
+                                } label: {
+                                    Label(
+                                        store.effectiveCalloutStyle == .brillyDer ? "Preview Brilly!!" : "Preview !!",
+                                        systemImage: "sparkles"
+                                    )
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    if store.soundEnabled {
+                                        BrillySoundEngine.shared.play(.blunder)
+                                    }
+                                    withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                        previewCelebration = CelebrationEvent(
+                                            kind: .blunder,
+                                            vibe: store.vibeMode,
+                                            calloutStyle: store.effectiveCalloutStyle
+                                        )
+                                    }
+                                } label: {
+                                    Label(
+                                        store.effectiveCalloutStyle == .brillyDer ? "Preview Blun-DER" : "Preview ??",
+                                        systemImage: "exclamationmark.triangle.fill"
+                                    )
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            if let previewCelebration {
+                                AlienCelebrationBanner(
+                                    event: previewCelebration,
+                                    surfaceStyle: store.surfaceStyle
+                                ) {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        self.previewCelebration = nil
+                                    }
+                                }
+                            }
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)

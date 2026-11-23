@@ -104,6 +104,17 @@ public enum BrillyAlienMood: String, Sendable, Equatable, CaseIterable {
         }
     }
 
+    public var brillyDerTag: String {
+        switch self {
+        case .brilliant: return "PURE BRILLY!!"
+        case .great:     return "SHARP BRILLY!"
+        case .best:      return "CLEAN LINE"
+        case .book:      return "THEORY LOCKED"
+        case .mistake:   return "MINI-DER MOMENT"
+        case .blunder:   return "BLUN-DER!! ALERT"
+        }
+    }
+
     public var classicTag: String {
         switch self {
         case .brilliant: return "BRILLIANT MOVE"
@@ -116,11 +127,22 @@ public enum BrillyAlienMood: String, Sendable, Equatable, CaseIterable {
     }
 }
 
-/// Curated witty cosmic & classic quips for Share Cards and live celebrations.
+/// Curated witty cosmic, Brilly/Der & classic quips for Share Cards and live celebrations.
 public enum BrillyShareQuips {
-    public static func pool(for mood: BrillyAlienMood, vibe: VibeMode) -> [String] {
-        switch (mood, vibe) {
-        case (.brilliant, .cosmic):
+    public static func pool(for mood: BrillyAlienMood, vibe: VibeMode, calloutStyle: CalloutStyle = .brillyDer) -> [String] {
+        let effectiveStyle: CalloutStyle = (vibe == .classic) ? .standard : calloutStyle
+        switch (mood, effectiveStyle) {
+        case (.brilliant, .brillyDer):
+            return [
+                "OH THAT'S BRILLY!! Beam me up, Magnus — not from this planet!",
+                "Pure BRILLY energy — Area 51 wants their tactics back!",
+                "Certified Galaxy-Brain BRILLY!! Humans aren't supposed to see that!",
+                "Stockfish just filed a UFO sighting for that BRILLY move!",
+                "NASA renamed a constellation after that BRILLY sacrifice.",
+                "The aliens graded it: \"10/10 BRILLY — finally, a worthy opponent.\"",
+                "Somewhere, a grandmaster just spilled their coffee.",
+            ]
+        case (.brilliant, .cosmicAlien):
             return [
                 "Beam me up, Magnus — that sacrifice isn't from this planet!",
                 "Area 51 called. They want their tactics back.",
@@ -131,55 +153,69 @@ public enum BrillyShareQuips {
                 "The aliens graded it: \"Finally, a worthy opponent.\"",
                 "Somewhere, a grandmaster just spilled their coffee.",
             ]
-        case (.brilliant, .classic):
+        case (.brilliant, .standard):
             return [
                 "Brilliant sacrifice — the sharpest move on the board.",
                 "Tactical masterpiece — material offered for decisive initiative.",
                 "Outstanding calculation — engine's top sacrificial resource.",
             ]
-        case (.great, .cosmic):
+        case (.great, .brillyDer), (.great, .cosmicAlien):
             return [
                 "Only move in the galaxy — locked directly on target!",
                 "Warp-drive precision. Zero margin for error.",
                 "Mothership scanners confirm: surgical tactical strike.",
                 "Threaded the needle through an asteroid field.",
             ]
-        case (.great, .classic):
+        case (.great, .standard):
             return [
                 "Great move — the only winning resource in a razor-sharp position.",
                 "Decisive accuracy — turns the game firmly in your favor.",
             ]
-        case (.best, .cosmic):
+        case (.best, .brillyDer), (.best, .cosmicAlien):
             return [
                 "Pure engine telemetry — smooth orbital control.",
                 "Mothership approves: top-line calculation.",
                 "Clean trajectory right down the laser sight.",
             ]
-        case (.best, .classic):
+        case (.best, .standard):
             return [
                 "Top engine move — clean, principled chess.",
                 "Exact calculation keeping maximum pressure on the board.",
             ]
-        case (.book, .cosmic):
+        case (.book, .brillyDer), (.book, .cosmicAlien):
             return [
                 "Straight out of the galactic opening codex.",
                 "Star-chart theory locked in — smooth launch!",
             ]
-        case (.book, .classic):
+        case (.book, .standard):
             return [
                 "Established opening theory — strong, principled setup.",
             ]
-        case (.mistake, .cosmic):
+        case (.mistake, .brillyDer):
+            return [
+                "Mini-DER moment — slight orbital drift, recalibrate thrusters!",
+                "A tiny derrr in the asteroid belt — check the sharper line!",
+                "Even starships slip a turn now and then.",
+            ]
+        case (.mistake, .cosmicAlien):
             return [
                 "Slight orbital drift — recalibrate thrusters!",
                 "A bit of turbulence in the asteroid belt.",
                 "Even starships miss a turn now and then.",
             ]
-        case (.mistake, .classic):
+        case (.mistake, .standard):
             return [
                 "A key turning point — study the engine's sharper continuation.",
             ]
-        case (.blunder, .cosmic):
+        case (.blunder, .brillyDer):
+            return [
+                "Big DERRR energy — Houston, we dropped a piece!",
+                "Full Blun-DER mode engaged. The UFO is facepalming. Slowly.",
+                "DERRR!! Beam malfunction — material did not survive transport.",
+                "Mission Control: \"That's a certified Blun-DER. Don't do that.\"",
+                "Alien scan complete: \"Yup, full derrr — that one hurts.\"",
+            ]
+        case (.blunder, .cosmicAlien):
             return [
                 "Houston, we dropped a piece.",
                 "The UFO is facepalming. Slowly.",
@@ -187,7 +223,7 @@ public enum BrillyShareQuips {
                 "Mission Control: \"We strongly recommend not doing that.\"",
                 "Alien scan complete: \"Yep, that one hurts.\"",
             ]
-        case (.blunder, .classic):
+        case (.blunder, .standard):
             return [
                 "Serious blunder — check the refutation and lock in the tactic.",
                 "Decisive swing — review the best defensive move.",
@@ -195,8 +231,8 @@ public enum BrillyShareQuips {
         }
     }
 
-    public static func quip(for mood: BrillyAlienMood, vibe: VibeMode, index: Int) -> String {
-        let items = pool(for: mood, vibe: vibe)
+    public static func quip(for mood: BrillyAlienMood, vibe: VibeMode, calloutStyle: CalloutStyle = .brillyDer, index: Int) -> String {
+        let items = pool(for: mood, vibe: vibe, calloutStyle: calloutStyle)
         guard !items.isEmpty else { return "" }
         let safeIdx = ((index % items.count) + items.count) % items.count
         return items[safeIdx]

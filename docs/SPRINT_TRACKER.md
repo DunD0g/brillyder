@@ -371,3 +371,22 @@
 ### Verified
 - Rendered & visually inspected real `ImageRenderer` PNG previews for both `23. Qxe8!!` Brilliant (Classic pieces, Slate board) and `4. Qf3??` Blunder (Chessnut pieces, Emerald board).
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed** (including `VaultHighlight` move-square & metadata assertions), Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.2`, build `7`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.
+
+---
+
+## v2.6.3 (iOS Brilly/Der Brand Lift, Top-Left Crown Logo & BRILLY!! / BLUN-DER!! Shouts)
+**Status:** Completed & Verified
+
+### Built
+- **Official Split-Crown Logo & `Brilly / Der` Dual-Tone Wordmark (`BrillyBrandViews.swift`, `BrillyDerRootView.swift`, `TrainTabView.swift`, `ShareCardRenderer.swift`):**
+  - Built native vector `BrillyLogoMark` (matching Web `icon.svg` / iOS AppIcon: cyan/rose split chess crown, `!!`/`??` accents, split arcs) and mounted it in the top-left circular glass toolbar slot (`.topBarLeading`, tapping navigates home to Train) and in the Share Card header.
+  - Built dual-tone `BrillyWordmarkView` (`Brilly / Der` with luminous teal gradient, frosted tilted `/`, and blunder-rose gradient) and replaced the plain white navigation title on `TrainTabView` with the hero `Brilly / Der` brand bar + `!! / ??` badge.
+- **`BRILLY!!` & `BLUN-DER!!` Shout System + Settings Preview (`BrillyTheme.swift`, `BrillyAppStore.swift`, `BrillyAlienUFOView.swift`, `AlienCelebrationOverlay.swift`, `AnalyzeTabView.swift`, `CockpitSettingsSheet.swift`):**
+  - Added persisted `CalloutStyle` (`Brilly/Der` default, `Alien Probe`, `Standard`; `Vibe == .classic` always cleanly enforces standard chess labels).
+  - Upgraded `AlienCelebrationBanner` with bold dual-tone shout headlines (`BRILLY!! MOVE!`, `PURE BRILLY!!`, `BLUN-DER!!`, `OH DERRR!!`), glowing `!!` / `??` pill tags, subtle watermark shimmer, and expressive `BrillyAlienUFOView` alongside witty Brilly/Der quips.
+  - Wired Brilly/Der labels into `AnalyzeTabView` coach pills (`Brilly!!`, `Blun-DER`, `Mini-Der`), `BrillyShareCardView` (`PURE BRILLY!!`, `!! BRILLY`, `?? BLUN-DER`), and `BrillyShareCardSheet` style cycler (`Brilly/Der → Alien Probe → Classic`).
+  - Added `Move Callouts` picker + live inline **`Preview Brilly!!`** and **`Preview Blun-DER`** test buttons right inside `CockpitSettingsSheet`.
+
+### Verified
+- Visually inspected rendered `ImageRenderer` previews ([preview_brand_shouts.png] and [preview_brillyder_card.png]) verifying the top-left split-crown logo, `Brilly / Der` wordmark, `PURE BRILLY!!` / `OH DERRR!!` Alien UFO banners, and updated `BRILLY / DER` Share Card.
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.3`, build `8`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.

@@ -15,6 +15,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let theme: BoardThemeID
     public let pieceSet: PieceSetID
     public let vibe: VibeMode
+    public let calloutStyle: CalloutStyle
     public let moveNotation: String?
     public let classification: MoveClassification?
     public let badgeLabelOverride: String?
@@ -39,6 +40,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         theme: BoardThemeID,
         pieceSet: PieceSetID = .cburnett,
         vibe: VibeMode = .cosmic,
+        calloutStyle: CalloutStyle = .brillyDer,
         moveNotation: String? = nil,
         classification: MoveClassification? = nil,
         badgeLabelOverride: String? = nil,
@@ -61,6 +63,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.theme = theme
         self.pieceSet = pieceSet
         self.vibe = vibe
+        self.calloutStyle = calloutStyle
         self.moveNotation = moveNotation
         self.classification = classification
         self.badgeLabelOverride = badgeLabelOverride
@@ -88,7 +91,11 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         BrillyAlienMood.from(classification: classification)
     }
 
-    public func withOverrides(vibe: VibeMode, showMoveArrow: Bool, quipIndex: Int) -> BrillyShareCardPayload {
+    public var effectiveCalloutStyle: CalloutStyle {
+        vibe == .classic ? .standard : calloutStyle
+    }
+
+    public func withOverrides(vibe: VibeMode, calloutStyle: CalloutStyle, showMoveArrow: Bool, quipIndex: Int) -> BrillyShareCardPayload {
         BrillyShareCardPayload(
             id: id,
             fen: fen,
@@ -96,6 +103,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             theme: theme,
             pieceSet: pieceSet,
             vibe: vibe,
+            calloutStyle: calloutStyle,
             moveNotation: moveNotation,
             classification: classification,
             badgeLabelOverride: badgeLabelOverride,
@@ -207,7 +215,11 @@ public struct BrillyShareCardView: View {
         if let override = payload.badgeLabelOverride, !override.isEmpty {
             return override.uppercased()
         }
-        return payload.vibe == .cosmic ? mood.cosmicTag : mood.classicTag
+        switch payload.effectiveCalloutStyle {
+        case .brillyDer:   return mood.brillyDerTag
+        case .cosmicAlien: return mood.cosmicTag
+        case .standard:    return mood.classicTag
+        }
     }
 
     private var classificationPillText: String? {
@@ -217,11 +229,21 @@ public struct BrillyShareCardView: View {
         if cls == .book || cls == .best {
             return cls.label.uppercased()
         }
+        if payload.effectiveCalloutStyle == .brillyDer {
+            switch cls {
+            case .brilliant:  return "!! BRILLY"
+            case .blunder:    return "?? BLUN-DER"
+            case .mistake:    return "? MINI-DER"
+            case .inaccuracy: return "?! SLIP"
+            case .great:      return "! GREAT"
+            default:          return "\(cls.symbol) \(cls.label.uppercased())"
+            }
+        }
         return "\(cls.symbol) \(cls.label.uppercased())"
     }
 
     private var heroQuip: String {
-        BrillyShareQuips.quip(for: mood, vibe: payload.vibe, index: payload.quipIndex)
+        BrillyShareQuips.quip(for: mood, vibe: payload.vibe, calloutStyle: payload.calloutStyle, index: payload.quipIndex)
     }
 
     private var normalizedCoaching: String? {
@@ -328,18 +350,9 @@ public struct BrillyShareCardView: View {
 
     private var topBrandHeader: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                BrillyGemIcon(size: 18, color: accentColor)
-                HStack(spacing: 0) {
-                    Text("BRILLY")
-                        .font(.system(size: 13, weight: .black, design: .rounded))
-                        .tracking(1.6)
-                        .foregroundStyle(BrillyPalette.brillyTeal)
-                    Text("DER")
-                        .font(.system(size: 13, weight: .black, design: .rounded))
-                        .tracking(1.6)
-                        .foregroundStyle(BrillyPalette.blunderRose)
-                }
+            HStack(spacing: 7) {
+                BrillyLogoMark(size: 24, circular: true)
+                BrillyWordmarkView(fontSize: 13.5, uppercase: true, showSlash: true, tracking: 1.4)
             }
 
             Spacer(minLength: 6)
@@ -805,6 +818,7 @@ public struct BrillyShareCardSheet: View {
     let surfaceStyle: SurfaceStyle
 
     @State private var vibe: VibeMode
+    @State private var calloutStyle: CalloutStyle
     @State private var showMoveArrow: Bool
     @State private var quipIndex: Int
     @State private var saveNotice: String? = nil
@@ -816,12 +830,13 @@ public struct BrillyShareCardSheet: View {
         self.basePayload = payload
         self.surfaceStyle = surfaceStyle
         _vibe = State(initialValue: payload.vibe)
+        _calloutStyle = State(initialValue: payload.calloutStyle)
         _showMoveArrow = State(initialValue: payload.showMoveArrow)
         _quipIndex = State(initialValue: payload.quipIndex)
     }
 
     private var activePayload: BrillyShareCardPayload {
-        basePayload.withOverrides(vibe: vibe, showMoveArrow: showMoveArrow, quipIndex: quipIndex)
+        basePayload.withOverrides(vibe: vibe, calloutStyle: calloutStyle, showMoveArrow: showMoveArrow, quipIndex: quipIndex)
     }
 
     private var shareItem: BrillyShareCardItem {
@@ -854,9 +869,22 @@ public struct BrillyShareCardSheet: View {
                         // Quick Customizers Row
                         HStack(spacing: 8) {
                             Button {
-                                vibe = (vibe == .cosmic) ? .classic : .cosmic
+                                if vibe == .classic {
+                                    vibe = .cosmic
+                                    calloutStyle = .brillyDer
+                                } else if calloutStyle == .brillyDer {
+                                    calloutStyle = .cosmicAlien
+                                } else {
+                                    vibe = .classic
+                                    calloutStyle = .standard
+                                }
                             } label: {
-                                Label(vibe == .cosmic ? "Alien Cosmic" : "Classic", systemImage: vibe == .cosmic ? "sparkles" : "crown.fill")
+                                let styleTitle: String = {
+                                    if vibe == .classic { return "Classic" }
+                                    return calloutStyle == .brillyDer ? "Brilly/Der" : "Alien Probe"
+                                }()
+                                let styleIcon: String = vibe == .classic ? "crown.fill" : "sparkles"
+                                Label(styleTitle, systemImage: styleIcon)
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(vibe == .cosmic ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
                                     .padding(.horizontal, 12)
