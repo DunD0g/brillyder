@@ -301,4 +301,5 @@
 
 ### Verified
 - `cd ios && swift test`: **5 suites, 24 tests passed** (including real Web PWA JSON backup migration test).
-- `cd ios && ./scripts/build-ipa.sh --unsigned`: `Release-iphoneos` `arm64` `** BUILD SUCCEEDED **` (`v2.5.0`, build `3`).
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `Release-iphoneos` `arm64` `** BUILD SUCCEEDED **` (`v2.5.1`, build `4`).
+- **v2.5.1 Hotfixes:** Moved single & batch analysis off `@MainActor` via `Task.detached` with ply-by-ply live `batchProgress`, upgraded Analysis & Batch HUDs to glowing `TractorBeamProgressBar` + radar ring, and froze `DailySessionSheet` steps on appear with `board.turn` orientation so grading FSRS cards never shifts the list or flips the board mid-move.

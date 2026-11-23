@@ -284,6 +284,8 @@ private struct DailySessionSheet: View {
         let cardId: String?
     }
 
+    @State private var frozenSteps: [DrillStep] = []
+    @State private var initialized: Bool = false
     @State private var stepIndex: Int = 0
     @State private var board: ChessBoard = ChessBoard()
     @State private var statusMessage: String = "Find the strongest repertoire or tactical move."
@@ -293,26 +295,31 @@ private struct DailySessionSheet: View {
     @State private var correctCount: Int = 0
     @State private var lastMove: (from: Square, to: Square)? = nil
 
-    private var steps: [DrillStep] {
+    private func buildInitialSteps() -> [DrillStep] {
+        let courseNames = Dictionary(uniqueKeysWithValues: store.allCourses.map { ($0.id, $0.name) })
         var out: [DrillStep] = []
         for c in plan.stage1OpeningCards {
+            let fenBoard = try? ChessBoard(fen: c.fen)
+            let sideToMove = fenBoard?.turn ?? c.side.pieceColor
+            let courseName = courseNames[c.courseId] ?? "Opening"
             out.append(DrillStep(
                 id: "s1_\(c.cardId)",
-                stageTitle: "Stage 1 · Opening Recall",
+                stageTitle: "Stage 1 · \(courseName) (\(sideToMove.displayName))",
                 fen: c.fen,
-                orientation: c.side.pieceColor,
+                orientation: sideToMove,
                 expectedUci: c.expectedUci,
                 expectedSan: c.expectedSan,
-                prompt: "Move \(c.ply / 2 + 1) — recall your course move.",
+                prompt: "\(sideToMove.displayName) to move (Move \(c.ply / 2 + 1)) — recall your \(courseName) move.",
                 cardId: c.cardId
             ))
         }
         for p in plan.stage2Blunders {
+            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
             out.append(DrillStep(
                 id: "s2_\(p.id)",
-                stageTitle: "Stage 2 · Blunder Rewind",
+                stageTitle: "Stage 2 · Blunder Rewind (\(sideToMove.displayName))",
                 fen: p.fen,
-                orientation: p.playerColor,
+                orientation: sideToMove,
                 expectedUci: p.bestMoveUci,
                 expectedSan: p.bestMoveSan,
                 prompt: "You played \(p.playedSan) vs \(p.opponentName). Find the better move!",
@@ -320,11 +327,12 @@ private struct DailySessionSheet: View {
             ))
         }
         for p in plan.stage3SpeedDrills {
+            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
             out.append(DrillStep(
                 id: "s3_\(p.id)",
-                stageTitle: "Stage 3 · Pattern Sprint",
+                stageTitle: "Stage 3 · Pattern Sprint (\(sideToMove.displayName))",
                 fen: p.fen,
-                orientation: p.playerColor,
+                orientation: sideToMove,
                 expectedUci: p.bestMoveUci,
                 expectedSan: p.bestMoveSan,
                 prompt: p.headline,
@@ -333,11 +341,12 @@ private struct DailySessionSheet: View {
         }
         if out.isEmpty {
             for fb in DailyCoachPlanner.fallbackGravityFlashes {
+                let sideToMove = (try? ChessBoard(fen: fb.fen))?.turn ?? fb.orientation
                 out.append(DrillStep(
                     id: fb.id,
-                    stageTitle: "Tactical Warmup",
+                    stageTitle: "Tactical Warmup (\(sideToMove.displayName))",
                     fen: fb.fen,
-                    orientation: fb.orientation,
+                    orientation: sideToMove,
                     expectedUci: fb.expectedUci,
                     expectedSan: fb.expectedSan,
                     prompt: fb.prompt,
@@ -353,7 +362,7 @@ private struct DailySessionSheet: View {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
 
-                if stepIndex >= steps.count {
+                if initialized && stepIndex >= frozenSteps.count {
                     VStack(spacing: 18) {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.system(size: 56))
@@ -361,7 +370,7 @@ private struct DailySessionSheet: View {
                         Text(store.copy(cosmic: "Orbit Complete!", classic: "Daily Session Complete!"))
                             .font(.title2.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                        Text("Solved \(correctCount) / \(steps.count) positions cleanly.")
+                        Text("Solved \(correctCount) / \(frozenSteps.count) positions cleanly.")
                             .foregroundStyle(BrillyPalette.inkSecondary)
                         Button("Finish & Log Streak") {
                             store.markDailySessionCompleted()
@@ -377,21 +386,24 @@ private struct DailySessionSheet: View {
                     .padding(28)
                     .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
                     .padding()
-                } else {
-                    let current = steps[stepIndex]
+                } else if stepIndex < frozenSteps.count {
+                    let current = frozenSteps[stepIndex]
                     VStack(spacing: 14) {
                         HStack {
                             Text(current.stageTitle)
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(BrillyPalette.brillyTeal)
+                                .lineLimit(1)
                             Spacer()
-                            Text("\(stepIndex + 1) / \(steps.count)")
+                            Text("\(stepIndex + 1) / \(frozenSteps.count)")
                                 .font(.caption.monospacedDigit().weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                         }
 
-                        ProgressView(value: Double(stepIndex), total: Double(max(1, steps.count)))
-                            .tint(BrillyPalette.brillyTeal)
+                        TractorBeamProgressBar(
+                            progress: Double(stepIndex + (isSolved ? 1 : 0)) / Double(max(1, frozenSteps.count)),
+                            height: 9
+                        )
 
                         InteractiveChessBoardView(
                             board: board,
@@ -447,7 +459,6 @@ private struct DailySessionSheet: View {
                         }
                     }
                     .padding(16)
-                    .onAppear { loadCurrentStep() }
                 }
             }
             .navigationTitle("Daily Coach")
@@ -456,18 +467,25 @@ private struct DailySessionSheet: View {
                     Button("Close") { dismiss() }
                 }
             }
+            .onAppear {
+                if !initialized {
+                    frozenSteps = buildInitialSteps()
+                    initialized = true
+                    loadCurrentStep()
+                }
+            }
         }
     }
 
     private func loadCurrentStep() {
-        guard stepIndex < steps.count else { return }
-        let cur = steps[stepIndex]
+        guard stepIndex < frozenSteps.count else { return }
+        let cur = frozenSteps[stepIndex]
         board = (try? ChessBoard(fen: cur.fen)) ?? ChessBoard()
         lastMove = nil
         isSolved = false
         usedHint = false
         shownAt = Date()
-        statusMessage = "Play your move on the board."
+        statusMessage = "Play \(cur.orientation.displayName)'s move on the board."
     }
 
     private func handleMove(_ move: ChessMove, for step: DrillStep) {

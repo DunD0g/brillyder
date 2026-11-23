@@ -154,21 +154,26 @@ public struct GamesTabView: View {
     private var batchAnalyzeCard: some View {
         let pending = store.unanalyzedRecentGames.count
         if store.isBatchAnalyzing {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label(store.copy(cosmic: "Batch Telemetry Scan", classic: "Batch Analyzing Games"), systemImage: "cpu")
+                    Label(store.copy(cosmic: "Batch Telemetry Scan", classic: "Batch Analyzing"), systemImage: "cpu")
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(BrillyPalette.brillyTeal)
                     Spacer()
+                    Text("\(Int((store.batchProgress * 100).rounded()))%")
+                        .font(.caption.monospacedDigit().weight(.black))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
                     Button("Stop") { store.cancelBatchAnalysis() }
                         .font(.caption.weight(.bold))
                         .foregroundStyle(BrillyPalette.blunderRose)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
                         .buttonStyle(.plain)
                 }
-                ProgressView(value: Double(store.batchCompletedGames), total: Double(max(1, store.batchTotalGames)))
-                    .tint(BrillyPalette.brillyTeal)
+                TractorBeamProgressBar(progress: store.batchProgress, height: 10)
                 Text(store.batchCurrentLabel)
-                    .font(.caption)
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(BrillyPalette.inkSecondary)
                     .lineLimit(1)
             }
@@ -208,10 +213,19 @@ public struct GamesTabView: View {
         } label: {
             Text(title)
                 .font(.caption.weight(.bold))
-                .foregroundStyle(BrillyPalette.inkPrimary)
+                .foregroundStyle(BrillyPalette.voidBg)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(
+                        LinearGradient(
+                            colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                )
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }

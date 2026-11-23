@@ -83,29 +83,66 @@ public struct AnalyzeTabView: View {
     }
 
     private var analyzingHud: some View {
-        VStack(spacing: 16) {
-            ProgressView(value: store.analysisProgress)
-                .tint(BrillyPalette.brillyTeal)
-                .frame(maxWidth: 260)
-            Text(store.analysisStatusText)
-                .font(.headline)
-                .foregroundStyle(BrillyPalette.inkPrimary)
-            Text("Running native on-device \(store.analysisPreset.title) analysis…")
-                .font(.caption)
-                .foregroundStyle(BrillyPalette.inkSecondary)
-            Button("Cancel") {
-                store.cancelAnalysis()
+        let pct = Int((store.analysisProgress * 100).rounded())
+        return VStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .stroke(BrillyPalette.brillyTeal.opacity(0.22), lineWidth: 3)
+                    .frame(width: 66, height: 66)
+                Circle()
+                    .trim(from: 0, to: max(0.12, CGFloat(store.analysisProgress)))
+                    .stroke(
+                        LinearGradient(
+                            colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 66, height: 66)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.25), value: store.analysisProgress)
+                BrillyGemIcon(size: 26, color: BrillyPalette.brillyTeal)
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(BrillyPalette.blunderRose)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 8)
-            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
+
+            VStack(spacing: 4) {
+                if !store.analyzingMatchupTitle.isEmpty {
+                    Text(store.analyzingMatchupTitle)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .lineLimit(1)
+                }
+                Text("\(store.analysisStatusText) · \(pct)%")
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                Text("On-device native \(store.analysisPreset.title) engine")
+                    .font(.caption)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+
+            TractorBeamProgressBar(progress: store.analysisProgress, height: 11)
+                .padding(.horizontal, 6)
+
+            Button {
+                store.cancelAnalysis()
+            } label: {
+                Text("Cancel Analysis")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrillyPalette.blunderRose)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(BrillyPalette.blunderRose.opacity(0.14))
+                            .overlay(Capsule().strokeBorder(BrillyPalette.blunderRose.opacity(0.55), lineWidth: 1))
+                    )
+            }
             .buttonStyle(.plain)
         }
-        .padding(28)
-        .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
-        .padding()
+        .padding(26)
+        .frame(maxWidth: 340)
+        .brillySurface(store.surfaceStyle, cornerRadius: 26, tint: BrillyPalette.brillyTeal)
+        .padding(.horizontal, 20)
     }
 
     private var emptyState: some View {

@@ -100,10 +100,12 @@ public final class BrillyAppStore {
     public var isAnalyzing: Bool = false
     public var analysisProgress: Double = 0
     public var analysisStatusText: String = ""
+    public var analyzingMatchupTitle: String = ""
 
     public var isBatchAnalyzing: Bool = false
     public var batchCompletedGames: Int = 0
     public var batchTotalGames: Int = 0
+    public var batchProgress: Double = 0
     public var batchCurrentLabel: String = ""
 
     // MARK: - Openings, Vault & Training State
@@ -494,16 +496,19 @@ public final class BrillyAppStore {
             return
         }
 
+        batchTask?.cancel()
+        isBatchAnalyzing = false
         analysisTask?.cancel()
         isAnalyzing = true
         analysisProgress = 0
+        analyzingMatchupTitle = "\(game.white.name) vs \(game.black.name)"
         analysisStatusText = copy(cosmic: "Scanning trajectory…", classic: "Analyzing game…")
         selectedTab = .analyze
 
         let preset = analysisPreset
         let engineRef = engine
 
-        analysisTask = Task {
+        analysisTask = Task.detached(priority: .userInitiated) {
             do {
                 let result = try await GameAnalyzer.analyze(
                     game: game,
@@ -516,18 +521,22 @@ public final class BrillyAppStore {
                     }
                 }
                 guard !Task.isCancelled else { return }
-                self.analyzedGames.removeAll { $0.id == result.id }
-                self.analyzedGames.insert(result, at: 0)
-                self.activeAnalyzedGame = result
-                self.pendingAnalyzePly = jumpToPly
-                self.isAnalyzing = false
-                self.analysisProgress = 1.0
-                self.triggerHaptic(.success)
-                self.persistToDisk()
+                await MainActor.run {
+                    self.analyzedGames.removeAll { $0.id == result.id }
+                    self.analyzedGames.insert(result, at: 0)
+                    self.activeAnalyzedGame = result
+                    self.pendingAnalyzePly = jumpToPly
+                    self.isAnalyzing = false
+                    self.analysisProgress = 1.0
+                    self.triggerHaptic(.success)
+                    self.persistToDisk()
+                }
             } catch {
                 if !Task.isCancelled {
-                    self.isAnalyzing = false
-                    self.syncErrorMessage = error.localizedDescription
+                    await MainActor.run {
+                        self.isAnalyzing = false
+                        self.syncErrorMessage = error.localizedDescription
+                    }
                 }
             }
         }
@@ -543,34 +552,63 @@ public final class BrillyAppStore {
         let targets = Array(unanalyzedRecentGames.prefix(maxCount))
         guard !targets.isEmpty else { return }
 
+        analysisTask?.cancel()
+        isAnalyzing = false
         batchTask?.cancel()
+
         isBatchAnalyzing = true
         batchCompletedGames = 0
         batchTotalGames = targets.count
-        batchCurrentLabel = "Starting batch (\(targets.count) games)…"
+        batchProgress = 0.02
+        batchCurrentLabel = "Game 1 of \(targets.count) · Preparing…"
+        triggerHaptic(.move)
 
-        let preset: AnalysisDepthPreset = .fast // Keep batch sweeps snappy on mobile
+        let preset: AnalysisDepthPreset = .fast
         let engineRef = engine
+        let totalGames = targets.count
 
-        batchTask = Task {
+        batchTask = Task.detached(priority: .userInitiated) {
             for (idx, game) in targets.enumerated() {
                 if Task.isCancelled { break }
-                self.batchCurrentLabel = "Game \(idx + 1)/\(targets.count): \(game.white.name) vs \(game.black.name)"
+                let matchup = "\(game.white.name) vs \(game.black.name)"
+                await MainActor.run {
+                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(matchup)"
+                }
                 do {
-                    let result = try await GameAnalyzer.analyze(game: game, engine: engineRef, preset: preset)
+                    let result = try await GameAnalyzer.analyze(
+                        game: game,
+                        engine: engineRef,
+                        preset: preset
+                    ) { donePlies, totalPlies in
+                        let sub = Double(donePlies) / Double(max(1, totalPlies))
+                        let overall = (Double(idx) + sub) / Double(max(1, totalGames))
+                        Task { @MainActor in
+                            self.batchProgress = overall
+                            self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · Ply \(donePlies)/\(totalPlies)"
+                        }
+                    }
                     if Task.isCancelled { break }
-                    self.analyzedGames.removeAll { $0.id == result.id }
-                    self.analyzedGames.insert(result, at: 0)
-                    self.batchCompletedGames = idx + 1
-                    self.persistToDisk()
+                    await MainActor.run {
+                        self.analyzedGames.removeAll { $0.id == result.id }
+                        self.analyzedGames.insert(result, at: 0)
+                        if self.activeAnalyzedGame == nil {
+                            self.activeAnalyzedGame = result
+                        }
+                        self.batchCompletedGames = idx + 1
+                        self.batchProgress = Double(idx + 1) / Double(max(1, totalGames))
+                        self.persistToDisk()
+                    }
                 } catch {
                     if Task.isCancelled { break }
                 }
             }
-            self.isBatchAnalyzing = false
-            self.batchCurrentLabel = ""
-            if !Task.isCancelled {
-                self.triggerHaptic(.success)
+            await MainActor.run {
+                self.isBatchAnalyzing = false
+                self.batchCurrentLabel = ""
+                if !Task.isCancelled {
+                    self.batchProgress = 1.0
+                    self.triggerHaptic(.success)
+                }
             }
         }
     }
@@ -579,6 +617,7 @@ public final class BrillyAppStore {
         batchTask?.cancel()
         batchTask = nil
         isBatchAnalyzing = false
+        batchProgress = 0
         batchCurrentLabel = ""
     }
 
