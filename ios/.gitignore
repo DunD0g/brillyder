@@ -3,8 +3,7 @@
 build/
 *.ipa
 *.xcarchive
-BrillyDer.xcodeproj/
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
+*.xcodeproj/
+*.xcworkspace/
 DerivedData/
 .DS_Store
