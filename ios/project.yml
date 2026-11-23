@@ -23,6 +23,8 @@ targets:
     platform: iOS
     sources:
       - path: App
+        excludes:
+          - Info.plist
     dependencies:
       - package: BrillyDer
         product: BrillyDerCore

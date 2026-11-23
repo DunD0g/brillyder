@@ -18,16 +18,29 @@
   - `PrivacyInfo.xcprivacy` (declares zero tracking, local-only data).
   - `AVAudioSession` configured as `.ambient` + `.mixWithOthers` (obeys hardware mute switch & never pauses Spotify/podcasts).
 
-## Running on iPhone / Simulator (Xcode 26)
+## Cloud `.ipa` Build via GitHub Actions (No Local Xcode Required)
+Every push affecting `ios/` (or manual **Actions → Build BrillyDer iOS (.ipa) → Run workflow**) compiles the native iOS 26 arm64 binary on GitHub's `macos-26` runner, runs `swift test`, verifies `PrivacyInfo.xcprivacy` + `starterCourses.json`, and uploads **`BrillyDer-iOS-unsigned-ipa`** as a downloadable artifact:
+1. Open the repo's **Actions** tab → click the latest **Build BrillyDer iOS (.ipa)** run.
+2. Download the **`BrillyDer-iOS-unsigned-ipa`** artifact and unzip it to get `BrillyDer-iOS-unsigned.ipa`.
+3. Sideload onto your iPhone with **AltStore**, **SideStore**, or **Sideloadly** (free Apple ID), or sign with your Apple Developer account.
+
+## Running on iPhone / Simulator Locally (Xcode 26)
 1. Install **Xcode 26** from the Mac App Store and select it:
    ```bash
    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
    ```
-2. Generate `BrillyDer.xcodeproj` (via [XcodeGen](https://github.com/yonaskolb/XcodeGen)) or open directly:
+2. Generate `BrillyDer.xcodeproj` (via [XcodeGen](https://github.com/yonaskolb/XcodeGen)) or run the 1-command `.ipa` builder:
    ```bash
    brew install xcodegen
    cd ios && xcodegen generate
    open BrillyDer.xcodeproj
+   ```
+   Or build an `.ipa` directly from Terminal:
+   ```bash
+   cd ios
+   ./scripts/build-ipa.sh --unsigned
+   # Or signed for TestFlight / App Store Connect:
+   ./scripts/build-ipa.sh --app-store --team-id YOUR_TEAM_ID
    ```
 3. In Xcode → Signing & Capabilities, choose your Apple Developer Team, pick an iOS 26 Simulator or your plugged-in iPhone, and press **⌘R**!
 

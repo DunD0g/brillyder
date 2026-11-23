@@ -1,0 +1,113 @@
+name: Build BrillyDer iOS (.ipa)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ipa.yml"
+      - "src/data/starterCourses.json"
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Xcode build configuration"
+        required: false
+        default: "Release"
+        type: choice
+        options:
+          - Release
+          - Debug
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "ios-ipa-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  build-ios-ipa:
+    name: Build iOS 26 Native IPA
+    runs-on: macos-26
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode 26 & iOS SDK toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          swift --version
+
+      - name: Verify starterCourses.json is in sync with Web PWA
+        run: |
+          diff -u src/data/starterCourses.json ios/Sources/BrillyDerCore/Resources/starterCourses.json
+
+      - name: Run BrillyDerCore Swift unit tests
+        working-directory: ios
+        run: swift test
+
+      - name: Install XcodeGen and generate BrillyDer.xcodeproj
+        working-directory: ios
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+          ls -la BrillyDer.xcodeproj
+
+      - name: Build BrillyDer for iOS (arm64)
+        working-directory: ios
+        env:
+          BUILD_CONFIG: ${{ inputs.configuration || 'Release' }}
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project BrillyDer.xcodeproj \
+            -scheme BrillyDer \
+            -configuration "$BUILD_CONFIG" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify app bundle & package unsigned .ipa
+        working-directory: ios
+        env:
+          BUILD_CONFIG: ${{ inputs.configuration || 'Release' }}
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/${BUILD_CONFIG}-iphoneos/BrillyDer.app"
+          test -d "$APP_PATH"
+          test -f "$APP_PATH/PrivacyInfo.xcprivacy"
+          find "$APP_PATH" -name "starterCourses.json" | grep -q "starterCourses.json"
+
+          rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          (cd build && zip -r -y BrillyDer-iOS-unsigned.ipa Payload >/dev/null)
+
+          IPA_SIZE=$(du -h build/BrillyDer-iOS-unsigned.ipa | awk '{print $1}')
+          echo "Packaged BrillyDer-iOS-unsigned.ipa ($IPA_SIZE)"
+
+          {
+            echo "## BrillyDer Native iOS Build"
+            echo ""
+            echo "- **Artifact:** \`BrillyDer-iOS-unsigned.ipa\` ($IPA_SIZE)"
+            echo "- **Configuration:** \`$BUILD_CONFIG\`"
+            echo "- **iOS SDK:** \`$(xcrun --sdk iphoneos --show-sdk-version)\`"
+            echo "- **Checks Verified:** \`swift test\` passed, \`PrivacyInfo.xcprivacy\` & \`starterCourses.json\` bundled."
+            echo ""
+            echo "### Installing on your iPhone"
+            echo "- **Sideload (free Apple ID):** Download the artifact zip, extract \`BrillyDer-iOS-unsigned.ipa\`, and install via **AltStore**, **SideStore**, or **Sideloadly**."
+            echo "- **Xcode / TestFlight:** Once Xcode 26 is installed locally, run \`cd ios && xcodegen generate && open BrillyDer.xcodeproj\` to sign & deploy directly via ⌘R or Archive to TestFlight."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BrillyDer-iOS-unsigned.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrillyDer-iOS-unsigned-ipa
+          path: ios/build/BrillyDer-iOS-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error

@@ -1,5 +1,9 @@
 .build/
 .swiftpm/
+build/
+*.ipa
+*.xcarchive
+BrillyDer.xcodeproj/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
