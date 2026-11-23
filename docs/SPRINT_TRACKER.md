@@ -287,3 +287,18 @@
 ### Remaining / Next Up (iOS Phase 3)
 - **Native MIT C++ NNUE Engine Upgrade:** Bind a 3500+ Elo MIT-licensed C++ NNUE engine (e.g. Caissa) behind `ChessEngineProtocol` for ultra-deep instant analysis.
 - **WidgetKit & CoreML:** Home/Lock Screen daily streak & due-cards widgets + optional local CoreML Maia bot.
+
+---
+
+## v2.5 (iOS Polish & 100% Parity — Vector Staunton Pieces, Faceted Gem Logo, Audio/Celebrations, Puzzle Rush & Resilient Web Migration)
+**Status:** Completed & Verified
+
+### Built
+- **Custom Zero-GPL Vector Neo-Staunton Chess Pieces (`ChessPieceGlyph.swift`):** Replaced Unicode font glyphs with original sculpted SwiftUI Canvas vector silhouettes filling ~86% of each square with high-contrast gradients, outlines, and inner detail lines.
+- **Custom Faceted Brilliant Gem Icon (`BrillyGemIcon.swift`) & Vector Move Badges:** Replaced flat SF rhombus with a custom faceted crystal gem across the top-right `💎` pill, Brilly Vault header, and celebrations; replaced emoji Book/Star board badges with crisp SF Symbols inside `InteractiveChessBoardView.swift`.
+- **Resilient Web PWA → iOS Backup Migration (`LocalVaultStore.swift`, `CockpitSettingsSheet.swift`):** Hardened JSON decoding against float `cpWhite` and legacy FSRS card fields, added full restoration of bookmarks (`brillyder_saved_positions_v1`), mastered endgames (`brillyder_endgame_mastered_v1`), streaks (`brillyder_mistake_streak`), conversion IDs (`training_logs`), and Board Vision / Puzzle Rush personal bests, plus both **Import File (.json)** and **Import From Clipboard** in Settings.
+- **Full Feature Parity Additions:** Added procedural `AVAudioEngine` sound cues (`SoundEffects.swift`), non-blocking Cosmic UFO / Classic celebrations (`AlienCelebrationOverlay.swift`), **Puzzle Rush** (`3-Min Blitz` & `Survival 3-Strikes`) in `TrainLabsView.swift`, **Lichess Game URL Import** (`LichessClient.fetchSingleGame`), **20-Game Checkpoints & Accuracy Trend Chart** in `InsightsTabView.swift`, and custom course deletion in `OpeningsTabView.swift`.
+
+### Verified
+- `cd ios && swift test`: **5 suites, 24 tests passed** (including real Web PWA JSON backup migration test).
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `Release-iphoneos` `arm64` `** BUILD SUCCEEDED **` (`v2.5.0`, build `3`).

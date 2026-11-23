@@ -104,6 +104,9 @@ public struct InsightsTabView: View {
                         .padding(18)
                         .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
 
+                        // MARK: - 1.5. Accuracy Trend & 20-Game Checkpoints
+                        accuracyTrendAndCheckpointsCard(adv: adv)
+
                         // MARK: - 2. Clock Leaks & Tilt Guard
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Clock Leaks & Tilt Guard")
@@ -250,6 +253,57 @@ public struct InsightsTabView: View {
             }
         }
         .navigationTitle("Insights")
+    }
+
+    private func accuracyTrendAndCheckpointsCard(adv: AdvancedInsightsReport) -> some View {
+        let recent = Array(store.analyzedGames.sorted { $0.game.createdAt < $1.game.createdAt }.suffix(20))
+        let accPoints: [Double] = recent.map { ag in
+            let c = ag.game.userColor ?? .white
+            return (c == .white ? ag.whiteSummary : ag.blackSummary).accuracy
+        }
+        let evalAt10List: [Double] = recent.compactMap { ag in
+            guard ag.plies.count >= 18 else { return nil }
+            let c = ag.game.userColor ?? .white
+            let cp = ag.plies[min(19, ag.plies.count - 1)].evalAfter.cpWhite
+            return Double(c == .white ? cp : -cp) / 100.0
+        }
+        let avgEval10 = evalAt10List.isEmpty ? 0.0 : evalAt10List.reduce(0, +) / Double(evalAt10List.count)
+        let impulsePerGame = Double(adv.impulseBlunders) / Double(max(1, recent.count))
+        let blownPct = Double(store.blownLeads.count) / Double(max(1, recent.count)) * 100.0
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("20-Game Checkpoints & Accuracy Trend")
+                .font(.headline)
+                .foregroundStyle(BrillyPalette.inkPrimary)
+
+            if accPoints.count >= 2 {
+                Canvas { ctx, size in
+                    var path = Path()
+                    for (i, acc) in accPoints.enumerated() {
+                        let x = CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * size.width
+                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.05, max: 0.98)))
+                        if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                        else { path.addLine(to: CGPoint(x: x, y: y)) }
+                    }
+                    ctx.stroke(path, with: .color(BrillyPalette.brillyTeal), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                    for (i, acc) in accPoints.enumerated() {
+                        let x = CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * size.width
+                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.05, max: 0.98)))
+                        ctx.fill(Path(ellipseIn: CGRect(x: x - 3, y: y - 3, width: 6, height: 6)), with: .color(BrillyPalette.brillyTeal))
+                    }
+                }
+                .frame(height: 62)
+                .padding(.vertical, 4)
+            }
+
+            HStack(spacing: 8) {
+                miniMetric("Eval @ M10", value: String(format: "%+.1f", avgEval10), tint: avgEval10 >= 0 ? BrillyPalette.brillyTeal : BrillyPalette.blunderRose)
+                miniMetric("Impulse / g", value: String(format: "%.1f", impulsePerGame), tint: BrillyPalette.goldAmber)
+                miniMetric("Blown Lead", value: "\(Int(blownPct.rounded()))%", tint: BrillyPalette.warpPurple)
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20)
     }
 
     private func scoutGameplanCard(_ plan: ScoutGameplan) -> some View {

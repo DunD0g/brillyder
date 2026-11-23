@@ -1,6 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import BrillyDerCore
+#if canImport(UIKit)
+import UIKit
+#endif
 
 private struct BrillyBackupDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
@@ -27,6 +30,7 @@ public struct CockpitSettingsSheet: View {
     @State private var showingImporter = false
     @State private var exportDoc: BrillyBackupDocument? = nil
     @State private var backupNotice: String? = nil
+    @State private var backupError: Bool = false
 
     public var body: some View {
         @Bindable var bindableStore = store
@@ -86,7 +90,7 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
 
-                        // MARK: - 2. Copy Vibe & Engine Depth
+                        // MARK: - 2. Copy Vibe, Engine Depth, Sound, Haptics & Celebrations
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 Text("Coach Vibe")
@@ -120,8 +124,22 @@ public struct CockpitSettingsSheet: View {
 
                             Divider().overlay(Color.white.opacity(0.1))
 
+                            Toggle(isOn: $bindableStore.soundEnabled) {
+                                Text("Board & Coach Audio")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                            }
+                            .tint(BrillyPalette.brillyTeal)
+
                             Toggle(isOn: $bindableStore.hapticsEnabled) {
                                 Text("Tactile Haptics")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                            }
+                            .tint(BrillyPalette.brillyTeal)
+
+                            Toggle(isOn: $bindableStore.celebrationsEnabled) {
+                                Text(store.copy(cosmic: "Cosmic UFO Celebrations", classic: "Move Celebrations"))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                             }
@@ -178,18 +196,30 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
-                        // MARK: - 4. Local-First Web <-> iOS JSON Backup
+                        // MARK: - 4. Port Data From Web App (JSON Backup Export / Import / Paste)
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("LOCAL VAULT & WEB BACKUP")
+                            Text("PORT DATA FROM WEB APP (JSON BACKUP)")
                                 .font(.caption.weight(.bold))
                                 .tracking(1.0)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                .foregroundStyle(BrillyPalette.brillyTeal)
 
-                            Text("100% on-device storage. Export or import JSON backups seamlessly between BrillyDer Web PWA and BrillyDer iOS.")
+                            Text("In BrillyDer Web → Settings → Export JSON, save to Files (or AirDrop to iPhone), then tap Import File below to merge all analyzed games, FSRS opening progress, custom courses, bookmarks & streaks.")
                                 .font(.caption)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
 
                             HStack(spacing: 10) {
+                                Button {
+                                    showingImporter = true
+                                } label: {
+                                    Label("Import File", systemImage: "square.and.arrow.down")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                }
+                                .buttonStyle(.plain)
+
                                 Button {
                                     if let data = try? store.exportBackupData() {
                                         exportDoc = BrillyBackupDocument(data: data)
@@ -200,32 +230,47 @@ public struct CockpitSettingsSheet: View {
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(BrillyPalette.inkPrimary)
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    showingImporter = true
-                                } label: {
-                                    Label("Import JSON", systemImage: "square.and.arrow.down")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(BrillyPalette.inkPrimary)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
+                                        .padding(.vertical, 11)
                                         .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
                                 }
                                 .buttonStyle(.plain)
                             }
 
+                            #if canImport(UIKit) && os(iOS)
+                            Button {
+                                if let text = UIPasteboard.general.string,
+                                   let data = text.data(using: .utf8) {
+                                    do {
+                                        let summary = try store.importBackupData(data)
+                                        backupError = false
+                                        backupNotice = summary.humanSummary
+                                    } catch {
+                                        backupError = true
+                                        backupNotice = error.localizedDescription
+                                    }
+                                } else {
+                                    backupError = true
+                                    backupNotice = "Clipboard does not contain a BrillyDer JSON backup."
+                                }
+                            } label: {
+                                Label("Import Backup From Clipboard", systemImage: "doc.on.clipboard")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                            }
+                            .buttonStyle(.plain)
+                            #endif
+
                             if let notice = backupNotice {
                                 Text(notice)
-                                    .font(.caption)
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(backupError ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                             }
                         }
                         .padding(16)
-                        .brillySurface(store.surfaceStyle, cornerRadius: 20)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
                     }
                     .padding(16)
                 }
@@ -243,6 +288,7 @@ public struct CockpitSettingsSheet: View {
                 defaultFilename: "brillyder-backup"
             ) { result in
                 if case .success = result {
+                    backupError = false
                     backupNotice = "Backup exported cleanly."
                 }
             }
@@ -253,12 +299,15 @@ public struct CockpitSettingsSheet: View {
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     do {
                         let data = try Data(contentsOf: url)
-                        let mergedCount = try store.importBackupData(data)
-                        backupNotice = "Merged \(mergedCount) records from backup."
+                        let summary = try store.importBackupData(data)
+                        backupError = false
+                        backupNotice = summary.humanSummary
                     } catch {
+                        backupError = true
                         backupNotice = "Import failed: \(error.localizedDescription)"
                     }
                 case .failure(let err):
+                    backupError = true
                     backupNotice = "Import cancelled: \(err.localizedDescription)"
                 }
             }

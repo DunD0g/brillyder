@@ -89,6 +89,37 @@ public enum LichessClient {
         return games
     }
 
+    /// Fetches a single public Lichess game from a URL (`https://lichess.org/AbCdEfGh`) or 8-char game ID.
+    public static func fetchSingleGame(urlOrId: String, preferredUsername: String? = nil) async throws -> GameRecord {
+        let cleaned = urlOrId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let gameId: String
+        if let url = URL(string: cleaned), let host = url.host, host.contains("lichess.org") {
+            let firstPath = url.pathComponents.filter { $0 != "/" }.first ?? ""
+            gameId = String(firstPath.prefix(8))
+        } else {
+            gameId = String(cleaned.prefix(8))
+        }
+        guard gameId.count == 8, gameId.allSatisfy({ $0.isLetter || $0.isNumber }) else {
+            throw SyncError.invalidPGN("Enter a valid Lichess game link or 8-character ID.")
+        }
+        guard let apiUrl = URL(string: "https://lichess.org/game/export/\(gameId)?pgnInJson=true&clocks=true&opening=true") else {
+            throw SyncError.networkFailure("Invalid Lichess game URL.")
+        }
+        var req = URLRequest(url: apiUrl, timeoutInterval: 15)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("BrillyDer-iOS/2.5", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw SyncError.userNotFound("Lichess game \"\(gameId)\" not found.")
+        }
+        let raw = try JSONDecoder().decode(RawGame.self, from: data)
+        guard let mapped = mapRawGame(raw, username: preferredUsername ?? "") else {
+            throw SyncError.invalidPGN("Could not parse Lichess game \(gameId).")
+        }
+        return mapped
+    }
+
     public static func parsePastedPGN(_ pgn: String, preferredUsername: String? = nil) throws -> GameRecord {
         let trimmed = pgn.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw SyncError.invalidPGN("Paste a PGN to analyze.") }

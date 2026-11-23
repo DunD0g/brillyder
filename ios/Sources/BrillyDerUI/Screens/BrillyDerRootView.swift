@@ -59,6 +59,21 @@ public struct BrillyDerRootView: View {
                 .tag(BrillyTab.insights)
             }
             .tint(BrillyPalette.brillyTeal)
+
+            // Non-blocking floating Alien / Classic celebration toast
+            if let celebration = store.activeCelebration {
+                VStack {
+                    AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            store.activeCelebration = nil
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 56)
+                    Spacer()
+                }
+                .zIndex(10)
+            }
         }
         .sheet(isPresented: $bindableStore.showingSettings) {
             CockpitSettingsSheet()
@@ -88,13 +103,12 @@ public struct BrillyDerRootView: View {
             Button {
                 store.showingVault = true
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "diamond.fill")
-                        .font(.caption.weight(.bold))
+                HStack(spacing: 5) {
+                    BrillyGemIcon(size: 16, color: BrillyPalette.brillyTeal)
                     Text("\(store.vaultCollection.headlineBrilliantCount)")
-                        .font(.caption.monospacedDigit().weight(.bold))
+                        .font(.caption.monospacedDigit().weight(.black))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
                 }
-                .foregroundStyle(BrillyPalette.brillyTeal)
             }
             .accessibilityLabel("Brilly Vault")
         }

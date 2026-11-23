@@ -233,6 +233,11 @@ public struct GamesTabView: View {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
                 VStack(spacing: 14) {
+                    Text("Paste raw PGN text OR a public Lichess game URL (e.g. https://lichess.org/AbCdEfGh).")
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
                     TextEditor(text: $pgnDraft)
                         .scrollContentBackground(.hidden)
                         .font(.system(.callout, design: .monospaced))
@@ -241,12 +246,16 @@ public struct GamesTabView: View {
                         .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
                     Button {
-                        let draft = pgnDraft
+                        let draft = pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                         showingPgnSheet = false
                         pgnDraft = ""
-                        store.importAndAnalyzePGN(draft)
+                        if draft.lowercased().contains("lichess.org/") || (draft.count == 8 && draft.allSatisfy({ $0.isLetter || $0.isNumber })) {
+                            Task { await store.importLichessGameURL(draft) }
+                        } else {
+                            store.importAndAnalyzePGN(draft)
+                        }
                     } label: {
-                        Text("Analyze PGN")
+                        Text("Import & Analyze")
                             .font(.headline)
                             .foregroundStyle(BrillyPalette.voidBg)
                             .frame(maxWidth: .infinity)
@@ -258,7 +267,7 @@ public struct GamesTabView: View {
                 }
                 .padding(16)
             }
-            .navigationTitle("Paste PGN")
+            .navigationTitle("Paste PGN / Lichess URL")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showingPgnSheet = false }

@@ -160,6 +160,19 @@ public struct FsrsCardState: Codable, Hashable, Sendable {
         self.state = state
         self.last_review = last_review
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.due = (try? c.decode(String.self, forKey: .due)) ?? ""
+        self.stability = (try? c.decode(Double.self, forKey: .stability)) ?? 0
+        self.difficulty = (try? c.decode(Double.self, forKey: .difficulty)) ?? 0
+        self.scheduled_days = (try? c.decode(Double.self, forKey: .scheduled_days)) ?? 0
+        self.learning_steps = (try? c.decode(Int.self, forKey: .learning_steps)) ?? 0
+        self.reps = (try? c.decode(Int.self, forKey: .reps)) ?? 0
+        self.lapses = (try? c.decode(Int.self, forKey: .lapses)) ?? 0
+        self.state = (try? c.decode(Int.self, forKey: .state)) ?? 0
+        self.last_review = try? c.decodeIfPresent(String.self, forKey: .last_review)
+    }
 }
 
 public struct FsrsOpeningCard: Codable, Hashable, Sendable, Identifiable {

@@ -75,4 +75,78 @@ struct Phase2PowerSuiteTests {
         #expect(plan?.sampleGames == 2)
         #expect(plan?.winRatePct == 100)
     }
+
+    @Test("Web PWA backup JSON (float cpWhite, bookmarks, mastered endgames, streaks, PBs) imports cleanly")
+    func realWebPwaBackupImport() throws {
+        let webBackupJSON = """
+        {
+          "app": "brillyder",
+          "schemaVersion": 2,
+          "exportedAt": "2026-11-23T20:00:00.000Z",
+          "stores": {
+            "analyzed_games": [],
+            "repertoires": [],
+            "fsrs_cards": [
+              {
+                "cardId": "london-system-core::london-classical-main::0::d2d4",
+                "courseId": "london-system-core",
+                "lineId": "london-classical-main",
+                "side": "white",
+                "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                "ply": 0,
+                "moveSequence": [],
+                "expectedSan": "d4",
+                "expectedUci": "d2d4",
+                "fsrsState": { "due": "2026-11-25T10:00:00.000Z", "stability": 4.2, "difficulty": 4.8, "reps": 2, "lapses": 0, "state": 2 },
+                "dueAt": 1795600800000,
+                "attempts": 2,
+                "firstTryHits": 2,
+                "avgResponseMs": 2100,
+                "source": "course",
+                "unlocked": true
+              }
+            ],
+            "prefs": [
+              { "key": "brillyder_username", "value": "Lukedunwell", "updatedAt": 1795500000000 },
+              { "key": "brillyder_endgame_mastered_v1", "value": ["eg_pawn_opposition", "eg_rook_lucena"], "updatedAt": 1795500000000 },
+              { "key": "brillyder_vision_best_white", "value": 34, "updatedAt": 1795500000000 },
+              { "key": "brillyder_rush_best", "value": 19, "updatedAt": 1795500000000 },
+              { "key": "brillyder_mistake_streak", "value": { "current": 5, "best": 8, "lastDate": "2026-11-23" }, "updatedAt": 1795500000000 },
+              {
+                "key": "brillyder_saved_positions_v1",
+                "value": [
+                  {
+                    "id": "g1::ply::12",
+                    "gameId": "g1",
+                    "ply": 12,
+                    "fen": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+                    "san": "d4",
+                    "moveNumber": 1,
+                    "color": "w",
+                    "label": "London Move 1",
+                    "createdAt": 1795500000000
+                  }
+                ],
+                "updatedAt": 1795500000000
+              }
+            ],
+            "training_logs": [
+              { "id": "conversion", "kind": "conversion", "updatedAt": 1795500000000, "data": { "convertedIds": ["conv_1"] } }
+            ]
+          }
+        }
+        """
+        let data = Data(webBackupJSON.utf8)
+        let (merged, summary) = try LocalVaultStore.mergeBackupJSONWithSummary(data, into: VaultSnapshot())
+        #expect(merged.lichessUsername == "Lukedunwell")
+        #expect(merged.fsrsCards.count == 1)
+        #expect(merged.masteredEndgameIds.count == 2)
+        #expect(merged.bookmarks.count == 1)
+        #expect(merged.boardVisionBestScore == 34)
+        #expect(merged.puzzleRushBlitzBest == 19)
+        #expect(merged.dailyStreakDays == 5)
+        #expect(merged.convertedAdvantageIds.contains("conv_1"))
+        #expect(summary.fsrsCards == 1)
+        #expect(summary.bookmarks == 1)
+    }
 }

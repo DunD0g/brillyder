@@ -259,6 +259,18 @@ private struct CourseDetailSheet: View {
             }
             .navigationTitle(course.name)
             .toolbar {
+                if course.source == "pgn" {
+                    ToolbarItem(placement: .automatic) {
+                        Button(role: .destructive) {
+                            store.deleteCustomCourse(id: course.id)
+                            dismiss()
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                        }
+                        .accessibilityLabel("Delete Custom Course")
+                    }
+                }
                 ToolbarItem(placement: .automatic) {
                     ShareLink(item: RepertoireTreeService.exportCourseToPGN(course)) {
                         Image(systemName: "square.and.arrow.up")

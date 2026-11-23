@@ -113,16 +113,29 @@ public struct InteractiveChessBoardView: View {
                 // 3. Move Classification Badge (safely inside upper-right corner — never clipped on rank 8!)
                 if let badge = moveBadge {
                     let pt = topRightCorner(for: badge.square, sqSize: sqSize)
-                    let badgeSize = max(16, sqSize * 0.34)
-                    Text(badge.classification.symbol)
-                        .font(.system(size: badgeSize * 0.56, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(width: badgeSize, height: badgeSize)
-                        .background(Circle().fill(BrillyPalette.color(for: badge.classification)))
-                        .overlay(Circle().strokeBorder(Color.black.opacity(0.45), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-                        .position(x: pt.x - badgeSize * 0.52, y: pt.y + badgeSize * 0.52)
-                        .allowsHitTesting(false)
+                    let badgeSize = max(18, sqSize * 0.36)
+                    ZStack {
+                        Circle()
+                            .fill(BrillyPalette.color(for: badge.classification))
+                        if badge.classification == .book {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: badgeSize * 0.48, weight: .bold))
+                                .foregroundStyle(.white)
+                        } else if badge.classification == .best {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: badgeSize * 0.48, weight: .bold))
+                                .foregroundStyle(.white)
+                        } else {
+                            Text(badge.classification.symbol)
+                                .font(.system(size: badgeSize * 0.54, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: badgeSize, height: badgeSize)
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.65), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.5), radius: 2.5, y: 1)
+                    .position(x: pt.x - badgeSize * 0.52, y: pt.y + badgeSize * 0.52)
+                    .allowsHitTesting(false)
                 }
 
                 // 4. Lifted Dragged Piece

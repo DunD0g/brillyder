@@ -20,6 +20,27 @@ public struct EngineScore: Codable, Hashable, Sendable {
         self.winPercentWhite = winPercentWhite
         self.display = display
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let i = try? c.decode(Int.self, forKey: .cpWhite) {
+            self.cpWhite = i
+        } else if let d = try? c.decode(Double.self, forKey: .cpWhite) {
+            self.cpWhite = Int(d.rounded())
+        } else {
+            self.cpWhite = 0
+        }
+        if let m = try? c.decodeIfPresent(Int.self, forKey: .mateWhite) {
+            self.mateWhite = m
+        } else if let md = try? c.decodeIfPresent(Double.self, forKey: .mateWhite) {
+            self.mateWhite = Int(md.rounded())
+        } else {
+            self.mateWhite = nil
+        }
+        self.isCheckmate = try? c.decodeIfPresent(Bool.self, forKey: .isCheckmate)
+        self.winPercentWhite = (try? c.decode(Double.self, forKey: .winPercentWhite)) ?? 50.0
+        self.display = (try? c.decode(String.self, forKey: .display)) ?? "0.0"
+    }
 }
 
 public struct MaterialBalance: Hashable, Sendable {

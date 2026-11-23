@@ -73,6 +73,13 @@ public final class BrillyAppStore {
     public var hapticsEnabled: Bool {
         didSet { UserDefaults.standard.set(hapticsEnabled, forKey: "brilly_haptics_enabled") }
     }
+    public var soundEnabled: Bool {
+        didSet { UserDefaults.standard.set(soundEnabled, forKey: "brilly_sound_enabled") }
+    }
+    public var celebrationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(celebrationsEnabled, forKey: "brilly_celebrations_enabled") }
+    }
+    public var activeCelebration: CelebrationEvent? = nil
 
     // MARK: - Sync & Scout State
     public var syncPlatform: GameSource = .lichess
@@ -111,6 +118,8 @@ public final class BrillyAppStore {
     public var masteredEndgameIds: Set<String> = []
     public var convertedAdvantageIds: Set<String> = []
     public var boardVisionBestScore: Int = 0
+    public var puzzleRushBlitzBest: Int = 0
+    public var puzzleRushSurvivalBest: Int = 0
 
     // MARK: - Engine & Storage
     public let engine = BrillyNativeEngine()
@@ -182,6 +191,8 @@ public final class BrillyAppStore {
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced
         self.hapticsEnabled = defaults.object(forKey: "brilly_haptics_enabled") as? Bool ?? true
+        self.soundEnabled = defaults.object(forKey: "brilly_sound_enabled") as? Bool ?? true
+        self.celebrationsEnabled = defaults.object(forKey: "brilly_celebrations_enabled") as? Bool ?? true
 
         self.starterCourses = (try? CourseRepository.loadStarterCourses()) ?? []
         self.recentGames = LichessClient.sampleGames()
@@ -198,6 +209,14 @@ public final class BrillyAppStore {
     }
 
     public func triggerHaptic(_ style: HapticKind) {
+        if soundEnabled {
+            switch style {
+            case .move: BrillySoundEngine.shared.play(.move)
+            case .capture: BrillySoundEngine.shared.play(.capture)
+            case .success: BrillySoundEngine.shared.play(.sonar)
+            case .error: BrillySoundEngine.shared.play(.blunder)
+            }
+        }
         guard hapticsEnabled else { return }
         #if canImport(UIKit) && os(iOS)
         switch style {
@@ -211,6 +230,26 @@ public final class BrillyAppStore {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
         #endif
+    }
+
+    public func triggerCelebration(_ kind: CelebrationEvent.Kind) {
+        if soundEnabled {
+            BrillySoundEngine.shared.play(kind == .brilliant ? .brilliant : .blunder)
+        }
+        guard celebrationsEnabled else { return }
+        let event = CelebrationEvent(kind: kind, vibe: vibeMode)
+        withAnimation(.spring(duration: 0.35)) {
+            activeCelebration = event
+        }
+        let id = event.id
+        Task {
+            try? await Task.sleep(for: .milliseconds(kind == .brilliant ? 2600 : 1900))
+            if activeCelebration?.id == id {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    activeCelebration = nil
+                }
+            }
+        }
     }
 
     public enum HapticKind {
@@ -232,6 +271,8 @@ public final class BrillyAppStore {
         self.masteredEndgameIds = Set(snap.masteredEndgameIds)
         self.convertedAdvantageIds = Set(snap.convertedAdvantageIds)
         self.boardVisionBestScore = snap.boardVisionBestScore
+        self.puzzleRushBlitzBest = snap.puzzleRushBlitzBest
+        self.puzzleRushSurvivalBest = snap.puzzleRushSurvivalBest
 
         if let first = snap.analyzedGames.first {
             self.activeAnalyzedGame = first
@@ -290,7 +331,9 @@ public final class BrillyAppStore {
             woodpeckerCycle: woodpeckerCycle,
             masteredEndgameIds: Array(masteredEndgameIds),
             convertedAdvantageIds: Array(convertedAdvantageIds),
-            boardVisionBestScore: boardVisionBestScore
+            boardVisionBestScore: boardVisionBestScore,
+            puzzleRushBlitzBest: puzzleRushBlitzBest,
+            puzzleRushSurvivalBest: puzzleRushSurvivalBest
         )
     }
 
@@ -298,15 +341,71 @@ public final class BrillyAppStore {
         try LocalVaultStore.exportBackupJSON(from: currentSnapshot())
     }
 
-    public func importBackupData(_ data: Data) throws -> Int {
-        let merged = try LocalVaultStore.mergeBackupJSON(data, into: currentSnapshot())
+    public func importBackupData(_ data: Data) throws -> BackupImportSummary {
+        let (merged, summary) = try LocalVaultStore.mergeBackupJSONWithSummary(data, into: currentSnapshot())
         self.analyzedGames = merged.analyzedGames
         self.customCourses = merged.customCourses
+        self.bookmarks = merged.bookmarks
+        self.masteredEndgameIds = Set(merged.masteredEndgameIds)
+        self.convertedAdvantageIds = Set(merged.convertedAdvantageIds)
+        self.dailyStreakDays = merged.dailyStreakDays
+        self.lastDailyCompletedDate = merged.lastDailyCompletedDate
+        self.boardVisionBestScore = merged.boardVisionBestScore
+        self.puzzleRushBlitzBest = merged.puzzleRushBlitzBest
+        self.puzzleRushSurvivalBest = merged.puzzleRushSurvivalBest
         self.lichessUsername = merged.lichessUsername
         self.chessComUsername = merged.chessComUsername
+        // Hydrate Games tab offline with imported analyzed games
+        if !merged.analyzedGames.isEmpty {
+            let existingIds = Set(recentGames.map(\.id))
+            let importedRecords = merged.analyzedGames.map(\.game).filter { !existingIds.contains($0.id) }
+            if !importedRecords.isEmpty {
+                recentGames = importedRecords + recentGames
+            }
+            if activeAnalyzedGame == nil {
+                activeAnalyzedGame = merged.analyzedGames.first
+            }
+        }
         rehydrateFsrsCards(existing: merged.fsrsCards)
         persistToDisk()
-        return merged.analyzedGames.count + merged.fsrsCards.count
+        triggerHaptic(.success)
+        return summary
+    }
+
+    public func deleteCustomCourse(id: String) {
+        customCourses.removeAll { $0.id == id }
+        fsrsCards.removeAll { $0.courseId == id }
+        persistToDisk()
+    }
+
+    public func recordPuzzleRushScore(_ score: Int, survival: Bool) {
+        if survival {
+            if score > puzzleRushSurvivalBest {
+                puzzleRushSurvivalBest = score
+                persistToDisk()
+            }
+        } else {
+            if score > puzzleRushBlitzBest {
+                puzzleRushBlitzBest = score
+                persistToDisk()
+            }
+        }
+    }
+
+    public func importLichessGameURL(_ urlOrId: String) async {
+        isSyncing = true
+        syncErrorMessage = nil
+        defer { isSyncing = false }
+        do {
+            let record = try await LichessClient.fetchSingleGame(urlOrId: urlOrId, preferredUsername: activeUsername)
+            if !recentGames.contains(where: { $0.id == record.id }) {
+                recentGames.insert(record, at: 0)
+            }
+            startAnalysis(for: record)
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            triggerHaptic(.error)
+        }
     }
 
     // MARK: - Sync & Scout Actions

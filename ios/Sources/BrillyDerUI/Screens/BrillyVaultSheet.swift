@@ -25,10 +25,8 @@ public struct BrillyVaultSheet: View {
 
                 VStack(spacing: 12) {
                     // Headline Brilliant Counter Banner (strictly user !! moves)
-                    HStack {
-                        Image(systemName: "diamond.fill")
-                            .font(.title2)
-                            .foregroundStyle(BrillyPalette.brillyTeal)
+                    HStack(spacing: 12) {
+                        BrillyGemIcon(size: 32, color: BrillyPalette.brillyTeal)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(vault.headlineBrilliantCount) Brilliant Move\(vault.headlineBrilliantCount == 1 ? "" : "s")")
                                 .font(.headline.weight(.bold))

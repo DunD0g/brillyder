@@ -5,8 +5,9 @@ public struct TrainLabsView: View {
     @Environment(BrillyAppStore.self) private var store
 
     enum LabKind: String, CaseIterable {
-        case endgame = "Syzygy Endgame Lab"
-        case vision = "60s Board Vision"
+        case endgame = "Endgames"
+        case vision = "Vision"
+        case rush = "Puzzle Rush"
     }
 
     @State private var activeLab: LabKind = .endgame
@@ -22,10 +23,13 @@ public struct TrainLabsView: View {
             }
             .pickerStyle(.segmented)
 
-            if activeLab == .endgame {
+            switch activeLab {
+            case .endgame:
                 endgameLabBody
-            } else {
+            case .vision:
                 BoardVisionPanel()
+            case .rush:
+                PuzzleRushPanel()
             }
         }
         .onAppear {
@@ -448,5 +452,151 @@ private struct BoardVisionPanel: View {
             try? await Task.sleep(for: .milliseconds(180))
             flashColor = nil
         }
+    }
+}
+
+// MARK: - Puzzle Rush (3-Min Blitz & Survival 3-Strikes)
+
+private struct PuzzleRushPanel: View {
+    @Environment(BrillyAppStore.self) private var store
+
+    enum RushMode: String, CaseIterable {
+        case blitz = "3-Min Blitz"
+        case survival = "Survival"
+    }
+
+    private struct RushItem: Identifiable {
+        let id: String
+        let fen: String
+        let orientation: PieceColor
+        let expectedUci: String
+        let expectedSan: String
+        let subtitle: String
+    }
+
+    @State private var mode: RushMode = .blitz
+    @State private var running = false
+    @State private var timeLeft = 180
+    @State private var strikes = 0
+    @State private var score = 0
+    @State private var deck: [RushItem] = []
+    @State private var idx = 0
+    @State private var board = ChessBoard()
+    @State private var feedback = "Solve as many tactics as you can before 3 strikes!"
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Picker("Mode", selection: $mode) {
+                ForEach(RushMode.allCases, id: \.self) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(running)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mode == .blitz ? "Best Blitz: \(store.puzzleRushBlitzBest)" : "Best Survival: \(store.puzzleRushSurvivalBest)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    HStack(spacing: 4) {
+                        ForEach(0..<3, id: \.self) { i in
+                            Image(systemName: i < (3 - strikes) ? "heart.fill" : "heart.slash")
+                                .font(.caption)
+                                .foregroundStyle(i < (3 - strikes) ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
+                        }
+                    }
+                }
+                Spacer()
+                Text("Score \(score)")
+                    .font(.headline.monospacedDigit().weight(.black))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                if mode == .blitz && running {
+                    Text("\(timeLeft / 60):\(String(format: "%02d", timeLeft % 60))")
+                        .font(.headline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(timeLeft <= 20 ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
+                        .padding(.leading, 8)
+                }
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+
+            if running && idx < deck.count {
+                let item = deck[idx]
+                InteractiveChessBoardView(
+                    board: board,
+                    orientation: item.orientation,
+                    theme: store.boardTheme,
+                    surfaceStyle: store.surfaceStyle
+                ) { move in
+                    if move.uci == item.expectedUci {
+                        score += 1
+                        feedback = "Hit! \(item.expectedSan)"
+                        store.triggerHaptic(.success)
+                    } else {
+                        strikes += 1
+                        feedback = "Strike \(strikes)/3 — best was \(item.expectedSan)"
+                        store.triggerHaptic(.error)
+                        if strikes >= 3 {
+                            finishRun()
+                            return
+                        }
+                    }
+                    idx = (idx + 1) % max(1, deck.count)
+                    board = (try? ChessBoard(fen: deck[idx].fen)) ?? ChessBoard()
+                }
+
+                Text(feedback)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 14)
+            }
+
+            Button(running ? "End Run" : "Start \(mode.rawValue)") {
+                if running { finishRun() } else { startRun() }
+            }
+            .font(.headline)
+            .foregroundStyle(running ? BrillyPalette.inkPrimary : BrillyPalette.voidBg)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(running ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
+            .buttonStyle(.plain)
+        }
+        .task(id: running) {
+            guard running && mode == .blitz else { return }
+            while running && timeLeft > 0 && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard running && !Task.isCancelled else { break }
+                timeLeft -= 1
+                if timeLeft == 0 { finishRun() }
+            }
+        }
+    }
+
+    private func startRun() {
+        var items: [RushItem] = store.mistakeDeck.shuffled().map {
+            RushItem(id: $0.id, fen: $0.fen, orientation: $0.playerColor, expectedUci: $0.bestMoveUci, expectedSan: $0.bestMoveSan, subtitle: $0.openingName)
+        }
+        for fb in DailyCoachPlanner.fallbackGravityFlashes {
+            items.append(RushItem(id: fb.id, fen: fb.fen, orientation: fb.orientation, expectedUci: fb.expectedUci, expectedSan: fb.expectedSan, subtitle: fb.subtitle))
+        }
+        deck = items
+        idx = 0
+        score = 0
+        strikes = 0
+        timeLeft = 180
+        running = true
+        feedback = "Find the winning move fast!"
+        if let first = deck.first {
+            board = (try? ChessBoard(fen: first.fen)) ?? ChessBoard()
+        }
+    }
+
+    private func finishRun() {
+        running = false
+        store.recordPuzzleRushScore(score, survival: mode == .survival)
+        feedback = "Run finished! Final score: \(score)."
     }
 }

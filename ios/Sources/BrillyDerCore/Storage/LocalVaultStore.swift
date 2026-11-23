@@ -1,5 +1,28 @@
 import Foundation
 
+public struct BackupImportSummary: Sendable {
+    public let analyzedGames: Int
+    public let fsrsCards: Int
+    public let repertoires: Int
+    public let bookmarks: Int
+    public let masteredEndgames: Int
+    public let skippedItems: Int
+
+    public var totalImported: Int {
+        analyzedGames + fsrsCards + repertoires + bookmarks + masteredEndgames
+    }
+
+    public var humanSummary: String {
+        var parts: [String] = []
+        if analyzedGames > 0 { parts.append("\(analyzedGames) games") }
+        if fsrsCards > 0 { parts.append("\(fsrsCards) opening cards") }
+        if repertoires > 0 { parts.append("\(repertoires) custom courses") }
+        if bookmarks > 0 { parts.append("\(bookmarks) bookmarks") }
+        if masteredEndgames > 0 { parts.append("\(masteredEndgames) endgames") }
+        return parts.isEmpty ? "Backup synced cleanly." : "Imported " + parts.joined(separator: ", ") + "."
+    }
+}
+
 /// Exact Web PWA <-> iOS Backup schema (`app: "brillyder"`, `schemaVersion: 2`).
 public struct BrillyBackupPayload: Codable, Sendable {
     public struct PrefRecord: Codable, Sendable {
@@ -11,6 +34,19 @@ public struct BrillyBackupPayload: Codable, Sendable {
             self.key = key
             self.value = value
             self.updatedAt = updatedAt
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.key = try c.decode(String.self, forKey: .key)
+            self.value = (try? c.decode(JSONValue.self, forKey: .value)) ?? .null
+            if let i = try? c.decode(Int64.self, forKey: .updatedAt) {
+                self.updatedAt = i
+            } else if let d = try? c.decode(Double.self, forKey: .updatedAt) {
+                self.updatedAt = Int64(d)
+            } else {
+                self.updatedAt = 0
+            }
         }
     }
 
@@ -97,6 +133,8 @@ public struct VaultSnapshot: Codable, Sendable {
     public var masteredEndgameIds: [String]
     public var convertedAdvantageIds: [String]
     public var boardVisionBestScore: Int
+    public var puzzleRushBlitzBest: Int
+    public var puzzleRushSurvivalBest: Int
 
     public init(
         analyzedGames: [AnalyzedGame] = [],
@@ -110,7 +148,9 @@ public struct VaultSnapshot: Codable, Sendable {
         woodpeckerCycle: WoodpeckerCycleRecord? = nil,
         masteredEndgameIds: [String] = [],
         convertedAdvantageIds: [String] = [],
-        boardVisionBestScore: Int = 0
+        boardVisionBestScore: Int = 0,
+        puzzleRushBlitzBest: Int = 0,
+        puzzleRushSurvivalBest: Int = 0
     ) {
         self.analyzedGames = analyzedGames
         self.fsrsCards = fsrsCards
@@ -124,6 +164,8 @@ public struct VaultSnapshot: Codable, Sendable {
         self.masteredEndgameIds = masteredEndgameIds
         self.convertedAdvantageIds = convertedAdvantageIds
         self.boardVisionBestScore = boardVisionBestScore
+        self.puzzleRushBlitzBest = puzzleRushBlitzBest
+        self.puzzleRushSurvivalBest = puzzleRushSurvivalBest
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,6 +182,8 @@ public struct VaultSnapshot: Codable, Sendable {
         self.masteredEndgameIds = (try? c.decode([String].self, forKey: .masteredEndgameIds)) ?? []
         self.convertedAdvantageIds = (try? c.decode([String].self, forKey: .convertedAdvantageIds)) ?? []
         self.boardVisionBestScore = (try? c.decode(Int.self, forKey: .boardVisionBestScore)) ?? 0
+        self.puzzleRushBlitzBest = (try? c.decode(Int.self, forKey: .puzzleRushBlitzBest)) ?? 0
+        self.puzzleRushSurvivalBest = (try? c.decode(Int.self, forKey: .puzzleRushSurvivalBest)) ?? 0
     }
 }
 
@@ -173,13 +217,48 @@ public actor LocalVaultStore {
 
     public static func exportBackupJSON(from snapshot: VaultSnapshot) throws -> Data {
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000.0)
+        let encoder = JSONEncoder()
         var prefs: [BrillyBackupPayload.PrefRecord] = []
+
         if !snapshot.lichessUsername.isEmpty {
             prefs.append(.init(key: "brillyder_username", value: .string(snapshot.lichessUsername), updatedAt: nowMs))
         }
         if !snapshot.chessComUsername.isEmpty {
             prefs.append(.init(key: "brillyder_chesscom_username", value: .string(snapshot.chessComUsername), updatedAt: nowMs))
         }
+        if !snapshot.masteredEndgameIds.isEmpty {
+            prefs.append(.init(
+                key: "brillyder_endgame_mastered_v1",
+                value: .array(snapshot.masteredEndgameIds.map { .string($0) }),
+                updatedAt: nowMs
+            ))
+        }
+        if snapshot.boardVisionBestScore > 0 {
+            prefs.append(.init(key: "brillyder_vision_best_white", value: .number(Double(snapshot.boardVisionBestScore)), updatedAt: nowMs))
+        }
+        if snapshot.puzzleRushBlitzBest > 0 {
+            prefs.append(.init(key: "brillyder_rush_best", value: .number(Double(snapshot.puzzleRushBlitzBest)), updatedAt: nowMs))
+        }
+        if snapshot.puzzleRushSurvivalBest > 0 {
+            prefs.append(.init(key: "brillyder_rush_survival_best", value: .number(Double(snapshot.puzzleRushSurvivalBest)), updatedAt: nowMs))
+        }
+        if snapshot.dailyStreakDays > 0 {
+            prefs.append(.init(
+                key: "brillyder_mistake_streak",
+                value: .object([
+                    "current": .number(Double(snapshot.dailyStreakDays)),
+                    "best": .number(Double(snapshot.dailyStreakDays)),
+                    "lastDate": .string(snapshot.lastDailyCompletedDate ?? ""),
+                ]),
+                updatedAt: nowMs
+            ))
+        }
+        if !snapshot.bookmarks.isEmpty,
+           let bmData = try? encoder.encode(snapshot.bookmarks),
+           let bmVal = try? JSONDecoder().decode(JSONValue.self, from: bmData) {
+            prefs.append(.init(key: "brillyder_saved_positions_v1", value: bmVal, updatedAt: nowMs))
+        }
+
         let payload = BrillyBackupPayload(
             stores: .init(
                 analyzed_games: snapshot.analyzedGames,
@@ -188,61 +267,150 @@ public actor LocalVaultStore {
                 fsrs_cards: snapshot.fsrsCards
             )
         )
-        let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(payload)
     }
 
-    /// Smart-merge import compatible with backups exported by the BrillyDer Web PWA or iOS app.
+    /// Resilient, smart-merge import compatible with real Web PWA (`brillyder-backup-*.json`) AND iOS exports.
     public static func mergeBackupJSON(_ data: Data, into existing: VaultSnapshot) throws -> VaultSnapshot {
-        let payload = try JSONDecoder().decode(BrillyBackupPayload.self, from: data)
-        guard payload.app == "brillyder" else {
+        let (merged, _) = try mergeBackupJSONWithSummary(data, into: existing)
+        return merged
+    }
+
+    public static func mergeBackupJSONWithSummary(
+        _ data: Data,
+        into existing: VaultSnapshot
+    ) throws -> (snapshot: VaultSnapshot, summary: BackupImportSummary) {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (root["app"] as? String) == "brillyder",
+              let stores = root["stores"] as? [String: Any] else {
             throw NSError(
                 domain: "BrillyDerCore",
                 code: 422,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid backup file (expected BrillyDer schema)."]
+                userInfo: [NSLocalizedDescriptionKey: "Unrecognized backup file (expected a BrillyDer JSON backup)."]
             )
         }
 
+        let decoder = JSONDecoder()
         var merged = existing
+        var skipped = 0
 
-        // Merge analyzed games (keep newest analyzedAt per id)
-        var gamesById = Dictionary(uniqueKeysWithValues: merged.analyzedGames.map { ($0.id, $0) })
-        for incoming in payload.stores.analyzed_games {
-            if let cur = gamesById[incoming.id], cur.analyzedAt >= incoming.analyzedAt {
-                continue
+        func decodeArray<T: Decodable>(_ raw: Any?, as type: T.Type) -> [T] {
+            guard let arr = raw as? [Any] else { return [] }
+            var out: [T] = []
+            for item in arr {
+                guard JSONSerialization.isValidJSONObject(item),
+                      let itemData = try? JSONSerialization.data(withJSONObject: item) else {
+                    skipped += 1
+                    continue
+                }
+                if let decoded = try? decoder.decode(T.self, from: itemData) {
+                    out.append(decoded)
+                } else {
+                    skipped += 1
+                }
             }
+            return out
+        }
+
+        // 1. Analyzed games (keep newest analyzedAt per id, exclude 0-ply sandbox placeholders)
+        let incomingGames = decodeArray(stores["analyzed_games"], as: AnalyzedGame.self).filter { !$0.plies.isEmpty }
+        var gamesById = Dictionary(uniqueKeysWithValues: merged.analyzedGames.map { ($0.id, $0) })
+        for incoming in incomingGames {
+            if let cur = gamesById[incoming.id], cur.analyzedAt >= incoming.analyzedAt { continue }
             gamesById[incoming.id] = incoming
         }
         merged.analyzedGames = Array(gamesById.values).sorted { $0.game.createdAt > $1.game.createdAt }
 
-        // Merge FSRS cards (keep higher attempts / newer review)
+        // 2. FSRS Opening Cards (keep higher attempts / newer review)
+        let incomingCards = decodeArray(stores["fsrs_cards"], as: FsrsOpeningCard.self)
         var cardsById = Dictionary(uniqueKeysWithValues: merged.fsrsCards.map { ($0.cardId, $0) })
-        for incoming in payload.stores.fsrs_cards {
-            if let cur = cardsById[incoming.cardId], cur.attempts > incoming.attempts {
-                continue
-            }
+        for incoming in incomingCards {
+            if let cur = cardsById[incoming.cardId], cur.attempts > incoming.attempts { continue }
             cardsById[incoming.cardId] = incoming
         }
         merged.fsrsCards = Array(cardsById.values)
 
-        // Merge custom courses
+        // 3. Custom Repertoires
+        let incomingCourses = decodeArray(stores["repertoires"], as: OpeningCourse.self)
         var coursesById = Dictionary(uniqueKeysWithValues: merged.customCourses.map { ($0.id, $0) })
-        for incoming in payload.stores.repertoires {
+        for incoming in incomingCourses {
             coursesById[incoming.id] = incoming
         }
         merged.customCourses = Array(coursesById.values)
 
-        // Restore usernames if blank locally
-        for pref in payload.stores.prefs {
-            if pref.key == "brillyder_username", case .string(let s) = pref.value, merged.lichessUsername.isEmpty {
-                merged.lichessUsername = s
-            }
-            if pref.key == "brillyder_chesscom_username", case .string(let s) = pref.value, merged.chessComUsername.isEmpty {
-                merged.chessComUsername = s
+        // 4. Prefs (usernames, bookmarks, mastered endgames, streaks, personal bests!)
+        var importedBookmarksCount = 0
+        var importedEndgamesCount = 0
+        let incomingPrefs = decodeArray(stores["prefs"], as: BrillyBackupPayload.PrefRecord.self)
+
+        for pref in incomingPrefs {
+            switch pref.key {
+            case "brillyder_username":
+                if case .string(let s) = pref.value, !s.isEmpty { merged.lichessUsername = s }
+            case "brillyder_chesscom_username":
+                if case .string(let s) = pref.value, !s.isEmpty { merged.chessComUsername = s }
+            case "brillyder_endgame_mastered_v1":
+                if case .array(let arr) = pref.value {
+                    let ids = arr.compactMap { if case .string(let s) = $0 { return s } else { return nil } }
+                    importedEndgamesCount += ids.count
+                    merged.masteredEndgameIds = Array(Set(merged.masteredEndgameIds + ids))
+                }
+            case "brillyder_saved_positions_v1":
+                if let rawValData = try? JSONEncoder().encode(pref.value),
+                   let incomingBms = try? decoder.decode([SavedPositionBookmark].self, from: rawValData) {
+                    importedBookmarksCount += incomingBms.count
+                    var bmById = Dictionary(uniqueKeysWithValues: merged.bookmarks.map { ($0.id, $0) })
+                    for bm in incomingBms {
+                        if let cur = bmById[bm.id], cur.createdAt >= bm.createdAt { continue }
+                        bmById[bm.id] = bm
+                    }
+                    merged.bookmarks = Array(bmById.values).sorted { $0.createdAt > $1.createdAt }
+                }
+            case "brillyder_rush_best":
+                if case .number(let n) = pref.value {
+                    merged.puzzleRushBlitzBest = max(merged.puzzleRushBlitzBest, Int(n.rounded()))
+                }
+            case "brillyder_rush_survival_best":
+                if case .number(let n) = pref.value {
+                    merged.puzzleRushSurvivalBest = max(merged.puzzleRushSurvivalBest, Int(n.rounded()))
+                }
+            case "brillyder_mistake_streak":
+                if case .object(let obj) = pref.value {
+                    if case .number(let cur) = obj["current"] {
+                        merged.dailyStreakDays = max(merged.dailyStreakDays, Int(cur.rounded()))
+                    }
+                    if case .string(let d) = obj["lastDate"], !d.isEmpty {
+                        if (merged.lastDailyCompletedDate ?? "") < d {
+                            merged.lastDailyCompletedDate = d
+                        }
+                    }
+                }
+            default:
+                if pref.key.hasPrefix("brillyder_vision_best_"), case .number(let n) = pref.value {
+                    merged.boardVisionBestScore = max(merged.boardVisionBestScore, Int(n.rounded()))
+                }
             }
         }
 
-        return merged
+        // 5. Training Logs (Advantage Conversion IDs)
+        if let rawLogs = stores["training_logs"] as? [[String: Any]] {
+            for log in rawLogs where (log["kind"] as? String) == "conversion" {
+                if let logData = log["data"] as? [String: Any],
+                   let ids = logData["convertedIds"] as? [String] {
+                    merged.convertedAdvantageIds = Array(Set(merged.convertedAdvantageIds + ids))
+                }
+            }
+        }
+
+        let summary = BackupImportSummary(
+            analyzedGames: incomingGames.count,
+            fsrsCards: incomingCards.count,
+            repertoires: incomingCourses.count,
+            bookmarks: importedBookmarksCount,
+            masteredEndgames: importedEndgamesCount,
+            skippedItems: skipped
+        )
+        return (merged, summary)
     }
 }

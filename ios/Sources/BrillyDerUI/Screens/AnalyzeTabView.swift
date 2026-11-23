@@ -46,6 +46,17 @@ public struct AnalyzeTabView: View {
         .onChange(of: store.pendingAnalyzePly) { _, _ in
             applyPendingNavigation()
         }
+        .onChange(of: currentPlyIndex) { _, newPly in
+            guard !retryMode && !botActive,
+                  let ag = store.activeAnalyzedGame,
+                  newPly > 0 && newPly <= ag.plies.count else { return }
+            let ply = ag.plies[newPly - 1]
+            if ply.classification == .brilliant {
+                store.triggerCelebration(.brilliant)
+            } else if ply.classification == .blunder {
+                store.triggerCelebration(.blunder)
+            }
+        }
         .onChange(of: store.activeSandboxFen) { _, newFen in
             if let newFen, let b = try? ChessBoard(fen: newFen) {
                 sandboxBoard = b
