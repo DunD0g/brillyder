@@ -28,8 +28,10 @@ public actor BrillyNativeEngine: ChessEngine {
 
     private var tt: [TTEntry]
     private var killers: [[ChessMove?]]
+    private var pathHashes: [UInt64] = []
     private var nodesVisited: Int = 0
     private var deadline: ContinuousClock.Instant?
+    private var enforceDeadline: Bool = false
     private var aborted: Bool = false
 
     public init() {
@@ -69,6 +71,7 @@ public actor BrillyNativeEngine: ChessEngine {
             return EngineEval(fen: fen, depth: 0, bestMoveUci: "", pv: [], score: score, lines: [])
         }
 
+        try Task.checkCancellation()
         let clampedDepth = max(1, min(10, depth))
         let requestedPV = max(1, min(multiPV, legal.count))
         let clock = ContinuousClock()
@@ -76,30 +79,35 @@ public actor BrillyNativeEngine: ChessEngine {
         self.aborted = false
         self.nodesVisited = 0
         self.killers = Array(repeating: [nil, nil], count: 64)
+        self.pathHashes = [board.zobristHash]
 
-        var completedDepth = 1
+        var completedDepth = 0
         var bestLines: [MultiPvLine] = []
 
         for d in 1...clampedDepth {
-            if Task.isCancelled { break }
+            try Task.checkCancellation()
             if d > 1, let dl = deadline, clock.now >= dl { break }
+            self.enforceDeadline = (d > 1)
+            self.aborted = false
 
             var excluded: Set<ChessMove> = []
-            var depthLines: [MultiPvLine] = []
-            var depthCompleted = true
+            var depthLines: [(sideScore: Int, line: MultiPvLine)] = []
+            var depthFullyCompleted = true
 
             for pvIdx in 1...requestedPV {
+                try Task.checkCancellation()
                 let candidates = legal.filter { !excluded.contains($0) }
                 if candidates.isEmpty { break }
 
-                let (scoreSide, bestMove, pv) = searchRoot(
+                let (scoreSide, bestMove, pv, completedAnyMove) = searchRoot(
                     board: board,
                     candidates: candidates,
-                    depth: d
+                    depth: d,
+                    storeRootTT: (pvIdx == 1)
                 )
 
-                if aborted && d > 1 {
-                    depthCompleted = false
+                if aborted || !completedAnyMove {
+                    depthFullyCompleted = false
                     break
                 }
 
@@ -107,28 +115,57 @@ public actor BrillyNativeEngine: ChessEngine {
                 excluded.insert(chosenMove)
                 let whiteScore = scoreFromSideToWhite(scoreSide, turn: board.turn)
                 let pvUci = pv.isEmpty ? [chosenMove.uci] : pv.map(\.uci)
-                depthLines.append(MultiPvLine(
-                    multipv: pvIdx,
-                    bestMoveUci: chosenMove.uci,
-                    pv: pvUci,
-                    score: whiteScore
+                depthLines.append((
+                    sideScore: scoreSide,
+                    line: MultiPvLine(
+                        multipv: pvIdx,
+                        bestMoveUci: chosenMove.uci,
+                        pv: pvUci,
+                        score: whiteScore
+                    )
                 ))
             }
 
-            if depthCompleted && !depthLines.isEmpty {
-                completedDepth = d
-                bestLines = depthLines
-                // Stop early if mate is already clearly found for all requested PVs
-                if let firstMate = depthLines.first?.score.mateWhite, abs(firstMate) <= d / 2 + 1 {
-                    if requestedPV == 1 || depthLines.count == requestedPV {
+            if !depthLines.isEmpty {
+                // Sort lines by side-to-move score descending so PV1 is always genuinely best
+                let sorted = depthLines.sorted { $0.sideScore > $1.sideScore }
+                let reindexed = sorted.enumerated().map { idx, item in
+                    MultiPvLine(
+                        multipv: idx + 1,
+                        bestMoveUci: item.line.bestMoveUci,
+                        pv: item.line.pv,
+                        score: item.line.score
+                    )
+                }
+
+                if depthFullyCompleted {
+                    completedDepth = d
+                    bestLines = reindexed
+                    if let firstMate = reindexed.first?.score.mateWhite, abs(firstMate) <= d / 2 + 1 {
                         break
                     }
+                } else if !reindexed.isEmpty {
+                    // Preserve deeper completed PV1 merged with prior depth's remaining lines
+                    var merged: [MultiPvLine] = [reindexed[0]]
+                    let topUci = reindexed[0].bestMoveUci
+                    for prev in bestLines where prev.bestMoveUci != topUci && merged.count < requestedPV {
+                        merged.append(MultiPvLine(
+                            multipv: merged.count + 1,
+                            bestMoveUci: prev.bestMoveUci,
+                            pv: prev.pv,
+                            score: prev.score
+                        ))
+                    }
+                    completedDepth = max(completedDepth, d)
+                    bestLines = merged
+                    break
                 }
             } else {
                 break
             }
         }
 
+        try Task.checkCancellation()
         let top = bestLines.first ?? MultiPvLine(
             multipv: 1,
             bestMoveUci: legal[0].uci,
@@ -138,7 +175,7 @@ public actor BrillyNativeEngine: ChessEngine {
 
         return EngineEval(
             fen: fen,
-            depth: completedDepth,
+            depth: max(1, completedDepth),
             bestMoveUci: top.bestMoveUci,
             pv: top.pv,
             score: top.score,
@@ -151,12 +188,11 @@ public actor BrillyNativeEngine: ChessEngine {
     private func searchRoot(
         board: ChessBoard,
         candidates: [ChessMove],
-        depth: Int
-    ) -> (score: Int, bestMove: ChessMove?, pv: [ChessMove]) {
+        depth: Int,
+        storeRootTT: Bool
+    ) -> (score: Int, bestMove: ChessMove?, pv: [ChessMove], completedAnyMove: Bool) {
         let ttSlot = Int(board.zobristHash & UInt64(Self.ttMask))
-        let ttMove = tt[ttSlot].key == board.zobristHash
-            ? tt[ttSlot].bestMove
-            : nil
+        let ttMove = (storeRootTT && tt[ttSlot].key == board.zobristHash) ? tt[ttSlot].bestMove : nil
         let ordered = orderMoves(candidates, board: board, ttMove: ttMove, ply: 0)
 
         var alpha = -Self.mateScore - 100
@@ -164,10 +200,12 @@ public actor BrillyNativeEngine: ChessEngine {
         var bestScore = -Self.mateScore - 100
         var bestMove: ChessMove? = ordered.first
         var bestPV: [ChessMove] = []
+        var completedAny = false
 
         for (index, move) in ordered.enumerated() {
             var next = board
             next.makeMoveUnchecked(move)
+            pathHashes.append(next.zobristHash)
 
             var childPV: [ChessMove] = []
             let score: Int
@@ -184,7 +222,9 @@ public actor BrillyNativeEngine: ChessEngine {
                 }
             }
 
+            pathHashes.removeLast()
             if aborted { break }
+            completedAny = true
 
             if score > bestScore {
                 bestScore = score
@@ -196,10 +236,10 @@ public actor BrillyNativeEngine: ChessEngine {
             }
         }
 
-        if let bm = bestMove, !aborted {
+        if storeRootTT, let bm = bestMove, !aborted, completedAny {
             storeTT(key: board.zobristHash, depth: depth, score: bestScore, bound: .exact, bestMove: bm)
         }
-        return (bestScore, bestMove, bestPV)
+        return (bestScore, bestMove, bestPV, completedAny)
     }
 
     private func negamax(
@@ -216,7 +256,7 @@ public actor BrillyNativeEngine: ChessEngine {
                 aborted = true
                 return 0
             }
-            if let dl = deadline, ContinuousClock().now >= dl {
+            if enforceDeadline, let dl = deadline, ContinuousClock().now >= dl {
                 aborted = true
                 return 0
             }
@@ -226,13 +266,31 @@ public actor BrillyNativeEngine: ChessEngine {
             return 0
         }
 
+        // Repetition check against current search path (avoid repeating when winning / spot perpetual check!)
+        if ply > 0 && pathHashes.count >= 3 {
+            let hash = board.zobristHash
+            var reps = 0
+            for i in stride(from: pathHashes.count - 3, through: 0, by: -2) {
+                if pathHashes[i] == hash {
+                    reps += 1
+                    break
+                }
+            }
+            if reps > 0 { return 0 }
+        }
+
+        let inCheck = board.isInCheck()
+        let effectiveDepth = (inCheck && ply < 16) ? depth + 1 : depth
+        let isPVNode = (beta - origAlpha) > 1
+
         var alpha = origAlpha
         let ttIndex = Int(board.zobristHash & UInt64(Self.ttMask))
         let entry = tt[ttIndex]
         var ttMove: ChessMove? = nil
         if entry.key == board.zobristHash {
             ttMove = entry.bestMove
-            if Int(entry.depth) >= depth && ply > 0 {
+            // Skip TT cutoffs on PV nodes so full PV lines never get truncated
+            if !isPVNode && Int(entry.depth) >= effectiveDepth && ply > 0 {
                 let s = adjustMateScoreFromTT(Int(entry.score), ply: ply)
                 switch entry.bound {
                 case .exact: return s
@@ -245,8 +303,6 @@ public actor BrillyNativeEngine: ChessEngine {
             }
         }
 
-        let inCheck = board.isInCheck()
-        let effectiveDepth = inCheck && ply < 16 ? depth + 1 : depth
         if effectiveDepth <= 0 {
             return quiescence(board: board, alpha: alpha, beta: beta, ply: ply)
         }
@@ -263,6 +319,7 @@ public actor BrillyNativeEngine: ChessEngine {
         for (index, move) in ordered.enumerated() {
             var next = board
             next.makeMoveUnchecked(move)
+            pathHashes.append(next.zobristHash)
 
             var childPV: [ChessMove] = []
             let score: Int
@@ -279,6 +336,7 @@ public actor BrillyNativeEngine: ChessEngine {
                 }
             }
 
+            pathHashes.removeLast()
             if aborted { return 0 }
 
             if score > bestScore {
@@ -290,8 +348,8 @@ public actor BrillyNativeEngine: ChessEngine {
                 pv = [move] + childPV
             }
             if alpha >= beta {
-                // Record quiet killer move
-                if board[move.to] == nil && move.promotion == nil && ply < 64 {
+                let isEp = board[move.from]?.type == .pawn && move.to == board.enPassantSquare
+                if board[move.to] == nil && !isEp && move.promotion == nil && ply < 64 {
                     if killers[ply][0] != move {
                         killers[ply][1] = killers[ply][0]
                         killers[ply][0] = move
@@ -322,13 +380,34 @@ public actor BrillyNativeEngine: ChessEngine {
                 aborted = true
                 return 0
             }
-            if let dl = deadline, ContinuousClock().now >= dl {
+            if enforceDeadline, let dl = deadline, ContinuousClock().now >= dl {
                 aborted = true
                 return 0
             }
         }
 
         var alpha = origAlpha
+        let inCheck = board.isInCheck()
+
+        if inCheck {
+            // Never stand pat while in check; search all legal evasions & detect checkmate
+            let evasions = board.legalMoves()
+            if evasions.isEmpty {
+                return -Self.mateScore + ply
+            }
+            if ply >= 24 { return evaluate(board) }
+            let ordered = orderMoves(evasions, board: board, ttMove: nil, ply: min(ply, 63))
+            for move in ordered {
+                var next = board
+                next.makeMoveUnchecked(move)
+                let score = -quiescence(board: next, alpha: -beta, beta: -alpha, ply: ply + 1)
+                if aborted { return 0 }
+                if score >= beta { return beta }
+                if score > alpha { alpha = score }
+            }
+            return alpha
+        }
+
         let standPat = evaluate(board)
         if standPat >= beta { return beta }
         if standPat > alpha { alpha = standPat }
@@ -342,7 +421,6 @@ public actor BrillyNativeEngine: ChessEngine {
         }
 
         for move in ordered {
-            // Delta pruning for hopeless captures (skip promotions)
             if move.promotion == nil, let victim = board[move.to] {
                 if standPat + victim.type.centipawnValue + 200 < alpha {
                     continue
@@ -373,7 +451,8 @@ public actor BrillyNativeEngine: ChessEngine {
     private func movePriority(_ move: ChessMove, board: ChessBoard, ttMove: ChessMove?, k0: ChessMove?, k1: ChessMove?) -> Int {
         if move == ttMove { return 1_000_000 }
         var score = 0
-        if board[move.to] != nil {
+        let isEp = board[move.from]?.type == .pawn && move.to == board.enPassantSquare
+        if board[move.to] != nil || isEp {
             score += 100_000 + captureScore(move, on: board)
         }
         if let promo = move.promotion {
@@ -381,7 +460,6 @@ public actor BrillyNativeEngine: ChessEngine {
         }
         if move == k0 { score += 50_000 }
         else if move == k1 { score += 45_000 }
-        // Slight central preference for quiet moves
         let cf = abs(move.to.file - 3) + abs(move.to.rank - 3)
         score += (8 - cf)
         return score
@@ -399,12 +477,13 @@ public actor BrillyNativeEngine: ChessEngine {
         let idx = Int(key & UInt64(Self.ttMask))
         let existing = tt[idx]
         if existing.key != key || Int(existing.depth) <= depth {
+            let fallbackMove = existing.key == key ? existing.bestMove : nil
             tt[idx] = TTEntry(
                 key: key,
                 depth: Int8(clamping: depth),
                 score: Int32(clamping: score),
                 bound: bound,
-                bestMove: bestMove ?? existing.bestMove
+                bestMove: bestMove ?? fallbackMove
             )
         }
     }

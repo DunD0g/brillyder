@@ -104,15 +104,16 @@ public struct BrillyVaultSheet: View {
         } else {
             ForEach(items) { item in
                 let board = (try? ChessBoard(fen: item.fen)) ?? ChessBoard()
-                let shareCard = BrillyShareCardView(
-                    board: board,
+                // Lazy Transferable share card — zero ImageRenderer work while scrolling!
+                let shareItem = BrillyShareCardItem(
+                    fen: item.fen,
                     orientation: item.color,
                     theme: store.boardTheme,
                     title: item.title,
                     subtitle: item.subtitle,
                     evalDisplay: item.evalDisplay,
                     badgeText: item.kind == .brilliant ? "!!" : item.kind.title,
-                    badgeColor: item.kind == .brilliant ? BrillyPalette.brillyTeal : BrillyPalette.warpPurple
+                    classification: item.kind == .brilliant ? .brilliant : nil
                 )
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -154,15 +155,13 @@ public struct BrillyVaultSheet: View {
                         }
                         .buttonStyle(.plain)
 
-                        if let rendered = shareCard.renderImage() {
-                            ShareLink(item: rendered, preview: SharePreview(item.title, image: rendered)) {
-                                Label("Share Card", systemImage: "square.and.arrow.up")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.inkPrimary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                            }
+                        ShareLink(item: shareItem, preview: SharePreview(item.title)) {
+                            Label("Share Card", systemImage: "square.and.arrow.up")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
                         }
                     }
                 }
@@ -184,43 +183,54 @@ public struct BrillyVaultSheet: View {
                 .brillySurface(store.surfaceStyle, cornerRadius: 18)
         } else {
             ForEach(store.bookmarks) { bm in
-                Button {
-                    if store.analyzedGames.contains(where: { $0.id == bm.gameId }) {
-                        store.openGameAtPly(gameId: bm.gameId, ply: bm.ply)
-                    } else {
-                        dismiss()
-                        store.openCustomFEN(bm.fen)
-                    }
-                } label: {
-                    HStack(spacing: 12) {
-                        InteractiveChessBoardView(
-                            board: (try? ChessBoard(fen: bm.fen)) ?? ChessBoard(),
-                            orientation: bm.color,
-                            theme: store.boardTheme,
-                            surfaceStyle: store.surfaceStyle,
-                            interactive: false
-                        )
-                        .frame(width: 70, height: 70)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(bm.label)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                            if let eval = bm.evalDisplay {
-                                Text("Eval \(eval)")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
-                            }
+                HStack(spacing: 10) {
+                    Button {
+                        if store.analyzedGames.contains(where: { $0.id == bm.gameId }) {
+                            store.openGameAtPly(gameId: bm.gameId, ply: bm.ply)
+                        } else {
+                            dismiss()
+                            store.openCustomFEN(bm.fen)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    } label: {
+                        HStack(spacing: 12) {
+                            InteractiveChessBoardView(
+                                board: (try? ChessBoard(fen: bm.fen)) ?? ChessBoard(),
+                                orientation: bm.color,
+                                theme: store.boardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: false
+                            )
+                            .frame(width: 70, height: 70)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(bm.label)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .multilineTextAlignment(.leading)
+                                if let eval = bm.evalDisplay {
+                                    Text("Eval \(eval)")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
                     }
-                    .padding(12)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 16, interactive: true)
+                    .buttonStyle(.plain)
+
+                    Button {
+                        store.removeBookmark(id: bm.id)
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete bookmark")
                 }
-                .buttonStyle(.plain)
+                .padding(12)
+                .brillySurface(store.surfaceStyle, cornerRadius: 16, interactive: true)
             }
         }
     }

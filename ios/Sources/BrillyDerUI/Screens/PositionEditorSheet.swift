@@ -18,6 +18,7 @@ public struct PositionEditorSheet: View {
     @State private var castleBQ = true
     @State private var activeTool: ToolSelection = .piece(Piece(color: .white, type: .queen))
     @State private var customFenInput: String = ""
+    @State private var fenLoadError: String? = nil
 
     private var assembledFen: String {
         var rows: [String] = []
@@ -35,7 +36,6 @@ public struct PositionEditorSheet: View {
             if empty > 0 { row.append(String(empty)) }
             rows.append(row)
         }
-        // Auto-prune impossible castling flags
         var c = ""
         if castleWK && squares[Square.e1.rawValue] == Piece(color: .white, type: .king) && squares[Square.h1.rawValue] == Piece(color: .white, type: .rook) { c.append("K") }
         if castleWQ && squares[Square.e1.rawValue] == Piece(color: .white, type: .king) && squares[Square.a1.rawValue] == Piece(color: .white, type: .rook) { c.append("Q") }
@@ -84,7 +84,10 @@ public struct PositionEditorSheet: View {
                             presetButton("Start") { loadFen(ChessBoard.initialFEN) }
                             presetButton("Kings Only") { loadFen("4k3/8/8/8/8/8/8/4K3 w - - 0 1") }
                             presetButton("Lucena") { loadFen("1K1k4/1P6/8/8/8/8/r7/2R5 w - - 0 1") }
-                            presetButton("Clear") { squares = Array(repeating: nil, count: 64) }
+                            presetButton("Clear") {
+                                squares = Array(repeating: nil, count: 64)
+                                fenLoadError = nil
+                            }
                         }
 
                         // Editable 8x8 Grid
@@ -117,15 +120,33 @@ public struct PositionEditorSheet: View {
                         }
                         .aspectRatio(1, contentMode: .fit)
 
-                        // Piece Palette
+                        // Compact 6-wide Piece Palette + Dedicated Eraser Toggle (fits 375pt iPhone SE cleanly)
                         VStack(spacing: 8) {
                             paletteRow(color: .white)
                             paletteRow(color: .black)
+
+                            let erasing = activeTool == .erase
+                            Button {
+                                activeTool = .erase
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label(erasing ? "Eraser Active (Tap Squares to Remove)" : "Eraser Tool", systemImage: "eraser.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(erasing ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(erasing ? BrillyPalette.blunderRose.opacity(0.22) : Color.white.opacity(0.06))
+                                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(erasing ? BrillyPalette.blunderRose : .clear, lineWidth: 1.2))
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(10)
                         .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
-                        // Side to move + Castling + FEN Paste
+                        // Side to Move + Castling Rights + FEN Paste
                         VStack(spacing: 10) {
                             HStack {
                                 Text("Side to Move")
@@ -140,9 +161,26 @@ public struct PositionEditorSheet: View {
                                 .frame(width: 160)
                             }
 
+                            HStack(spacing: 6) {
+                                Text("Castling")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                Spacer()
+                                castlePill("W O-O", isOn: $castleWK)
+                                castlePill("W O-O-O", isOn: $castleWQ)
+                                castlePill("B O-O", isOn: $castleBK)
+                                castlePill("B O-O-O", isOn: $castleBQ)
+                            }
+
                             HStack(spacing: 8) {
                                 TextField("Paste FEN…", text: $customFenInput)
                                     .textFieldStyle(.plain)
+                                    #if os(iOS)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .submitLabel(.done)
+                                    #endif
+                                    .onSubmit { loadFen(customFenInput) }
                                     .font(.caption.monospaced())
                                     .padding(9)
                                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
@@ -156,6 +194,13 @@ public struct PositionEditorSheet: View {
                                 .padding(.vertical, 9)
                                 .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
                                 .buttonStyle(.plain)
+                            }
+
+                            if let fenLoadError {
+                                Label(fenLoadError, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         .padding(14)
@@ -187,7 +232,9 @@ public struct PositionEditorSheet: View {
                         .disabled(validationError != nil)
                     }
                     .padding(16)
+                    .padding(.bottom, 24)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Board / FEN Editor")
             .toolbar {
@@ -207,34 +254,31 @@ public struct PositionEditorSheet: View {
                     activeTool = .piece(piece)
                     store.triggerHaptic(.move)
                 } label: {
-                    ChessPieceView(piece: piece, squareSize: 34)
-                        .padding(4)
+                    ChessPieceView(piece: piece, squareSize: 32)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
-                                .fill(sel ? BrillyPalette.brillyTeal.opacity(0.30) : Color.white.opacity(0.06))
+                                .fill(sel ? BrillyPalette.brillyTeal.opacity(0.30) : Color.white.opacity(color == .black ? 0.14 : 0.06))
                                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(sel ? BrillyPalette.brillyTeal : .clear, lineWidth: 1.5))
                         )
                 }
                 .buttonStyle(.plain)
             }
-            if color == .black {
-                let sel = activeTool == .erase
-                Button {
-                    activeTool = .erase
-                    store.triggerHaptic(.move)
-                } label: {
-                    Image(systemName: "eraser.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(sel ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
-                        .frame(width: 42, height: 42)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(sel ? BrillyPalette.blunderRose.opacity(0.25) : Color.white.opacity(0.06))
-                        )
-                }
-                .buttonStyle(.plain)
-            }
         }
+    }
+
+    private func castlePill(_ label: String, isOn: Binding<Bool>) -> some View {
+        Button(label) {
+            isOn.wrappedValue.toggle()
+            store.triggerHaptic(.move)
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(isOn.wrappedValue ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(isOn.wrappedValue ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+        .buttonStyle(.plain)
     }
 
     private func presetButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -261,16 +305,29 @@ public struct PositionEditorSheet: View {
                 squares[sq.rawValue] = piece
             }
         }
+        fenLoadError = nil
         store.triggerHaptic(.move)
     }
 
     private func loadFen(_ fen: String) {
-        guard let b = try? ChessBoard(fen: fen) else { return }
-        squares = b.squares
-        turn = b.turn
-        castleWK = b.castling.contains(.whiteKingside)
-        castleWQ = b.castling.contains(.whiteQueenside)
-        castleBK = b.castling.contains(.blackKingside)
-        castleBQ = b.castling.contains(.blackQueenside)
+        let trimmed = fen.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            fenLoadError = "Paste a FEN string first."
+            return
+        }
+        do {
+            let b = try ChessBoard(fen: trimmed)
+            squares = b.squares
+            turn = b.turn
+            castleWK = b.castling.contains(.whiteKingside)
+            castleWQ = b.castling.contains(.whiteQueenside)
+            castleBK = b.castling.contains(.blackKingside)
+            castleBQ = b.castling.contains(.blackQueenside)
+            fenLoadError = nil
+            store.triggerHaptic(.success)
+        } catch {
+            fenLoadError = "Invalid FEN: \(error.localizedDescription)"
+            store.triggerHaptic(.error)
+        }
     }
 }

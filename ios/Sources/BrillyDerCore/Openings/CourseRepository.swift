@@ -34,7 +34,10 @@ public enum CourseRepository {
 
             if applied.piece.color == targetColor {
                 let cardId = FSRS6Scheduler.buildCardId(courseId: courseId, lineId: line.id, ply: ply, expectedUci: uci)
-                if let existing = existingById[cardId] {
+                if var existing = existingById[cardId] {
+                    if unlocked && !existing.unlocked {
+                        existing.unlocked = true
+                    }
                     cards.append(existing)
                 } else {
                     cards.append(FSRS6Scheduler.createCard(

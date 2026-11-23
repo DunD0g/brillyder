@@ -6,8 +6,10 @@ import BrillyDerCore
 public struct WoodpeckerCyclePanel: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var board: ChessBoard = ChessBoard()
+    @State private var lastMove: (from: Square, to: Square)? = nil
     @State private var wrongOnCurrent = false
     @State private var solvedCurrent = false
+    @State private var revealedCurrent = false
     @State private var feedback = "Solve each frozen tactic fast on the 1st try."
 
     private var activePuzzle: MistakePuzzle? {
@@ -17,13 +19,24 @@ public struct WoodpeckerCyclePanel: View {
         return store.mistakeDeck.first { $0.id == targetId }
     }
 
+    private var uniqueBatchSizes: [Int] {
+        let maxCount = store.mistakeDeck.count
+        guard maxCount > 0 else { return [] }
+        var out: [Int] = []
+        for s in [30, 50, 100] {
+            let clamped = min(s, maxCount)
+            if !out.contains(clamped) { out.append(clamped) }
+        }
+        return out
+    }
+
     public var body: some View {
         VStack(spacing: 14) {
             if let cycle = store.woodpeckerCycle {
                 // Active Cycle Header
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Cycle #\(cycle.currentCycle) · \(cycle.activeIndex + 1) / \(max(1, cycle.puzzleIds.count))")
+                        Text("Cycle #\(cycle.currentCycle) · \(min(cycle.activeIndex + 1, max(1, cycle.puzzleIds.count))) / \(max(1, cycle.puzzleIds.count))")
                             .font(.headline.weight(.bold))
                             .foregroundStyle(BrillyPalette.brillyTeal)
                         Spacer()
@@ -35,8 +48,12 @@ public struct WoodpeckerCyclePanel: View {
                         .foregroundStyle(BrillyPalette.blunderRose)
                         .buttonStyle(.plain)
                     }
-                    ProgressView(value: Double(cycle.activeIndex), total: Double(max(1, cycle.puzzleIds.count)))
-                        .tint(BrillyPalette.brillyTeal)
+
+                    TractorBeamProgressBar(
+                        progress: Double(cycle.activeIndex) / Double(max(1, cycle.puzzleIds.count)),
+                        height: 8
+                    )
+
                     if cycle.isOnCooldown {
                         Label("24h memory consolidation window active (you can still train early).", systemImage: "moon.zzz.fill")
                             .font(.caption2)
@@ -47,42 +64,99 @@ public struct WoodpeckerCyclePanel: View {
                 .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.brillyTeal)
 
                 if let puzzle = activePuzzle {
+                    let orientation = (try? ChessBoard(fen: puzzle.fen))?.turn ?? puzzle.playerColor
+
                     InteractiveChessBoardView(
                         board: board,
-                        orientation: puzzle.playerColor,
+                        orientation: orientation,
                         theme: store.boardTheme,
                         surfaceStyle: store.surfaceStyle,
-                        interactive: !solvedCurrent
+                        interactive: !solvedCurrent && !revealedCurrent,
+                        lastMove: lastMove,
+                        arrows: revealedCurrent ? arrowFor(puzzle.bestMoveUci) : []
                     ) { move in
                         if move.uci == puzzle.bestMoveUci {
-                            _ = try? board.apply(move)
+                            if (try? board.apply(move)) != nil {
+                                lastMove = (move.from, move.to)
+                            }
                             solvedCurrent = true
                             feedback = "Clean! \(puzzle.bestMoveSan) solved."
                             store.triggerHaptic(.success)
                         } else {
                             wrongOnCurrent = true
-                            feedback = "Missed — try again (best is \(puzzle.bestMoveSan.prefix(2))…)"
+                            feedback = "Missed — try again (best starts with \(puzzle.bestMoveSan.prefix(2))…)"
                             store.triggerHaptic(.error)
                         }
                     }
 
                     Text(feedback)
                         .font(.subheadline)
-                        .foregroundStyle(solvedCurrent ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                        .foregroundStyle(solvedCurrent ? BrillyPalette.brillyTeal : (revealedCurrent ? BrillyPalette.goldAmber : BrillyPalette.inkPrimary))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .brillySurface(store.surfaceStyle, cornerRadius: 14)
 
-                    Button(solvedCurrent ? "Next Puzzle" : "Reveal & Advance") {
-                        store.recordWoodpeckerStep(firstTry: solvedCurrent && !wrongOnCurrent, solved: solvedCurrent)
-                        loadActivePuzzle()
+                    if solvedCurrent || revealedCurrent {
+                        Button("Next Puzzle") {
+                            store.recordWoodpeckerStep(firstTry: solvedCurrent && !wrongOnCurrent, solved: solvedCurrent)
+                            loadActivePuzzle()
+                        }
+                        .font(.headline)
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                        .buttonStyle(.plain)
+                    } else {
+                        Button("Reveal Solution") {
+                            wrongOnCurrent = true
+                            revealedCurrent = true
+                            feedback = "Best move was \(puzzle.bestMoveSan). Study the pattern, then tap Next Puzzle."
+                            store.triggerHaptic(.move)
+                        }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                        .buttonStyle(.plain)
                     }
-                    .font(.headline)
-                    .foregroundStyle(solvedCurrent ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(solvedCurrent ? BrillyPalette.brillyTeal : Color.white.opacity(0.10)))
-                    .buttonStyle(.plain)
+                } else {
+                    // Graceful recovery if a cycle references a puzzle whose game was deleted or not yet imported
+                    VStack(spacing: 12) {
+                        Label("Puzzle Not Found in Current Deck", systemImage: "exclamationmark.triangle.fill")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                        Text("This frozen puzzle belongs to a game that is no longer in your analyzed library.")
+                            .font(.caption)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                            .multilineTextAlignment(.center)
+                        HStack(spacing: 10) {
+                            Button("Skip Missing") {
+                                store.recordWoodpeckerStep(firstTry: false, solved: false)
+                                loadActivePuzzle()
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .buttonStyle(.plain)
+
+                            Button("Start Fresh Batch") {
+                                store.woodpeckerCycle = nil
+                                store.persistToDisk()
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.goldAmber)
                 }
 
                 // Completed Cycles Speed-Up History
@@ -121,12 +195,12 @@ public struct WoodpeckerCyclePanel: View {
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.goldAmber)
                     } else {
-                        Text("\(store.mistakeDeck.count) personal puzzles available")
+                        Text("\(store.mistakeDeck.count) personal puzzle\(store.mistakeDeck.count == 1 ? "" : "s") available")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(BrillyPalette.brillyTeal)
                         HStack(spacing: 8) {
-                            ForEach([30, 50, 100], id: \.self) { size in
-                                Button("Freeze \(min(size, store.mistakeDeck.count))") {
+                            ForEach(uniqueBatchSizes, id: \.self) { size in
+                                Button("Freeze \(size)") {
                                     store.startWoodpeckerCycle(batchSize: size)
                                     loadActivePuzzle()
                                 }
@@ -145,15 +219,24 @@ public struct WoodpeckerCyclePanel: View {
             }
         }
         .onAppear { loadActivePuzzle() }
+        .onChange(of: store.woodpeckerCycle?.id) { _, _ in loadActivePuzzle() }
+        .onChange(of: store.woodpeckerCycle?.activeIndex) { _, _ in loadActivePuzzle() }
     }
 
     private func loadActivePuzzle() {
         wrongOnCurrent = false
         solvedCurrent = false
+        revealedCurrent = false
+        lastMove = nil
         if let p = activePuzzle {
             board = (try? ChessBoard(fen: p.fen)) ?? ChessBoard()
             feedback = "You played \(p.playedSan) vs \(p.opponentName). Find the tactical refutation!"
         }
+    }
+
+    private func arrowFor(_ uci: String) -> [BoardArrow] {
+        guard let m = ChessMove(uci: uci) else { return [] }
+        return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
     }
 }
 
@@ -245,85 +328,129 @@ private struct ConversionPlaySheet: View {
     @State private var liveScore: EngineScore = ChessMath.buildEngineScore(cpWhite: 0)
     @State private var status = "Convert your winning advantage cleanly!"
     @State private var thinking = false
+    @State private var botTask: Task<Void, Never>? = nil
+    @State private var generation: Int = 0
 
     var body: some View {
         NavigationStack {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
-                VStack(spacing: 14) {
-                    EvalBarView(score: liveScore, orientation: lead.userColor)
+                ScrollView {
+                    VStack(spacing: 14) {
+                        EvalBarView(score: liveScore, orientation: lead.userColor)
 
-                    InteractiveChessBoardView(
-                        board: board,
-                        orientation: lead.userColor,
-                        theme: store.boardTheme,
-                        surfaceStyle: store.surfaceStyle,
-                        interactive: !thinking && board.turn == lead.userColor && board.outcome == .ongoing
-                    ) { move in
-                        historyFens.append(board.fen)
-                        guard (try? board.apply(move)) != nil else { return }
-                        store.triggerHaptic(.move)
-                        handleAfterUserMove()
-                    }
-
-                    Text(status)
-                        .font(.subheadline)
-                        .foregroundStyle(BrillyPalette.inkPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
-
-                    HStack(spacing: 10) {
-                        Button("Rewind Turn") {
-                            if let prev = historyFens.popLast(), let b = try? ChessBoard(fen: prev) {
-                                board = b
-                                status = "Rewound — try a cleaner conversion plan!"
-                            }
+                        InteractiveChessBoardView(
+                            board: board,
+                            orientation: lead.userColor,
+                            theme: store.boardTheme,
+                            surfaceStyle: store.surfaceStyle,
+                            interactive: !thinking && board.turn == lead.userColor && board.outcome == .ongoing
+                        ) { move in
+                            historyFens.append(board.fen)
+                            guard (try? board.apply(move)) != nil else { return }
+                            store.triggerHaptic(.move)
+                            handleAfterUserMove()
                         }
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(BrillyPalette.goldAmber)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                        .buttonStyle(.plain)
-                        .disabled(historyFens.isEmpty)
 
-                        Button("Reset") { reset() }
-                            .font(.subheadline.weight(.bold))
+                        Text(status)
+                            .font(.subheadline)
                             .foregroundStyle(BrillyPalette.inkPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                        HStack(spacing: 10) {
+                            Button("Rewind Turn") {
+                                cancelBot()
+                                if let prev = historyFens.popLast(), let b = try? ChessBoard(fen: prev) {
+                                    board = b
+                                    status = "Rewound — try a cleaner conversion plan!"
+                                }
+                            }
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.goldAmber)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                             .buttonStyle(.plain)
+                            .disabled(historyFens.isEmpty)
+
+                            Button("Reset") { reset() }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .buttonStyle(.plain)
+                        }
                     }
-                    Spacer()
+                    .padding(16)
                 }
-                .padding(16)
             }
             .navigationTitle("Convert vs \(lead.opponentName)")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
             .onAppear { reset() }
+            .onDisappear { cancelBot() }
         }
+    }
+
+    private func cancelBot() {
+        generation &+= 1
+        botTask?.cancel()
+        botTask = nil
+        thinking = false
     }
 
     private func reset() {
+        cancelBot()
         board = (try? ChessBoard(fen: lead.fen)) ?? ChessBoard()
         historyFens = []
+        let initialCp = lead.userColor == .white ? 300 : -300
+        liveScore = ChessMath.buildEngineScore(cpWhite: initialCp)
         status = "Hold >= +2.0 and push to +7.0 or checkmate to lock the win!"
+
+        // Probe initial exact eval in background without blocking
+        let gen = generation
+        let fen = board.fen
+        botTask = Task {
+            if let ev = try? await store.interactiveEngine.analyze(fen: fen, depth: 4, multiPV: 1, maxTimeMs: 250),
+               !Task.isCancelled, self.generation == gen {
+                liveScore = ev.score
+            }
+        }
+    }
+
+    private func handleOutcomeCheck() -> Bool {
+        switch board.outcome {
+        case .ongoing:
+            return false
+        case .checkmate(let w):
+            if w == lead.userColor {
+                status = "Checkmate! Advantage converted cleanly!"
+                store.markAdvantageConverted(lead.id)
+            } else {
+                status = "Checkmated — tap Rewind Turn or Reset to try again."
+                store.triggerHaptic(.error)
+            }
+            return true
+        case .stalemate, .insufficientMaterial, .fiftyMoveRule:
+            status = "Game ended in a draw — tap Rewind Turn or Reset to convert the win!"
+            store.triggerHaptic(.error)
+            return true
+        }
     }
 
     private func handleAfterUserMove() {
-        if case .checkmate(let w) = board.outcome, w == lead.userColor {
-            status = "Checkmate! Advantage converted cleanly!"
-            store.markAdvantageConverted(lead.id)
-            return
-        }
+        if handleOutcomeCheck() { return }
+        cancelBot()
+        let gen = generation
         thinking = true
         let fen = board.fen
-        Task {
-            if let ev = try? await store.engine.analyze(fen: fen, depth: 4, multiPV: 1, maxTimeMs: 320) {
+        botTask = Task {
+            if let ev = try? await store.interactiveEngine.analyze(fen: fen, depth: 4, multiPV: 1, maxTimeMs: 320),
+               !Task.isCancelled, self.generation == gen {
                 liveScore = ev.score
                 let userCp = lead.userColor == .white ? ev.score.cpWhite : -ev.score.cpWhite
                 if userCp >= 700 || (ev.score.mateWhite != nil && ((lead.userColor == .white && ev.score.mateWhite! > 0) || (lead.userColor == .black && ev.score.mateWhite! < 0))) {
@@ -336,9 +463,13 @@ private struct ConversionPlaySheet: View {
                 }
                 if let m = ChessMove(uci: ev.bestMoveUci), board.outcome == .ongoing {
                     _ = try? board.apply(m)
+                    store.triggerHaptic(.move)
+                    _ = handleOutcomeCheck()
                 }
             }
-            thinking = false
+            if self.generation == gen {
+                thinking = false
+            }
         }
     }
 }
@@ -350,6 +481,7 @@ public struct MistakeDeckPanel: View {
     @State private var selectedTag: String = "All"
     @State private var index: Int = 0
     @State private var board: ChessBoard = ChessBoard()
+    @State private var lastMove: (from: Square, to: Square)? = nil
     @State private var solved = false
     @State private var showHint = false
     @State private var message = ""
@@ -392,27 +524,33 @@ public struct MistakeDeckPanel: View {
                     .frame(maxWidth: .infinity)
                     .brillySurface(store.surfaceStyle, cornerRadius: 18)
             } else {
-                let p = filtered[min(index, filtered.count - 1)]
+                let safeIdx = min(index, filtered.count - 1)
+                let p = filtered[safeIdx]
+                let orientation = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
+
                 HStack {
                     Text("\(p.tacticalTag) · Move \(p.moveNumber)")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(BrillyPalette.blunderRose)
                     Spacer()
-                    Text("\(index + 1) / \(filtered.count)")
+                    Text("\(safeIdx + 1) / \(filtered.count)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(BrillyPalette.inkSecondary)
                 }
 
                 InteractiveChessBoardView(
                     board: board,
-                    orientation: p.playerColor,
+                    orientation: orientation,
                     theme: store.boardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: !solved,
-                    arrows: showHint ? arrowFor(p.bestMoveUci) : []
+                    lastMove: lastMove,
+                    arrows: (showHint && !solved) ? arrowFor(p.bestMoveUci) : []
                 ) { move in
                     if move.uci == p.bestMoveUci {
-                        _ = try? board.apply(move)
+                        if (try? board.apply(move)) != nil {
+                            lastMove = (move.from, move.to)
+                        }
                         solved = true
                         message = "Spot on! \(p.bestMoveSan) fixes your \(p.playedSan) blunder."
                         store.triggerHaptic(.success)
@@ -437,6 +575,7 @@ public struct MistakeDeckPanel: View {
                         .padding(.vertical, 10)
                         .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                         .buttonStyle(.plain)
+                        .disabled(solved)
 
                     Button("Open Game") {
                         store.openGameAtPly(gameId: p.gameId, ply: p.ply)
@@ -449,7 +588,7 @@ public struct MistakeDeckPanel: View {
                     .buttonStyle(.plain)
 
                     Button("Next") {
-                        index = (index + 1) % filtered.count
+                        index = (safeIdx + 1) % filtered.count
                         loadCurrent()
                     }
                     .font(.subheadline.weight(.bold))
@@ -462,11 +601,25 @@ public struct MistakeDeckPanel: View {
             }
         }
         .onAppear {
-            if let filter = store.preferredMotifFilter, availableTags.contains(filter) {
-                selectedTag = filter
-                store.preferredMotifFilter = nil
-            }
+            applyPreferredMotif()
             loadCurrent()
+        }
+        .onChange(of: store.preferredMotifFilter) { _, _ in
+            applyPreferredMotif()
+            loadCurrent()
+        }
+        .onChange(of: store.mistakeDeck.count) { _, _ in
+            if !availableTags.contains(selectedTag) { selectedTag = "All" }
+            index = 0
+            loadCurrent()
+        }
+    }
+
+    private func applyPreferredMotif() {
+        if let filter = store.preferredMotifFilter, availableTags.contains(filter) {
+            selectedTag = filter
+            index = 0
+            store.preferredMotifFilter = nil
         }
     }
 
@@ -474,8 +627,11 @@ public struct MistakeDeckPanel: View {
         solved = false
         showHint = false
         message = ""
+        lastMove = nil
         if !filtered.isEmpty {
-            let p = filtered[min(index, filtered.count - 1)]
+            let safeIdx = min(index, filtered.count - 1)
+            index = safeIdx
+            let p = filtered[safeIdx]
             board = (try? ChessBoard(fen: p.fen)) ?? ChessBoard()
         }
     }

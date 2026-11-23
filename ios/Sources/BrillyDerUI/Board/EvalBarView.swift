@@ -43,5 +43,7 @@ public struct EvalBarView: View {
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
         }
         .frame(height: 22)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Position evaluation \(score.display)")
     }
 }

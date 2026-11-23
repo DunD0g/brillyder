@@ -92,34 +92,30 @@ public struct CockpitSettingsSheet: View {
 
                         // MARK: - 2. Copy Vibe, Engine Depth, Sound, Haptics & Celebrations
                         VStack(alignment: .leading, spacing: 14) {
-                            HStack {
+                            VStack(alignment: .leading, spacing: 8) {
                                 Text("Coach Vibe")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
-                                Spacer()
                                 Picker("Vibe", selection: $bindableStore.vibeMode) {
                                     ForEach(VibeMode.allCases) { v in
                                         Text(v.title).tag(v)
                                     }
                                 }
                                 .pickerStyle(.segmented)
-                                .frame(width: 180)
                             }
 
                             Divider().overlay(Color.white.opacity(0.1))
 
-                            HStack {
+                            VStack(alignment: .leading, spacing: 8) {
                                 Text("Analysis Depth")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
-                                Spacer()
                                 Picker("Depth", selection: $bindableStore.analysisPreset) {
                                     ForEach(AnalysisDepthPreset.allCases) { p in
                                         Text(p.title).tag(p)
                                     }
                                 }
                                 .pickerStyle(.segmented)
-                                .frame(width: 210)
                             }
 
                             Divider().overlay(Color.white.opacity(0.1))
@@ -203,7 +199,7 @@ public struct CockpitSettingsSheet: View {
                                 .tracking(1.0)
                                 .foregroundStyle(BrillyPalette.brillyTeal)
 
-                            Text("In BrillyDer Web → Settings → Export JSON, save to Files (or AirDrop to iPhone), then tap Import File below to merge all analyzed games, FSRS opening progress, custom courses, bookmarks & streaks.")
+                            Text("In BrillyDer Web → Settings → Export JSON, save to Files (or AirDrop to iPhone), then tap Import File below to merge analyzed games, FSRS opening progress, custom courses, Woodpecker cycles, bookmarks & streaks.")
                                 .font(.caption)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
 
@@ -221,9 +217,13 @@ public struct CockpitSettingsSheet: View {
                                 .buttonStyle(.plain)
 
                                 Button {
-                                    if let data = try? store.exportBackupData() {
+                                    do {
+                                        let data = try store.exportBackupData()
                                         exportDoc = BrillyBackupDocument(data: data)
                                         showingExporter = true
+                                    } catch {
+                                        backupError = true
+                                        backupNotice = "Export failed: \(error.localizedDescription)"
                                     }
                                 } label: {
                                     Label("Export JSON", systemImage: "square.and.arrow.up")
@@ -273,6 +273,7 @@ public struct CockpitSettingsSheet: View {
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
                     }
                     .padding(16)
+                    .padding(.bottom, 24)
                 }
             }
             .navigationTitle(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
@@ -287,9 +288,13 @@ public struct CockpitSettingsSheet: View {
                 contentType: .json,
                 defaultFilename: "brillyder-backup"
             ) { result in
-                if case .success = result {
+                switch result {
+                case .success:
                     backupError = false
                     backupNotice = "Backup exported cleanly."
+                case .failure(let err):
+                    backupError = true
+                    backupNotice = "Export failed: \(err.localizedDescription)"
                 }
             }
             .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json]) { result in

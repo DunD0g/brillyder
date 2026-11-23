@@ -97,6 +97,14 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .neon:    return Color(hex: 0xE879F9)
         }
     }
+
+    /// High-contrast coordinate label ink on both light and dark squares (especially Neon).
+    public func coordColor(isLightSquare: Bool) -> Color {
+        if self == .neon {
+            return isLightSquare ? Color(hex: 0xCBD5E1).opacity(0.85) : Color(hex: 0x94A3B8).opacity(0.88)
+        }
+        return (isLightSquare ? darkSquare : lightSquare).opacity(0.90)
+    }
 }
 
 public enum BrillyPalette {
@@ -119,6 +127,16 @@ public enum BrillyPalette {
         case .mistake:    return Color(hex: 0xF97316)
         case .blunder:    return Color(hex: 0xEF4444)
         case .book:       return Color(hex: 0xD97706)
+        }
+    }
+
+    /// WCAG AA+ contrast foreground ink for move classification pills and on-board badges.
+    public static func badgeForeground(for classification: MoveClassification) -> Color {
+        switch classification {
+        case .inaccuracy, .excellent:
+            return Color(hex: 0x070B14)
+        default:
+            return .white
         }
     }
 

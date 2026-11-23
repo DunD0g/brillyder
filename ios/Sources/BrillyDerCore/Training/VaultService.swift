@@ -48,50 +48,47 @@ public struct VaultCollection: Sendable {
 public enum VaultService {
     public static func buildVault(
         from analyzedGames: [AnalyzedGame],
-        username: String?
+        handles: [String]
     ) -> VaultCollection {
         var brilliants: [VaultHighlight] = []
         var clutches: [VaultHighlight] = []
         var traps: [VaultHighlight] = []
         var sweeps: [VaultHighlight] = []
 
-        let low = username?.trimmingCharacters(in: .whitespaces).lowercased()
-
-        for ag in analyzedGames {
-            let userColor: PieceColor? = ag.game.userColor ?? {
-                guard let low, !low.isEmpty else { return nil }
-                if ag.game.white.name.lowercased() == low { return .white }
-                if ag.game.black.name.lowercased() == low { return .black }
-                return nil
-            }()
+        for ag in analyzedGames where !ag.game.isCustomFenGame && !ag.plies.isEmpty {
+            // Strictly attribute highlights ONLY when the user's side is definitively known (never count opponent !! moves!)
+            guard let userColor = ag.game.resolvedUserColor(handles: handles) else { continue }
             let opp = userColor == .black ? ag.game.white.name : ag.game.black.name
-            let effectiveColor = userColor ?? .white
-            let summary = effectiveColor == .white ? ag.whiteSummary : ag.blackSummary
+            let summary = userColor == .white ? ag.whiteSummary : ag.blackSummary
 
             // Clean Sweep: user won with >= 88% accuracy and 0 blunders
-            let res = ag.game.userResult(for: username)
+            let res = ag.game.userResult(handles: handles)
             if res == "W" && summary.accuracy >= 88.0 && summary.count(for: .blunder) == 0 && ag.plies.count >= 16 {
-                let lastPly = ag.plies.last
+                let lastUserPly = ag.plies.last { $0.color == userColor } ?? ag.plies.last
                 sweeps.append(VaultHighlight(
                     id: "sweep_\(ag.id)",
                     kind: .cleanSweep,
                     gameId: ag.id,
-                    ply: lastPly?.ply ?? 1,
-                    moveNumber: lastPly?.moveNumber ?? 1,
-                    color: effectiveColor,
-                    fen: lastPly?.afterFen ?? ChessBoard.initialFEN,
-                    san: lastPly?.san ?? "Win",
+                    ply: lastUserPly?.ply ?? 1,
+                    moveNumber: lastUserPly?.moveNumber ?? 1,
+                    color: userColor,
+                    fen: lastUserPly?.afterFen ?? ChessBoard.initialFEN,
+                    san: lastUserPly?.san ?? "Win",
                     title: "\(String(format: "%.1f", summary.accuracy))% Clean Sweep vs \(opp)",
                     subtitle: "\(ag.openingLineDetected ?? ag.game.openingName) · 0 blunders",
-                    evalDisplay: lastPly?.evalAfter.display ?? "Win",
+                    evalDisplay: lastUserPly?.evalAfter.display ?? "Win",
                     playedAt: ag.game.createdAt
                 ))
             }
 
-            for (idx, p) in ag.plies.enumerated() {
-                if let userColor, p.color != userColor { continue }
+            var seenBrilliantPositions: Set<String> = []
 
-                if p.classification == .brilliant {
+            for (idx, p) in ag.plies.enumerated() where p.color == userColor {
+                let posKey = (try? ChessBoard(fen: p.afterFen).positionKey) ?? p.afterFen
+                let moverWinAfter = ChessMath.moverWinPercent(p.evalAfter, mover: p.color)
+
+                if p.classification == .brilliant && !seenBrilliantPositions.contains(posKey) {
+                    seenBrilliantPositions.insert(posKey)
                     brilliants.append(VaultHighlight(
                         id: "bril_\(ag.id)_\(p.ply)",
                         kind: .brilliant,
@@ -106,7 +103,9 @@ public enum VaultService {
                         evalDisplay: p.evalAfter.display,
                         playedAt: ag.game.createdAt
                     ))
-                } else if p.isClutchSave == true || (p.classification == .great && p.secondBestGapWin >= 15) {
+                }
+
+                if p.isClutchSave == true || (p.classification == .great && p.secondBestGapWin >= 15) {
                     clutches.append(VaultHighlight(
                         id: "clutch_\(ag.id)_\(p.ply)",
                         kind: .clutchSave,
@@ -123,8 +122,9 @@ public enum VaultService {
                     ))
                 }
 
-                // Trap Punished: opponent blundered in opening (ply <= 20) and user immediately played Best/Great/Brilliant
-                if idx > 0 && p.ply <= 22 && (p.classification == .best || p.classification == .great || p.classification == .brilliant) {
+                // Trap Punished: opponent blundered in opening (ply <= 22) and user refuted accurately with >= 50% win chance
+                if idx > 0 && p.ply <= 22 && p.winLoss <= 2.0 && moverWinAfter >= 50.0 &&
+                   (p.classification == .best || p.classification == .great || p.classification == .brilliant) {
                     let prev = ag.plies[idx - 1]
                     if prev.classification == .blunder && prev.color != p.color {
                         traps.append(VaultHighlight(

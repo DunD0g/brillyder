@@ -44,36 +44,41 @@ public struct ScoutGameplan: Sendable {
 public enum AdvancedInsightsService {
     public static func buildReport(
         analyzedGames: [AnalyzedGame],
-        username: String?
+        handles: [String]
     ) -> AdvancedInsightsReport {
         var impulse = 0
         var timeTrouble = 0
         var motifMap: [String: (count: Int, lossSum: Double)] = [:]
         var egMap: [EndgameCategory: (moves: Int, errors: Int, accSum: Double)] = [:]
 
-        // Chronological order for tilt streak tracking
-        let chronological = analyzedGames.sorted { $0.game.createdAt < $1.game.createdAt }
+        let valid = analyzedGames
+            .filter { !$0.game.isCustomFenGame && !$0.plies.isEmpty }
+            .sorted { $0.game.createdAt < $1.game.createdAt }
+
         var priorLosses = 0
         var tiltData: [Int: (games: Int, wins: Int)] = [0: (0, 0), 1: (0, 0), 2: (0, 0), 3: (0, 0)]
 
-        for ag in chronological {
-            let color = ag.game.userColor ?? .white
-            let res = ag.game.userResult(for: username)
-            let bucketKey = min(3, priorLosses)
-            var b = tiltData[bucketKey] ?? (0, 0)
-            b.games += 1
-            if res == "W" { b.wins += 1 }
-            tiltData[bucketKey] = b
+        for ag in valid {
+            guard let color = ag.game.resolvedUserColor(handles: handles) ?? ag.game.userColor else { continue }
+            let res = ag.game.userResult(handles: handles)
+            if res == "W" || res == "D" || res == "L" {
+                let bucketKey = min(3, priorLosses)
+                var b = tiltData[bucketKey] ?? (0, 0)
+                b.games += 1
+                if res == "W" { b.wins += 1 }
+                tiltData[bucketKey] = b
 
-            if res == "L" { priorLosses += 1 }
-            else if res == "W" { priorLosses = 0 }
+                if res == "L" { priorLosses += 1 }
+                else { priorLosses = 0 } // Reset streak on wins AND draws
+            }
 
             for p in ag.plies where p.color == color {
                 let isSevere = p.classification == .blunder || p.classification == .mistake
                 if isSevere {
-                    if let spent = p.timeSpentSeconds, let rem = p.clockSeconds {
-                        if spent < 5.0 && rem > 180.0 { impulse += 1 }
-                        else if rem < 60.0 { timeTrouble += 1 }
+                    if let rem = p.clockSeconds, rem < 60.0 {
+                        timeTrouble += 1
+                    } else if let spent = p.timeSpentSeconds, let rem = p.clockSeconds, spent < 5.0 && rem > 180.0 {
+                        impulse += 1
                     }
                     let tag = p.coaching.tacticalTag
                     var m = motifMap[tag] ?? (0, 0)
@@ -134,54 +139,63 @@ public enum AdvancedInsightsService {
         guard !target.isEmpty, !games.isEmpty else { return nil }
         let low = target.lowercased()
 
-        var whiteOps: [String: (games: Int, wins: Int)] = [:]
-        var blackOps: [String: (games: Int, wins: Int)] = [:]
+        var whiteOps: [String: (games: Int, score: Double)] = [:]
+        var blackOps: [String: (games: Int, score: Double)] = [:]
         var total = 0
-        var totalWins = 0
+        var totalScore = 0.0
 
-        for g in games {
+        for g in games where g.resultString != "*" {
             let isWhite = g.white.name.lowercased() == low
             let isBlack = g.black.name.lowercased() == low
             guard isWhite || isBlack else { continue }
             total += 1
-            let won = (isWhite && g.resultString == "1-0") || (isBlack && g.resultString == "0-1")
-            if won { totalWins += 1 }
+            let pts: Double
+            if g.resultString == "1/2-1/2" { pts = 0.5 }
+            else if (isWhite && g.resultString == "1-0") || (isBlack && g.resultString == "0-1") { pts = 1.0 }
+            else { pts = 0.0 }
+            totalScore += pts
+
             let op = g.openingName
             if isWhite {
                 var e = whiteOps[op] ?? (0, 0)
                 e.games += 1
-                if won { e.wins += 1 }
+                e.score += pts
                 whiteOps[op] = e
             } else {
                 var e = blackOps[op] ?? (0, 0)
                 e.games += 1
-                if won { e.wins += 1 }
+                e.score += pts
                 blackOps[op] = e
             }
         }
         guard total > 0 else { return nil }
 
-        func rank(_ map: [String: (games: Int, wins: Int)]) -> [(name: String, games: Int, winRate: Double)] {
+        func rank(_ map: [String: (games: Int, score: Double)]) -> [(name: String, games: Int, winRate: Double)] {
             map.map { name, d in
-                (name, d.games, (Double(d.wins) / Double(max(1, d.games)) * 100.0).rounded())
+                (name, d.games, (d.score / Double(max(1, d.games)) * 100.0).rounded())
             }
             .sorted { $0.games > $1.games }
         }
 
-        let wList = Array(rank(whiteOps).prefix(3))
-        let bList = Array(rank(blackOps).prefix(3))
-        let allRanked = (wList + bList).filter { $0.games >= 2 }.sorted { $0.winRate < $1.winRate }
-        let softest = allRanked.first.map { "\($0.name) (\(Int($0.winRate))% win rate)" } ?? "Mixed repertoire — stick to your main lines"
+        let allWhite = rank(whiteOps)
+        let allBlack = rank(blackOps)
+        let candidates: [(label: String, games: Int, scorePct: Double)] =
+            allWhite.filter { $0.games >= 2 }.map { ("\($0.name) (as White)", $0.games, $0.winRate) } +
+            allBlack.filter { $0.games >= 2 }.map { ("\($0.name) (as Black)", $0.games, $0.winRate) }
 
-        let overallWin = (Double(totalWins) / Double(total) * 100.0).rounded()
-        let summary = "Scouted \(total) recent games (\(Int(overallWin))% win rate). Steer toward \(softest)."
+        let softest = candidates.sorted { $0.scorePct < $1.scorePct }.first
+            .map { "\($0.label) — \(Int($0.scorePct))% score" }
+            ?? "Mixed repertoire — stick to your main lines"
+
+        let overallScore = (totalScore / Double(total) * 100.0).rounded()
+        let summary = "Scouted \(total) scored games (\(Int(overallScore))% score). Target \(softest)."
 
         return ScoutGameplan(
             opponentName: target,
             sampleGames: total,
-            winRatePct: overallWin,
-            favoriteWhiteOpenings: wList,
-            favoriteBlackOpenings: bList,
+            winRatePct: overallScore,
+            favoriteWhiteOpenings: Array(allWhite.prefix(3)),
+            favoriteBlackOpenings: Array(allBlack.prefix(3)),
             softestTarget: softest,
             tacticalSummary: summary
         )

@@ -182,6 +182,9 @@ public enum MoveClassifier {
         if let hint = openingPlyHint, plyIndex < hint {
             return true
         }
+        if !sanPrefix.isEmpty && commonOpenings.contains(where: { $0.moves.starts(with: sanPrefix) }) {
+            return true
+        }
         if let match = lookupOpening(byMoves: sanPrefix), plyIndex < match.matchedPlies {
             return true
         }
@@ -214,7 +217,7 @@ public enum MoveClassifier {
             }
         }
 
-        // 2. Passive sacrifice: leaving another friendly non-pawn piece en prise
+        // 2. Passive sacrifice: leaving another friendly non-pawn piece en prise (accounting for promoSurplus)
         for idx in 0..<64 {
             let sq = Square(unchecked: idx)
             guard sq != toSquare,
@@ -223,7 +226,7 @@ public enum MoveClassifier {
                   p.type != .king,
                   p.type != .pawn else { continue }
             let oppGain = ChessMath.legalCaptureGainOnSquare(board: afterBoard, square: sq, maxDepth: 6)
-            if oppGain - capturedValue >= sacrificeMinGain {
+            if oppGain - promoSurplus - capturedValue >= sacrificeMinGain {
                 return true
             }
         }
@@ -286,9 +289,9 @@ public enum MoveClassifier {
         return .excellent
     }
 
-    public static func detectPhase(plyIndex: Int, board: ChessBoard) -> GamePhase {
-        if plyIndex < 16 { return .opening }
+    public static func detectPhase(plyIndex: Int, board: ChessBoard, isStandardStart: Bool = true) -> GamePhase {
         if ChessMath.nonPawnMaterial(in: board) <= 24 { return .endgame }
+        if isStandardStart && plyIndex < 16 { return .opening }
         return .middlegame
     }
 

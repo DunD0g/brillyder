@@ -56,17 +56,14 @@ public enum FSRS6Scheduler {
     }
 
     public static func isoString(from date: Date) -> String {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fmt.string(from: date)
+        date.ISO8601Format(.iso8601.year().month().day().time(includingFractionalSeconds: true))
     }
 
     public static func date(fromIso iso: String) -> Date? {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = fmt.date(from: iso) { return d }
-        fmt.formatOptions = [.withInternetDateTime]
-        return fmt.date(from: iso)
+        if let d = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(iso) {
+            return d
+        }
+        return try? Date.ISO8601FormatStyle(includingFractionalSeconds: false).parse(iso)
     }
 
     public static func gradeAttempt(_ attempt: OpeningAttemptInput) -> FSRSRating {
@@ -179,15 +176,14 @@ public enum FSRS6Scheduler {
                 nextLapses += 1
                 nextState = 3 // Relearning
                 nextSteps = 0
-                newStability = max(0.1, forgetStability(d: newDifficulty, s: max(0.1, s.stability), r: retrievability))
+                let prevS = max(0.1, s.stability)
+                newStability = max(0.1, min(prevS, forgetStability(d: newDifficulty, s: prevS, r: retrievability)))
                 nextIntervalDays = 5.0 / 1440.0 // 5 min relearn
             } else {
                 newStability = max(0.1, recallStability(d: newDifficulty, s: max(0.1, s.stability), r: retrievability, rating: rating))
                 nextState = 2 // Review
                 nextSteps = 0
-                var rawDays = intervalDays(stability: newStability)
-                if rating == .hard { rawDays = max(1.0, rawDays * 0.85) }
-                if rating == .easy { rawDays = max(2.0, rawDays * 1.3) }
+                let rawDays = intervalDays(stability: newStability)
                 nextIntervalDays = max(1.0, rawDays.rounded())
             }
         }

@@ -185,45 +185,50 @@ public enum EndgameLibrary {
 
     public static func extractUserEndgameDrills(
         from analyzedGames: [AnalyzedGame],
-        username: String?
+        handles: [String]
     ) -> [EndgameDrill] {
-        var drills: [EndgameDrill] = []
-        let low = username?.trimmingCharacters(in: .whitespaces).lowercased()
+        var drills: [(playedAt: Int64, drill: EndgameDrill)] = []
 
-        for ag in analyzedGames {
-            let color: PieceColor? = ag.game.userColor ?? {
-                guard let low, !low.isEmpty else { return nil }
-                if ag.game.white.name.lowercased() == low { return .white }
-                if ag.game.black.name.lowercased() == low { return .black }
-                return nil
-            }()
+        for ag in analyzedGames where !ag.game.isCustomFenGame && !ag.plies.isEmpty {
+            guard let color = ag.game.resolvedUserColor(handles: handles) ?? ag.game.userColor else { continue }
             let opp = color == .black ? ag.game.white.name : ag.game.black.name
 
-            for p in ag.plies {
-                if let color, p.color != color { continue }
+            // Pick at most the 1 worst <=7-piece endgame slip per game
+            var worstPly: AnalyzedPly? = nil
+            for p in ag.plies where p.color == color {
                 guard p.classification == .blunder || p.classification == .mistake else { continue }
+                guard !p.bestMoveUci.isEmpty && p.bestMoveUci != p.uci else { continue }
                 guard SyzygyClient.isEligible(fen: p.beforeFen) else { continue }
                 let moverCp = p.color == .white ? p.evalBefore.cpWhite : -p.evalBefore.cpWhite
-                // Skip already-lost positions (< -1.0 pawns)
                 guard moverCp >= -100 else { continue }
+                if worstPly == nil || p.winLoss > worstPly!.winLoss {
+                    worstPly = p
+                }
+            }
+
+            if let p = worstPly {
+                let moverCp = p.color == .white ? p.evalBefore.cpWhite : -p.evalBefore.cpWhite
                 let goal: EndgameGoal = moverCp >= 120 ? .win : .draw
                 let cat = classifyCategory(fen: p.beforeFen)
-                drills.append(EndgameDrill(
-                    id: "user_eg_\(ag.id)_\(p.ply)",
-                    title: "vs \(opp) · Move \(p.moveNumber) (\(cat.rawValue))",
-                    category: cat,
-                    goal: goal,
-                    difficulty: "Your Game",
-                    fen: p.beforeFen,
-                    userColor: p.color,
-                    keyIdea: "In your game you played \(p.san) (-\(Int(p.winLoss.rounded()))% win). Find \(p.bestMoveSan) and convert cleanly!",
-                    firstHintSan: p.bestMoveSan,
-                    source: "user-game",
-                    sourceGameId: ag.id,
-                    opponentName: opp
+                drills.append((
+                    playedAt: ag.game.createdAt,
+                    drill: EndgameDrill(
+                        id: "eg_user_\(ag.id)_\(p.ply)",
+                        title: "vs \(opp) · Move \(p.moveNumber) (\(cat.rawValue))",
+                        category: cat,
+                        goal: goal,
+                        difficulty: "Your Game",
+                        fen: p.beforeFen,
+                        userColor: p.color,
+                        keyIdea: "In your game you played \(p.san) (-\(Int(p.winLoss.rounded()))% win). Find \(p.bestMoveSan) and convert cleanly!",
+                        firstHintSan: p.bestMoveSan,
+                        source: "user-game",
+                        sourceGameId: ag.id,
+                        opponentName: opp
+                    )
                 ))
             }
         }
-        return drills
+        return drills.sorted { $0.playedAt > $1.playedAt }.map(\.drill)
     }
 }

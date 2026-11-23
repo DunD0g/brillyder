@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Custom faceted Brilliant Gem icon (inspired by Lucide's Gem / BrillyDer's !! crystal),
-/// replacing SF Symbols' flat rhombus with crisp beveled facets and specular highlights.
+/// with crisp beveled facets and specular highlights.
 public struct BrillyGemIcon: View {
     let size: CGFloat
     let color: Color
@@ -24,7 +24,6 @@ public struct BrillyGemIcon: View {
             let cL   = CGPoint(x: w * 0.34, y: h * 0.40)
             let cR   = CGPoint(x: w * 0.66, y: h * 0.40)
 
-            // Outer gem body
             var outer = Path()
             outer.move(to: topL)
             outer.addLine(to: topR)
@@ -63,18 +62,17 @@ public struct BrillyGemIcon: View {
             rightPav.closeSubpath()
             ctx.fill(rightPav, with: .color(Color.black.opacity(0.22)))
 
-            // Crisp internal facet lines
+            // Crisp internal facet lines only (outer perimeter stroked once below)
             var facets = Path()
             facets.move(to: midL); facets.addLine(to: midR)
             facets.move(to: topL); facets.addLine(to: cL); facets.addLine(to: bot)
             facets.move(to: topR); facets.addLine(to: cR); facets.addLine(to: bot)
-            facets.move(to: topL); facets.addLine(to: midL)
-            facets.move(to: topR); facets.addLine(to: midR)
 
             ctx.stroke(facets, with: .color(Color.white.opacity(0.55)), lineWidth: max(0.75, w * 0.055))
-            ctx.stroke(outer, with: .color(Color.white.opacity(0.82)), style: StrokeStyle(lineWidth: max(0.9, w * 0.065), lineJoin: .round))
+            ctx.stroke(outer, with: .color(Color.white.opacity(0.84)), style: StrokeStyle(lineWidth: max(0.9, w * 0.065), lineJoin: .round))
         }
         .frame(width: size, height: size)
         .shadow(color: color.opacity(0.45), radius: size * 0.18, y: 0.5)
+        .accessibilityHidden(true)
     }
 }

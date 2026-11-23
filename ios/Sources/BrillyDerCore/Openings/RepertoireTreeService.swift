@@ -12,56 +12,60 @@ public struct RepertoireTreeNode: Identifiable, Hashable, Sendable {
 }
 
 public enum RepertoireTreeService {
-    /// Builds a clean branching move tree across every line in a course with FSRS recall dots.
+    /// Builds a branching move tree across every line in a course with position-scoped FSRS recall dots (zero branch collision).
     public static func buildTree(
         for course: OpeningCourse,
         fsrsCards: [FsrsOpeningCard],
         now: Date = Date()
     ) -> [RepertoireTreeNode] {
-        var recallByKey: [String: Int] = [:]
+        var recallByPosMove: [String: Int] = [:]
         for card in fsrsCards where card.courseId == course.id {
-            let key = "\(card.ply)::\(card.expectedSan)"
+            let posKey = (try? ChessBoard(fen: card.fen).positionKey) ?? card.fen
+            let key = "\(posKey)::\(card.expectedSan)"
             let r = FSRS6Scheduler.recallProbability(for: card, now: now)
-            recallByKey[key] = max(recallByKey[key] ?? 0, r)
+            recallByPosMove[key] = max(recallByPosMove[key] ?? 0, r)
         }
 
         final class Builder {
             let id: String
             let ply: Int
             let san: String
+            let beforePosKey: String
             let fen: String
             let isUserMove: Bool
             var lineIds: [String] = []
             var children: [Builder] = []
 
-            init(id: String, ply: Int, san: String, fen: String, isUserMove: Bool) {
+            init(id: String, ply: Int, san: String, beforePosKey: String, fen: String, isUserMove: Bool) {
                 self.id = id
                 self.ply = ply
                 self.san = san
+                self.beforePosKey = beforePosKey
                 self.fen = fen
                 self.isUserMove = isUserMove
             }
 
-            func freeze(recallByKey: [String: Int]) -> RepertoireTreeNode {
+            func freeze(recallByPosMove: [String: Int]) -> RepertoireTreeNode {
                 RepertoireTreeNode(
                     id: id,
                     ply: ply,
                     san: san,
                     fen: fen,
-                    recallPct: isUserMove ? recallByKey["\(ply)::\(san)"] : nil,
+                    recallPct: isUserMove ? recallByPosMove["\(beforePosKey)::\(san)"] : nil,
                     isUserMove: isUserMove,
                     lineIds: lineIds,
-                    children: children.map { $0.freeze(recallByKey: recallByKey) }
+                    children: children.map { $0.freeze(recallByPosMove: recallByPosMove) }
                 )
             }
         }
 
-        let root = Builder(id: "root", ply: -1, san: "", fen: ChessBoard.initialFEN, isUserMove: false)
+        let root = Builder(id: "root", ply: -1, san: "", beforePosKey: "", fen: ChessBoard.initialFEN, isUserMove: false)
 
         for line in course.lines {
             var board = ChessBoard()
             var cursor = root
             for (plyIdx, rawSan) in line.moves.enumerated() {
+                let beforeKey = board.positionKey
                 guard let applied = try? board.apply(san: rawSan) else { break }
                 if let existing = cursor.children.first(where: { $0.san == applied.san }) {
                     if !existing.lineIds.contains(line.id) { existing.lineIds.append(line.id) }
@@ -72,6 +76,7 @@ public enum RepertoireTreeService {
                         id: "\(cursor.id)/\(plyIdx)_\(applied.san)",
                         ply: plyIdx,
                         san: applied.san,
+                        beforePosKey: beforeKey,
                         fen: applied.afterFen,
                         isUserMove: isUser
                     )
@@ -82,7 +87,7 @@ public enum RepertoireTreeService {
             }
         }
 
-        return root.children.map { $0.freeze(recallByKey: recallByKey) }
+        return root.children.map { $0.freeze(recallByPosMove: recallByPosMove) }
     }
 
     /// Exports a full course to canonical multi-chapter PGN (100% round-trip valid).
@@ -99,11 +104,17 @@ public enum RepertoireTreeService {
                     moveTokens.append(applied.san)
                 }
             }
-            let safeEvent = "\(course.name): \(line.title)".replacingOccurrences(of: "\"", with: "'")
+            let safeEvent = "\(course.name): \(line.title)"
+                .replacingOccurrences(of: "\"", with: "'")
+                .replacingOccurrences(of: "\r", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+            let safeEco = line.eco
+                .replacingOccurrences(of: "\"", with: "")
+                .replacingOccurrences(of: "\n", with: "")
             let header = """
             [Event "\(safeEvent)"]
             [Site "BrillyDer"]
-            [ECO "\(line.eco)"]
+            [ECO "\(safeEco)"]
             [White "\(course.side == .white ? "Repertoire" : "Opponent")"]
             [Black "\(course.side == .black ? "Repertoire" : "Opponent")"]
             [Result "*"]
@@ -124,25 +135,34 @@ public enum RepertoireTreeService {
             throw ChessError.invalidPGN("Paste one or more PGN lines to import.")
         }
 
-        // Split multi-game PGN by `[Event ` headers if present
-        let rawBlocks: [String]
         let lines = trimmed.components(separatedBy: .newlines)
         var blocks: [String] = []
         var current: [String] = []
+        var seenMovetextInCurrent = false
+
         for line in lines {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("[Event ") && !current.isEmpty {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            let isTag = t.hasPrefix("[") && t.hasSuffix("]") && t.contains("\"")
+            if isTag && seenMovetextInCurrent && !current.isEmpty {
                 blocks.append(current.joined(separator: "\n"))
                 current = [line]
+                seenMovetextInCurrent = false
             } else {
                 current.append(line)
+                if !t.isEmpty && !isTag {
+                    seenMovetextInCurrent = true
+                }
             }
         }
         if !current.isEmpty { blocks.append(current.joined(separator: "\n")) }
-        rawBlocks = blocks.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let rawBlocks = blocks.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         var openingLines: [OpeningLine] = []
         for (idx, block) in rawBlocks.enumerated() {
             let parsed = try PGNParser.parse(block)
+            if parsed.startFen != ChessBoard.initialFEN {
+                throw ChessError.invalidPGN("Opening courses must start from the standard initial chess position (custom [FEN] not supported in repertoire courses).")
+            }
             guard parsed.moves.count >= 2 else { continue }
             let sanMoves = parsed.moves.map(\.applied.san)
             let lookup = MoveClassifier.lookupOpening(byMoves: sanMoves)

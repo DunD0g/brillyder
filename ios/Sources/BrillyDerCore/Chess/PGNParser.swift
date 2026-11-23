@@ -24,10 +24,8 @@ public enum PGNParser {
 
         for line in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
-                if let (key, val) = parseHeaderLine(trimmed) {
-                    headers[key] = val
-                }
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]"), let (key, val) = parseHeaderLine(trimmed) {
+                headers[key] = val
             } else {
                 bodyLines.append(String(line))
             }
@@ -186,7 +184,7 @@ public enum PGNParser {
                     candidate = String(candidate[candidate.index(after: dotIdx)...])
                 }
             }
-            if candidate.isEmpty || candidate.allSatisfy({ $0.isNumber || $0 == "." }) {
+            if candidate.isEmpty || candidate == "e.p." || candidate.allSatisfy({ $0.isNumber || $0 == "." }) {
                 continue
             }
             tokens.append(.san(candidate))

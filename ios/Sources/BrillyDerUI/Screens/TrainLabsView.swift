@@ -32,15 +32,20 @@ public struct TrainLabsView: View {
                 PuzzleRushPanel()
             }
         }
-        .onAppear {
-            if let cat = store.preferredEndgameCategory {
-                activeLab = .endgame
-                selectedCategory = cat
-                store.preferredEndgameCategory = nil
-            }
+        .onAppear { applyPreferredEndgame() }
+        .onChange(of: store.preferredEndgameCategory) { _, _ in
+            applyPreferredEndgame()
         }
         .sheet(item: $activeDrill) { drill in
             EndgameDrillPlaySheet(drill: drill).environment(store)
+        }
+    }
+
+    private func applyPreferredEndgame() {
+        if let cat = store.preferredEndgameCategory {
+            activeLab = .endgame
+            selectedCategory = cat
+            store.preferredEndgameCategory = nil
         }
     }
 
@@ -49,7 +54,6 @@ public struct TrainLabsView: View {
         let filtered = combined.filter { selectedCategory == nil || $0.category == selectedCategory }
 
         return VStack(alignment: .leading, spacing: 12) {
-            // Category Filter Chips
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     catChip("All", cat: nil)
@@ -136,6 +140,9 @@ private struct EndgameDrillPlaySheet: View {
     @State private var botThinking = false
     @State private var showHint = false
     @State private var movesPlayed = 0
+    @State private var botTask: Task<Void, Never>? = nil
+    @State private var probeTask: Task<Void, Never>? = nil
+    @State private var generation: Int = 0
 
     var body: some View {
         NavigationStack {
@@ -208,10 +215,21 @@ private struct EndgameDrillPlaySheet: View {
                 }
             }
             .onAppear { resetDrill() }
+            .onDisappear { cancelTasks() }
         }
     }
 
+    private func cancelTasks() {
+        generation &+= 1
+        botTask?.cancel()
+        botTask = nil
+        probeTask?.cancel()
+        probeTask = nil
+        botThinking = false
+    }
+
     private func resetDrill() {
+        cancelTasks()
         board = (try? ChessBoard(fen: drill.fen)) ?? ChessBoard()
         status = drill.keyIdea
         showHint = false
@@ -220,9 +238,40 @@ private struct EndgameDrillPlaySheet: View {
     }
 
     private func probeCurrent() {
+        probeTask?.cancel()
+        let gen = generation
         let fen = board.fen
-        Task {
-            syzygy = await SyzygyClient.shared.probe(fen: fen)
+        probeTask = Task {
+            let res = await SyzygyClient.shared.probe(fen: fen)
+            if !Task.isCancelled && self.generation == gen {
+                syzygy = res
+            }
+        }
+    }
+
+    @discardableResult
+    private func checkTerminalOutcome() -> Bool {
+        switch board.outcome {
+        case .checkmate(let winner):
+            if winner == drill.userColor {
+                status = "Checkmate! Endgame mastered!"
+                store.markEndgameMastered(drill.id)
+            } else {
+                status = "Checkmated — tap Reset to try again."
+                store.triggerHaptic(.error)
+            }
+            return true
+        case .stalemate, .insufficientMaterial, .fiftyMoveRule:
+            if drill.goal == .draw {
+                status = "Draw secured! Fortress mastered!"
+                store.markEndgameMastered(drill.id)
+            } else {
+                status = "Drawn — you had a win here! Tap Reset to retry."
+                store.triggerHaptic(.error)
+            }
+            return true
+        case .ongoing:
+            return false
         }
     }
 
@@ -231,48 +280,39 @@ private struct EndgameDrillPlaySheet: View {
         movesPlayed += 1
         store.triggerHaptic(.move)
 
-        // Check immediate completion
-        switch board.outcome {
-        case .checkmate(let winner):
-            if winner == drill.userColor {
-                status = "Checkmate! Endgame mastered!"
-                store.markEndgameMastered(drill.id)
-            } else {
-                status = "Checkmated — tap Reset to try again."
-            }
-            return
-        case .stalemate, .insufficientMaterial, .fiftyMoveRule:
-            if drill.goal == .draw {
-                status = "Draw secured! Fortress mastered!"
-                store.markEndgameMastered(drill.id)
-            } else {
-                status = "Drawn — you had a win here! Tap Reset to retry."
-            }
-            return
-        case .ongoing:
-            break
-        }
+        if checkTerminalOutcome() { return }
 
-        // Bot reply via Syzygy (exact) or native engine fallback
+        botTask?.cancel()
+        generation &+= 1
+        let gen = generation
         botThinking = true
         let fenAfterUser = board.fen
-        Task {
+
+        botTask = Task {
             let probe = await SyzygyClient.shared.probe(fen: fenAfterUser)
+            guard !Task.isCancelled && self.generation == gen else { return }
             self.syzygy = probe
 
-            // Check goal progress for draws after 12 solid plies
-            if drill.goal == .draw && movesPlayed >= 6 && (probe?.category == "draw" || probe?.category == "blessed-loss") {
-                status = "Holding solid theoretical draw! Keep defending or claim mastery."
+            // After user's move, opponent is to move: `draw` or `cursed-win` (opponent's 50-move draw) means user holds the draw!
+            if drill.goal == .draw && movesPlayed >= 6 && (probe?.category == "draw" || probe?.category == "cursed-win") {
+                status = "Holding solid theoretical draw! Endgame fortress mastered."
                 store.markEndgameMastered(drill.id)
             }
 
             if let bestSyz = probe?.moves.first, let m = ChessMove(uci: bestSyz.uci) {
                 _ = try? board.apply(m)
+                store.triggerHaptic(.move)
             } else if let reply = await store.computeBotReply(fen: fenAfterUser, depth: 4) {
+                guard !Task.isCancelled && self.generation == gen else { return }
                 _ = try? board.apply(reply)
+                store.triggerHaptic(.move)
             }
+
+            guard !Task.isCancelled && self.generation == gen else { return }
             botThinking = false
-            probeCurrent()
+            if !checkTerminalOutcome() {
+                probeCurrent()
+            }
         }
     }
 }
@@ -290,6 +330,7 @@ private struct BoardVisionPanel: View {
     @State private var mistakes = 0
     @State private var targetSquare: Square = Square(unchecked: 28) // e4
     @State private var flashColor: Color? = nil
+    @State private var flashTask: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(spacing: 14) {
@@ -322,9 +363,16 @@ private struct BoardVisionPanel: View {
                     .font(.system(size: 32, weight: .black, design: .rounded))
                     .foregroundStyle(flashColor ?? BrillyPalette.brillyTeal)
                 Spacer()
-                Text("Score \(score)")
-                    .font(.headline.monospacedDigit().weight(.bold))
-                    .foregroundStyle(BrillyPalette.inkPrimary)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("Score \(score)")
+                        .font(.headline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                    if mistakes > 0 {
+                        Text("\(mistakes) miss")
+                            .font(.caption2.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                    }
+                }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
@@ -345,8 +393,8 @@ private struct BoardVisionPanel: View {
                                     sq.isLightSquare ? store.boardTheme.lightSquare : store.boardTheme.darkSquare
                                     if !hideCoords {
                                         Text(sq.algebraic)
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(Color.black.opacity(0.45))
+                                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                                            .foregroundStyle(store.boardTheme.coordColor(isLightSquare: sq.isLightSquare))
                                     }
                                 }
                                 .frame(width: cell, height: cell)
@@ -412,6 +460,9 @@ private struct BoardVisionPanel: View {
                 }
             }
         }
+        .onDisappear {
+            flashTask?.cancel()
+        }
     }
 
     private func startGame() {
@@ -448,9 +499,12 @@ private struct BoardVisionPanel: View {
             flashColor = BrillyPalette.blunderRose
             store.triggerHaptic(.error)
         }
-        Task {
+        flashTask?.cancel()
+        flashTask = Task {
             try? await Task.sleep(for: .milliseconds(180))
-            flashColor = nil
+            if !Task.isCancelled {
+                flashColor = nil
+            }
         }
     }
 }
@@ -493,6 +547,16 @@ private struct PuzzleRushPanel: View {
             }
             .pickerStyle(.segmented)
             .disabled(running)
+            .onChange(of: mode) { _, _ in
+                if !running {
+                    score = 0
+                    strikes = 0
+                    timeLeft = 180
+                    feedback = mode == .blitz
+                        ? "3 minutes on the clock — 3 strikes and you're out!"
+                        : "No clock — survive as long as you can with 3 strikes!"
+                }
+            }
 
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -545,10 +609,12 @@ private struct PuzzleRushPanel: View {
                     idx = (idx + 1) % max(1, deck.count)
                     board = (try? ChessBoard(fen: deck[idx].fen)) ?? ChessBoard()
                 }
+            }
 
+            if !feedback.isEmpty {
                 Text(feedback)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(BrillyPalette.inkPrimary)
+                    .foregroundStyle(running ? BrillyPalette.inkPrimary : BrillyPalette.brillyTeal)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .brillySurface(store.surfaceStyle, cornerRadius: 14)
@@ -577,7 +643,8 @@ private struct PuzzleRushPanel: View {
 
     private func startRun() {
         var items: [RushItem] = store.mistakeDeck.shuffled().map {
-            RushItem(id: $0.id, fen: $0.fen, orientation: $0.playerColor, expectedUci: $0.bestMoveUci, expectedSan: $0.bestMoveSan, subtitle: $0.openingName)
+            let orient = (try? ChessBoard(fen: $0.fen))?.turn ?? $0.playerColor
+            return RushItem(id: $0.id, fen: $0.fen, orientation: orient, expectedUci: $0.bestMoveUci, expectedSan: $0.bestMoveSan, subtitle: $0.openingName)
         }
         for fb in DailyCoachPlanner.fallbackGravityFlashes {
             items.append(RushItem(id: fb.id, fen: fb.fen, orientation: fb.orientation, expectedUci: fb.expectedUci, expectedSan: fb.expectedSan, subtitle: fb.subtitle))

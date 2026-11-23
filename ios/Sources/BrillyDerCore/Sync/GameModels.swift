@@ -92,19 +92,29 @@ public struct GameRecord: Codable, Hashable, Sendable, Identifiable {
         self.url = url
     }
 
-    public func userResult(for username: String? = nil) -> String {
-        let color: PieceColor?
-        if let uc = userColor {
-            color = uc
-        } else if let u = username?.trimmingCharacters(in: .whitespaces).lowercased(), !u.isEmpty {
-            if white.name.lowercased() == u { color = .white }
-            else if black.name.lowercased() == u { color = .black }
-            else { color = nil }
-        } else {
-            color = nil
-        }
+    public var isCustomFenGame: Bool {
+        id.hasPrefix("fen_") || perf == "custom"
+    }
 
-        guard let color else { return resultString }
+    public func resolvedUserColor(handles: [String]) -> PieceColor? {
+        let normalized = handles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        if !normalized.isEmpty {
+            let wLow = white.name.lowercased()
+            let bLow = black.name.lowercased()
+            if normalized.contains(wLow) { return .white }
+            if normalized.contains(bLow) { return .black }
+        }
+        return userColor
+    }
+
+    public func userResult(for username: String? = nil) -> String {
+        userResult(handles: username.map { [$0] } ?? [])
+    }
+
+    public func userResult(handles: [String]) -> String {
+        guard let color = resolvedUserColor(handles: handles) else { return resultString }
         if resultString == "1/2-1/2" { return "D" }
         if resultString == "1-0" { return color == .white ? "W" : "L" }
         if resultString == "0-1" { return color == .black ? "W" : "L" }
@@ -141,15 +151,20 @@ public struct AnalyzedPly: Codable, Hashable, Sendable, Identifiable {
     public let clockText: String?
     public let clockSeconds: Double?
     public let timeSpentSeconds: Double?
+    public let clockTag: String?
     public let bestMoveUci: String
     public let bestMoveSan: String
     public let bestPvSan: [String]
     public let topLines: [TopEngineLineSummary]?
+    public let threatMoveUci: String?
+    public let threatMoveSan: String?
     public let evalBefore: EngineScore
     public let evalAfter: EngineScore
     public let secondBestGapWin: Double
+    public let secondBestGapPawns: Double?
     public let isCriticalMoment: Bool?
     public let isClutchSave: Bool?
+    public let deepened: Bool?
     public let winLoss: Double
     public let accuracy: Double
     public let classification: MoveClassification

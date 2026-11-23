@@ -9,15 +9,17 @@ public struct GamesTabView: View {
     @State private var showingPositionEditor: Bool = false
     @State private var showingScoutSheet: Bool = false
     @State private var pgnDraft: String = ""
+    @State private var pgnError: String? = nil
     @State private var scoutDraft: String = ""
     @State private var scoutPlatform: GameSource = .lichess
 
     private var filteredGames: [GameRecord] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let analyzedIds = Set(store.analyzedGames.map(\.id))
+        let handles = store.userHandles
         return store.recentGames.filter { g in
             if resultFilter == "Unanalyzed" && analyzedIds.contains(g.id) { return false }
-            if ["W", "D", "L"].contains(resultFilter) && g.userResult(for: store.activeUsername) != resultFilter {
+            if ["W", "D", "L"].contains(resultFilter) && g.userResult(handles: handles) != resultFilter {
                 return false
             }
             guard !q.isEmpty else { return true }
@@ -53,13 +55,19 @@ public struct GamesTabView: View {
                             #if os(iOS)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .submitLabel(.go)
                             #endif
+                            .onSubmit {
+                                store.persistToDisk()
+                                Task { await store.syncRecentGames() }
+                            }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
                             .foregroundStyle(BrillyPalette.inkPrimary)
 
                             Button {
+                                store.persistToDisk()
                                 Task { await store.syncRecentGames() }
                             } label: {
                                 if store.isSyncing {
@@ -81,9 +89,24 @@ public struct GamesTabView: View {
 
                         // Compact Tools Row: Paste PGN | Board Editor | Scout
                         HStack(spacing: 8) {
-                            toolChip("Paste PGN", icon: "doc.on.clipboard") { showingPgnSheet = true }
+                            toolChip("Paste PGN", icon: "doc.on.clipboard") {
+                                pgnError = nil
+                                showingPgnSheet = true
+                            }
                             toolChip("Board Editor", icon: "square.grid.3x3.topleft.filled") { showingPositionEditor = true }
-                            toolChip("Scout", icon: "binoculars.fill") { showingScoutSheet = true }
+                            toolChip(store.isScouting ? "Scouting…" : "Scout", icon: "binoculars.fill") { showingScoutSheet = true }
+                        }
+
+                        if store.isScouting {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(BrillyPalette.warpPurple)
+                                Text("Scouting opponent's recent games…")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.warpPurple)
+                                Spacer()
+                            }
                         }
 
                         if let err = store.syncErrorMessage {
@@ -105,7 +128,20 @@ public struct GamesTabView: View {
                             .foregroundStyle(BrillyPalette.inkSecondary)
                         TextField("Filter by opponent or opening…", text: $searchText)
                             .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .autocorrectionDisabled()
+                            #endif
                             .foregroundStyle(BrillyPalette.inkPrimary)
+                        if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear search")
+                        }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -129,16 +165,41 @@ public struct GamesTabView: View {
                     }
 
                     // MARK: - 4. Game List
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredGames) { game in
-                            gameRow(game)
+                    if filteredGames.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("No games match this filter")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            Text("Try clearing your search or switching back to All games.")
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            Button("Reset Filters") {
+                                searchText = ""
+                                resultFilter = "All"
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 18)
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(filteredGames) { game in
+                                gameRow(game)
+                            }
                         }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 32)
+                .padding(.bottom, 84)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .navigationTitle("Games")
         .sheet(isPresented: $showingPgnSheet) { pgnSheet }
@@ -247,7 +308,7 @@ public struct GamesTabView: View {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
                 VStack(spacing: 14) {
-                    Text("Paste raw PGN text OR a public Lichess game URL (e.g. https://lichess.org/AbCdEfGh).")
+                    Text("Paste raw PGN text OR a public Lichess game URL (e.g. lichess.org/AbCdEfGh).")
                         .font(.caption)
                         .foregroundStyle(BrillyPalette.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,18 +316,38 @@ public struct GamesTabView: View {
                     TextEditor(text: $pgnDraft)
                         .scrollContentBackground(.hidden)
                         .font(.system(.callout, design: .monospaced))
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .padding(12)
                         .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
+                    if let pgnError {
+                        Label(pgnError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     Button {
                         let draft = pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        showingPgnSheet = false
-                        pgnDraft = ""
-                        if draft.lowercased().contains("lichess.org/") || (draft.count == 8 && draft.allSatisfy({ $0.isLetter || $0.isNumber })) {
+                        let looksLikeLichess = draft.lowercased().contains("lichess.org/")
+                            || ((draft.count == 8 || draft.count == 12) && draft.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }))
+                        if looksLikeLichess {
+                            showingPgnSheet = false
+                            pgnDraft = ""
+                            pgnError = nil
                             Task { await store.importLichessGameURL(draft) }
                         } else {
-                            store.importAndAnalyzePGN(draft)
+                            if store.importAndAnalyzePGN(draft) {
+                                showingPgnSheet = false
+                                pgnDraft = ""
+                                pgnError = nil
+                            } else {
+                                pgnError = store.syncErrorMessage ?? "Invalid PGN format."
+                            }
                         }
                     } label: {
                         Text("Import & Analyze")
@@ -310,16 +391,15 @@ public struct GamesTabView: View {
                         #if os(iOS)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .submitLabel(.search)
                         #endif
+                        .onSubmit { triggerScout() }
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
                         .foregroundStyle(BrillyPalette.inkPrimary)
 
                     Button {
-                        let handle = scoutDraft
-                        let plat = scoutPlatform
-                        showingScoutSheet = false
-                        Task { await store.runScout(opponent: handle, platform: plat) }
+                        triggerScout()
                     } label: {
                         Label("Build Scout Gameplan", systemImage: "binoculars.fill")
                             .font(.headline)
@@ -329,7 +409,7 @@ public struct GamesTabView: View {
                             .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.warpPurple))
                     }
                     .buttonStyle(.plain)
-                    .disabled(scoutDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(scoutDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isScouting)
 
                     Spacer()
                 }
@@ -344,10 +424,20 @@ public struct GamesTabView: View {
         }
     }
 
+    private func triggerScout() {
+        let handle = scoutDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !handle.isEmpty else { return }
+        let plat = scoutPlatform
+        showingScoutSheet = false
+        Task { await store.runScout(opponent: handle, platform: plat) }
+    }
+
     private func gameRow(_ game: GameRecord) -> some View {
-        let res = game.userResult(for: store.activeUsername)
+        let handles = store.userHandles
+        let res = game.userResult(handles: handles)
         let accent: Color = res == "W" ? Color(hex: 0x22C55E) : (res == "L" ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
         let cached = store.analyzedGames.first(where: { $0.id == game.id })
+        let userSide = game.resolvedUserColor(handles: handles)
 
         return Button {
             store.startAnalysis(for: game)
@@ -379,7 +469,7 @@ public struct GamesTabView: View {
                             .lineLimit(1)
                         Spacer()
                         if let cached {
-                            let acc = (game.userColor == .black ? cached.blackSummary : cached.whiteSummary).accuracy
+                            let acc = (userSide == .black ? cached.blackSummary : cached.whiteSummary).accuracy
                             Text("\(String(format: "%.0f", acc))% acc")
                                 .font(.caption2.monospacedDigit().weight(.bold))
                                 .foregroundStyle(BrillyPalette.brillyTeal)

@@ -79,7 +79,7 @@ public enum ChessMath {
         }
         if let mate = mateWhite, mate != 0 {
             let isWhiteWin = mate > 0
-            let absMate = abs(mate)
+            let absMate = min(150, abs(mate))
             return EngineScore(
                 cpWhite: isWhiteWin ? (10000 - absMate * 50) : (-10000 + absMate * 50),
                 mateWhite: mate,
@@ -97,7 +97,7 @@ public enum ChessMath {
         } else if absPawns >= 10.0 {
             display = "\(pawns >= 0 ? "+" : "-")\(Int(absPawns.rounded()))"
         } else {
-            display = String(format: "%@%.1f", pawns >= 0 ? "+" : "", pawns)
+            display = String(format: "%@%.1f", locale: Locale(identifier: "en_US_POSIX"), pawns >= 0 ? "+" : "", pawns)
         }
         return EngineScore(
             cpWhite: cpWhite,

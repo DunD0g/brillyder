@@ -10,14 +10,22 @@ public struct AnalyzeTabView: View {
     @State private var orientation: PieceColor = .white
     @State private var retryMode: Bool = false
     @State private var retryFeedback: String? = nil
+    @State private var retrySolvedBoard: ChessBoard? = nil
+    @State private var retrySolvedLastMove: (from: Square, to: Square)? = nil
 
-    // Sandbox / Bot Play-Out State
+    // Sandbox / Bot Play-Out State (with cancellable generation-guarded tasks)
     @State private var botActive: Bool = false
     @State private var sandboxBoard: ChessBoard = ChessBoard()
     @State private var sandboxEval: EngineEval? = nil
     @State private var botThinking: Bool = false
+    @State private var botStatusNotice: String? = nil
+    @State private var botTask: Task<Void, Never>? = nil
+    @State private var evalTask: Task<Void, Never>? = nil
+    @State private var botGeneration: Int = 0
+    @State private var evalGeneration: Int = 0
 
-    // Syzygy Tablebase & Copy Toast
+    // Cached Deviation, Syzygy Tablebase & Copy Toast
+    @State private var cachedDeviation: OpeningDeviationReport? = nil
     @State private var syzygyResult: SyzygyProbeResult? = nil
     @State private var copiedNotice: String? = nil
     @State private var boostedDeviationCardId: String? = nil
@@ -38,13 +46,21 @@ public struct AnalyzeTabView: View {
         }
         .navigationTitle("Analyze")
         .onAppear {
-            applyPendingNavigation()
+            applyPendingNavigation(resetIfNewGame: false)
+            refreshCachedDeviation()
+        }
+        .onDisappear {
+            cancelLiveTasks()
         }
         .onChange(of: store.activeAnalyzedGame?.id) { _, _ in
-            applyPendingNavigation()
+            applyPendingNavigation(resetIfNewGame: true)
+            refreshCachedDeviation()
         }
         .onChange(of: store.pendingAnalyzePly) { _, _ in
-            applyPendingNavigation()
+            applyPendingNavigation(resetIfNewGame: false)
+        }
+        .onChange(of: store.customCourses.count) { _, _ in
+            refreshCachedDeviation()
         }
         .onChange(of: currentPlyIndex) { _, newPly in
             guard !retryMode && !botActive,
@@ -58,28 +74,70 @@ public struct AnalyzeTabView: View {
             }
         }
         .onChange(of: store.activeSandboxFen) { _, newFen in
+            cancelLiveTasks()
             if let newFen, let b = try? ChessBoard(fen: newFen) {
                 sandboxBoard = b
                 orientation = b.turn
                 botActive = false
+                botStatusNotice = nil
                 evaluateSandbox(fen: newFen)
             }
         }
     }
 
-    private func applyPendingNavigation() {
-        if let ag = store.activeAnalyzedGame {
-            if let jump = store.pendingAnalyzePly {
-                currentPlyIndex = max(0, min(jump, ag.plies.count))
-                store.pendingAnalyzePly = nil
-            } else if currentPlyIndex == 0 {
-                currentPlyIndex = min(1, ag.plies.count)
-            }
-            orientation = ag.game.userColor ?? .white
-            retryMode = false
-            botActive = false
-            retryFeedback = nil
+    private func cancelLiveTasks() {
+        botGeneration &+= 1
+        evalGeneration &+= 1
+        botTask?.cancel()
+        botTask = nil
+        evalTask?.cancel()
+        evalTask = nil
+        botThinking = false
+    }
+
+    private func goToPly(_ target: Int, maxPly: Int) {
+        cancelLiveTasks()
+        currentPlyIndex = max(0, min(target, maxPly))
+        retryMode = false
+        botActive = false
+        retryFeedback = nil
+        retrySolvedBoard = nil
+        retrySolvedLastMove = nil
+        botStatusNotice = nil
+    }
+
+    private func applyPendingNavigation(resetIfNewGame: Bool) {
+        guard let ag = store.activeAnalyzedGame else { return }
+        cancelLiveTasks()
+        if let jump = store.pendingAnalyzePly {
+            currentPlyIndex = max(0, min(jump, ag.plies.count))
+            store.pendingAnalyzePly = nil
+        } else if resetIfNewGame || currentPlyIndex == 0 || currentPlyIndex > ag.plies.count {
+            currentPlyIndex = min(1, ag.plies.count)
         }
+        orientation = ag.game.resolvedUserColor(handles: store.userHandles) ?? .white
+        retryMode = false
+        botActive = false
+        retryFeedback = nil
+        retrySolvedBoard = nil
+        retrySolvedLastMove = nil
+        botStatusNotice = nil
+        if resetIfNewGame {
+            boostedDeviationCardId = nil
+        }
+    }
+
+    private func refreshCachedDeviation() {
+        guard let ag = store.activeAnalyzedGame else {
+            cachedDeviation = nil
+            return
+        }
+        cachedDeviation = DeviationDetector.detect(
+            analyzedGame: ag,
+            courses: store.allCourses,
+            fsrsCards: store.fsrsCards,
+            handles: store.userHandles
+        )
     }
 
     private var analyzingHud: some View {
@@ -90,7 +148,7 @@ public struct AnalyzeTabView: View {
                     .stroke(BrillyPalette.brillyTeal.opacity(0.22), lineWidth: 3)
                     .frame(width: 66, height: 66)
                 Circle()
-                    .trim(from: 0, to: max(0.12, CGFloat(store.analysisProgress)))
+                    .trim(from: 0, to: max(0.08, CGFloat(store.analysisProgress)))
                     .stroke(
                         LinearGradient(
                             colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
@@ -185,6 +243,7 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.brillyTeal)
                     Spacer()
                     Button("Exit Sandbox") {
+                        cancelLiveTasks()
                         store.activeSandboxFen = nil
                     }
                     .font(.caption.weight(.bold))
@@ -201,23 +260,31 @@ public struct AnalyzeTabView: View {
                     orientation: orientation,
                     theme: store.boardTheme,
                     surfaceStyle: store.surfaceStyle,
-                    interactive: !botThinking,
+                    interactive: !botThinking && sandboxBoard.outcome == .ongoing,
                     arrows: sandboxBestArrow
                 ) { move in
                     guard (try? sandboxBoard.apply(move)) != nil else { return }
                     store.triggerHaptic(.move)
-                    let fenNow = sandboxBoard.fen
-                    evaluateSandbox(fen: fenNow)
+                    updateSandboxOutcomeNotice()
+                    evaluateSandbox(fen: sandboxBoard.fen)
                     if botActive && sandboxBoard.outcome == .ongoing {
                         triggerBotReply()
                     }
                 }
 
+                if let botStatusNotice {
+                    Text(botStatusNotice)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                }
+
                 HStack(spacing: 8) {
                     Button {
                         botActive.toggle()
-                        if botActive && sandboxBoard.turn != orientation {
+                        if botActive && sandboxBoard.outcome == .ongoing && sandboxBoard.turn != orientation {
                             triggerBotReply()
+                        } else if !botActive {
+                            cancelLiveTasks()
                         }
                     } label: {
                         Label(botActive ? "Bot: ON" : "Play vs Bot", systemImage: "cpu")
@@ -276,10 +343,11 @@ public struct AnalyzeTabView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 32)
+            .padding(.bottom, 84)
             .onAppear {
                 if let b = try? ChessBoard(fen: startFen) {
                     sandboxBoard = b
+                    orientation = b.turn
                     evaluateSandbox(fen: startFen)
                 }
             }
@@ -297,70 +365,74 @@ public struct AnalyzeTabView: View {
     private func analyzedBody(_ ag: AnalyzedGame) -> some View {
         let clampedPly = max(0, min(currentPlyIndex, ag.plies.count))
         let activePly: AnalyzedPly? = clampedPly > 0 ? ag.plies[clampedPly - 1] : nil
+        let initialBoardFen = ag.plies.first?.beforeFen ?? ChessBoard.initialFEN
         let displayFen: String = {
             if botActive { return sandboxBoard.fen }
+            if let solved = retrySolvedBoard { return solved.fen }
             if retryMode, let ap = activePly { return ap.beforeFen }
             if let ap = activePly { return ap.afterFen }
-            return ChessBoard.initialFEN
+            return initialBoardFen
         }()
-        let board = botActive ? sandboxBoard : ((try? ChessBoard(fen: displayFen)) ?? ChessBoard())
-        let score = activePly?.evalAfter ?? ag.initialEval
-        let lastMovePair: (Square, Square)? = {
+        let board: ChessBoard = {
+            if botActive { return sandboxBoard }
+            if let solved = retrySolvedBoard { return solved }
+            return (try? ChessBoard(fen: displayFen)) ?? ChessBoard()
+        }()
+        let score: EngineScore = {
+            if botActive, let ev = sandboxEval { return ev.score }
+            return activePly?.evalAfter ?? ag.initialEval
+        }()
+        let lastMovePair: (from: Square, to: Square)? = {
+            if let solvedMove = retrySolvedLastMove { return solvedMove }
             guard !retryMode && !botActive, let ap = activePly,
                   let f = Square(algebraic: ap.from),
                   let t = Square(algebraic: ap.to) else { return nil }
             return (f, t)
         }()
         let badge: MoveBadgeOverlay? = {
-            guard !retryMode && !botActive, let ap = activePly, let sq = Square(algebraic: ap.to) else { return nil }
+            guard retrySolvedBoard == nil && !retryMode && !botActive,
+                  let ap = activePly,
+                  let sq = Square(algebraic: ap.to) else { return nil }
             return MoveBadgeOverlay(square: sq, classification: ap.classification)
         }()
         let bestArrow: [BoardArrow] = {
-            guard !retryMode && !botActive, let ap = activePly,
+            guard retrySolvedBoard == nil && !retryMode && !botActive, let ap = activePly,
                   ap.classification == .blunder || ap.classification == .mistake || ap.classification == .inaccuracy,
                   let m = ChessMove(uci: ap.bestMoveUci) else { return [] }
             return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
         }()
-        let deviation = DeviationDetector.detect(analyzedGame: ag, courses: store.allCourses, fsrsCards: store.fsrsCards)
 
-        let shareCard = BrillyShareCardView(
-            board: board,
+        // Lazy Transferable share card (zero ImageRenderer calls during ScrollView layout!)
+        let shareItem = BrillyShareCardItem(
+            fen: displayFen,
             orientation: orientation,
             theme: store.boardTheme,
             title: "\(ag.game.white.name) vs \(ag.game.black.name)",
             subtitle: activePly.map { "Move \($0.moveNumber): \($0.san) · \($0.classification.label)" } ?? ag.game.openingName,
             evalDisplay: score.display,
             badgeText: activePly?.classification.symbol,
-            badgeColor: activePly.map { BrillyPalette.color(for: $0.classification) } ?? BrillyPalette.brillyTeal
+            classification: activePly?.classification,
+            lastMove: lastMovePair
         )
 
         ScrollView {
-            VStack(spacing: 12) {
-                // Accuracy Summary Strip
+            VStack(spacing: 10) {
+                // 1. Accuracy Summary Strip
                 HStack(spacing: 10) {
                     playerSummaryPill(name: ag.game.white.name, acc: ag.whiteSummary.accuracy, elo: ag.whiteSummary.estimatedElo, isWhite: true)
                     playerSummaryPill(name: ag.game.black.name, acc: ag.blackSummary.accuracy, elo: ag.blackSummary.estimatedElo, isWhite: false)
                 }
 
-                // Interactive Eval Bar + Tappable Eval Graph
+                // 2. Live Eval Bar
                 EvalBarView(score: score, orientation: orientation)
 
-                if !ag.plies.isEmpty {
-                    EvalGraphView(plies: ag.plies, selectedPly: clampedPly) { target in
-                        currentPlyIndex = target
-                        retryMode = false
-                        botActive = false
-                        retryFeedback = nil
-                    }
-                }
-
-                // Interactive Board
+                // 3. Interactive Board
                 InteractiveChessBoardView(
                     board: board,
                     orientation: orientation,
                     theme: store.boardTheme,
                     surfaceStyle: store.surfaceStyle,
-                    interactive: retryMode || (botActive && !botThinking),
+                    interactive: retryMode || (botActive && !botThinking && sandboxBoard.outcome == .ongoing),
                     lastMove: lastMovePair,
                     arrows: bestArrow,
                     moveBadge: badge
@@ -368,6 +440,8 @@ public struct AnalyzeTabView: View {
                     if botActive {
                         guard (try? sandboxBoard.apply(move)) != nil else { return }
                         store.triggerHaptic(.move)
+                        updateSandboxOutcomeNotice()
+                        evaluateSandbox(fen: sandboxBoard.fen)
                         if sandboxBoard.outcome == .ongoing {
                             triggerBotReply()
                         }
@@ -375,6 +449,11 @@ public struct AnalyzeTabView: View {
                     }
                     guard retryMode, let ap = activePly else { return }
                     if move.uci == ap.bestMoveUci {
+                        var solved = board
+                        if (try? solved.apply(move)) != nil {
+                            retrySolvedBoard = solved
+                            retrySolvedLastMove = (move.from, move.to)
+                        }
                         retryFeedback = "Nailed it! \(ap.bestMoveSan) was the best move."
                         retryMode = false
                         store.triggerHaptic(.success)
@@ -384,32 +463,111 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
-                // Transport Scrubber Bar
+                // 4. Transport Scrubber Bar
                 BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
                     HStack(spacing: 8) {
-                        transportBtn("backward.end.fill") { currentPlyIndex = 0; retryMode = false; botActive = false }
-                        transportBtn("chevron.left") { currentPlyIndex = max(0, clampedPly - 1); retryMode = false; botActive = false }
-                        transportBtn("chevron.right") { currentPlyIndex = min(ag.plies.count, clampedPly + 1); retryMode = false; botActive = false }
-                        transportBtn("forward.end.fill") { currentPlyIndex = ag.plies.count; retryMode = false; botActive = false }
-                        transportBtn("arrow.up.arrow.down") { orientation = orientation.opposite }
+                        transportBtn("backward.end.fill", label: "First move") { goToPly(0, maxPly: ag.plies.count) }
+                        transportBtn("chevron.left", label: "Previous move") { goToPly(clampedPly - 1, maxPly: ag.plies.count) }
+                        transportBtn("chevron.right", label: "Next move") { goToPly(clampedPly + 1, maxPly: ag.plies.count) }
+                        transportBtn("forward.end.fill", label: "Last move") { goToPly(ag.plies.count, maxPly: ag.plies.count) }
+                        transportBtn("arrow.up.arrow.down", label: "Flip board") { orientation = orientation.opposite }
                         if let ap = activePly {
-                            let isSaved = store.bookmarks.contains { $0.id == "\(ag.game.id)::ply::\(ap.ply)" }
-                            transportBtn(isSaved ? "bookmark.fill" : "bookmark") {
+                            let isSaved = store.isBookmarked(gameId: ag.game.id, ply: ap.ply)
+                            transportBtn(isSaved ? "bookmark.fill" : "bookmark", label: isSaved ? "Remove bookmark" : "Bookmark position") {
                                 store.toggleBookmark(ply: ap, game: ag.game)
                             }
                         }
                     }
                 }
 
-                // Utility Action Row: Play Bot | Copy FEN | Copy PGN | Share Card
+                // 5. Coach Card (immediately visible above the floating tab bar on iPhone!)
+                if let botStatusNotice, botActive {
+                    Text(botStatusNotice)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                }
+
+                if let ap = activePly {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            Text(ap.classification.label)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.badgeForeground(for: ap.classification))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(BrillyPalette.color(for: ap.classification)))
+                            Spacer()
+                            if ap.classification == .blunder || ap.classification == .mistake {
+                                Button(retryMode ? "Exit Retry" : "Retry Mistake") {
+                                    retryMode.toggle()
+                                    botActive = false
+                                    retrySolvedBoard = nil
+                                    retrySolvedLastMove = nil
+                                    retryFeedback = retryMode ? "Find the better move instead of \(ap.san)." : nil
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        Text(retryFeedback ?? ap.coaching.headline)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+
+                        Text(ap.coaching.detail)
+                            .font(.caption)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+
+                        if let lines = ap.topLines, !lines.isEmpty, !retryMode {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(Array(lines.prefix(2).enumerated()), id: \.offset) { idx, line in
+                                    HStack(spacing: 6) {
+                                        Text("#\(idx + 1)")
+                                            .font(.caption2.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(BrillyPalette.brillyTeal)
+                                        Text(line.evalDisplay)
+                                            .font(.caption2.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                            .frame(width: 44, alignment: .leading)
+                                        Text(line.pvSan.joined(separator: " "))
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
+                    }
+                    .padding(14)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.color(for: ap.classification))
+                }
+
+                // 6. Utility Action Row: Play Bot | Copy FEN | Copy PGN | Lazy Share Card
                 HStack(spacing: 8) {
                     Button {
                         if botActive {
+                            cancelLiveTasks()
                             botActive = false
+                            botStatusNotice = nil
                         } else {
                             sandboxBoard = board
                             botActive = true
                             retryMode = false
+                            retrySolvedBoard = nil
+                            retrySolvedLastMove = nil
+                            botStatusNotice = nil
+                            evaluateSandbox(fen: sandboxBoard.fen)
+                            if sandboxBoard.outcome == .ongoing && sandboxBoard.turn != orientation {
+                                triggerBotReply()
+                            }
                         }
                     } label: {
                         Label(botActive ? "Stop Bot" : "Play Bot", systemImage: "cpu")
@@ -441,15 +599,13 @@ public struct AnalyzeTabView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if let rendered = shareCard.renderImage() {
-                        ShareLink(item: rendered, preview: SharePreview("BrillyDer Position", image: rendered)) {
-                            Label("Card", systemImage: "square.and.arrow.up")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                        }
+                    ShareLink(item: shareItem, preview: SharePreview(shareItem.title)) {
+                        Label("Card", systemImage: "square.and.arrow.up")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
                     }
                 }
 
@@ -459,73 +615,18 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.brillyTeal)
                 }
 
-                // Live 7-Piece Syzygy Tablebase Bar (when <= 7 pieces)
-                syzygyCardIfEligible(fen: displayFen)
-
-                // Coach Card
-                if let ap = activePly {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text(ap.classification.label)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(BrillyPalette.color(for: ap.classification)))
-                            Spacer()
-                            if ap.classification == .blunder || ap.classification == .mistake {
-                                Button(retryMode ? "Exit Retry" : "Retry Mistake") {
-                                    retryMode.toggle()
-                                    botActive = false
-                                    retryFeedback = retryMode ? "Find the better move instead of \(ap.san)." : nil
-                                }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                .buttonStyle(.plain)
-                            }
-                        }
-
-                        Text(retryFeedback ?? ap.coaching.headline)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-
-                        Text(ap.coaching.detail)
-                            .font(.caption)
-                            .foregroundStyle(BrillyPalette.inkSecondary)
-
-                        if let lines = ap.topLines, !lines.isEmpty, !retryMode {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(Array(lines.prefix(2).enumerated()), id: \.offset) { idx, line in
-                                    HStack(spacing: 6) {
-                                        Text("#\(idx + 1)")
-                                            .font(.caption2.monospacedDigit().weight(.bold))
-                                            .foregroundStyle(BrillyPalette.brillyTeal)
-                                        Text(line.evalDisplay)
-                                            .font(.caption2.monospacedDigit().weight(.bold))
-                                            .foregroundStyle(BrillyPalette.inkPrimary)
-                                            .frame(width: 40, alignment: .leading)
-                                        Text(line.pvSan.joined(separator: " "))
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(BrillyPalette.inkSecondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
+                // 7. Tappable Eval Graph
+                if !ag.plies.isEmpty {
+                    EvalGraphView(plies: ag.plies, selectedPly: clampedPly) { target in
+                        goToPly(target, maxPly: ag.plies.count)
                     }
-                    .padding(14)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.color(for: ap.classification))
                 }
 
-                // Opening Deviation ("Leak Patcher") Card
-                if let dev = deviation {
+                // 8. Live 7-Piece Syzygy Tablebase Bar (when <= 7 pieces)
+                syzygyCardIfEligible(fen: displayFen)
+
+                // 9. Opening Deviation ("Leak Patcher") Card
+                if let dev = cachedDeviation {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Label(
@@ -536,7 +637,7 @@ public struct AnalyzeTabView: View {
                             .foregroundStyle(dev.kind == .userDeviation ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                             Spacer()
                             Button("Jump Move \(dev.moveNumber)") {
-                                currentPlyIndex = dev.ply
+                                goToPly(dev.ply, maxPly: ag.plies.count)
                             }
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(BrillyPalette.brillyTeal)
@@ -576,16 +677,13 @@ public struct AnalyzeTabView: View {
                     .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: dev.kind == .userDeviation ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                 }
 
-                // Horizontal Move Strip
+                // 10. Horizontal Move Strip
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(ag.plies) { ply in
                             let selected = ply.ply == clampedPly
                             Button {
-                                currentPlyIndex = ply.ply
-                                retryMode = false
-                                botActive = false
-                                retryFeedback = nil
+                                goToPly(ply.ply, maxPly: ag.plies.count)
                             } label: {
                                 HStack(spacing: 4) {
                                     if ply.color == .white {
@@ -613,8 +711,8 @@ public struct AnalyzeTabView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 32)
+            .padding(.top, 8)
+            .padding(.bottom, 84)
         }
         .task(id: displayFen) {
             if SyzygyClient.isEligible(fen: displayFen) {
@@ -658,29 +756,57 @@ public struct AnalyzeTabView: View {
     }
 
     private func evaluateSandbox(fen: String) {
-        let engine = store.engine
-        Task {
-            if let ev = try? await engine.analyze(fen: fen, depth: 5, multiPV: 3, maxTimeMs: 350) {
+        evalTask?.cancel()
+        evalGeneration &+= 1
+        let gen = evalGeneration
+        let engine = store.interactiveEngine
+        evalTask = Task {
+            if let ev = try? await engine.analyze(fen: fen, depth: 5, multiPV: 3, maxTimeMs: 350),
+               !Task.isCancelled, self.evalGeneration == gen {
                 self.sandboxEval = ev
             }
             if SyzygyClient.isEligible(fen: fen) {
-                self.syzygyResult = await SyzygyClient.shared.probe(fen: fen)
-            } else {
+                let res = await SyzygyClient.shared.probe(fen: fen)
+                if !Task.isCancelled && self.evalGeneration == gen {
+                    self.syzygyResult = res
+                }
+            } else if self.evalGeneration == gen {
                 self.syzygyResult = nil
             }
         }
     }
 
     private func triggerBotReply() {
+        botTask?.cancel()
+        botGeneration &+= 1
+        let gen = botGeneration
         botThinking = true
         let fenNow = sandboxBoard.fen
-        Task {
-            if let reply = await store.computeBotReply(fen: fenNow, depth: 4) {
+        botTask = Task {
+            let reply = await store.computeBotReply(fen: fenNow, depth: 4)
+            guard !Task.isCancelled && self.botGeneration == gen else { return }
+            if let reply {
                 _ = try? sandboxBoard.apply(reply)
                 store.triggerHaptic(.move)
+                updateSandboxOutcomeNotice()
                 evaluateSandbox(fen: sandboxBoard.fen)
             }
             botThinking = false
+        }
+    }
+
+    private func updateSandboxOutcomeNotice() {
+        switch sandboxBoard.outcome {
+        case .ongoing:
+            botStatusNotice = nil
+        case .checkmate(let winner):
+            botStatusNotice = "Checkmate — \(winner.displayName) wins!"
+        case .stalemate:
+            botStatusNotice = "Draw by stalemate."
+        case .insufficientMaterial:
+            botStatusNotice = "Draw by insufficient material."
+        case .fiftyMoveRule:
+            botStatusNotice = "Draw by 50-move rule."
         }
     }
 
@@ -718,7 +844,7 @@ public struct AnalyzeTabView: View {
         .brillySurface(store.surfaceStyle, cornerRadius: 14)
     }
 
-    private func transportBtn(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func transportBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button {
             store.triggerHaptic(.move)
             action()
@@ -731,5 +857,6 @@ public struct AnalyzeTabView: View {
                 .brillySurface(store.surfaceStyle, cornerRadius: 14, interactive: true)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }

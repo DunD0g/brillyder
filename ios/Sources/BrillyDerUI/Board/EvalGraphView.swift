@@ -20,11 +20,9 @@ public struct EvalGraphView: View {
 
             Canvas { ctx, size in
                 let midY = size.height * 0.5
-                // Background split
                 ctx.fill(Path(CGRect(x: 0, y: 0, width: size.width, height: midY)), with: .color(Color.white.opacity(0.06)))
                 ctx.fill(Path(CGRect(x: 0, y: midY, width: size.width, height: midY)), with: .color(Color.black.opacity(0.28)))
 
-                // 50% equilibrium line
                 var midLine = Path()
                 midLine.move(to: CGPoint(x: 0, y: midY))
                 midLine.addLine(to: CGPoint(x: size.width, y: midY))
@@ -32,32 +30,38 @@ public struct EvalGraphView: View {
 
                 guard !plies.isEmpty else { return }
 
-                var area = Path()
-                var stroke = Path()
+                if plies.count == 1 {
+                    let y = size.height * (1.0 - CGFloat(ChessMath.clamp(plies[0].evalAfter.winPercentWhite / 100.0, min: 0.04, max: 0.96)))
+                    let r: CGFloat = 4.5
+                    ctx.fill(Path(ellipseIn: CGRect(x: size.width * 0.5 - r, y: y - r, width: r * 2, height: r * 2)), with: .color(BrillyPalette.brillyTeal))
+                } else {
+                    var area = Path()
+                    var stroke = Path()
 
-                for (idx, p) in plies.enumerated() {
-                    let x = count == 1 ? size.width * 0.5 : (CGFloat(idx) / CGFloat(count - 1)) * size.width
-                    let y = size.height * (1.0 - CGFloat(ChessMath.clamp(p.evalAfter.winPercentWhite / 100.0, min: 0.02, max: 0.98)))
-                    if idx == 0 {
-                        area.move(to: CGPoint(x: x, y: size.height))
-                        area.addLine(to: CGPoint(x: x, y: y))
-                        stroke.move(to: CGPoint(x: x, y: y))
-                    } else {
-                        area.addLine(to: CGPoint(x: x, y: y))
-                        stroke.addLine(to: CGPoint(x: x, y: y))
+                    for (idx, p) in plies.enumerated() {
+                        let x = (CGFloat(idx) / CGFloat(count - 1)) * size.width
+                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(p.evalAfter.winPercentWhite / 100.0, min: 0.02, max: 0.98)))
+                        if idx == 0 {
+                            area.move(to: CGPoint(x: x, y: size.height))
+                            area.addLine(to: CGPoint(x: x, y: y))
+                            stroke.move(to: CGPoint(x: x, y: y))
+                        } else {
+                            area.addLine(to: CGPoint(x: x, y: y))
+                            stroke.addLine(to: CGPoint(x: x, y: y))
+                        }
+                        if idx == plies.count - 1 {
+                            area.addLine(to: CGPoint(x: x, y: size.height))
+                            area.closeSubpath()
+                        }
                     }
-                    if idx == plies.count - 1 {
-                        area.addLine(to: CGPoint(x: x, y: size.height))
-                        area.closeSubpath()
-                    }
+
+                    ctx.fill(area, with: .linearGradient(
+                        Gradient(colors: [BrillyPalette.brillyTeal.opacity(0.35), BrillyPalette.brillyTeal.opacity(0.04)]),
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: 0, y: size.height)
+                    ))
+                    ctx.stroke(stroke, with: .color(BrillyPalette.brillyTeal), lineWidth: 1.8)
                 }
-
-                ctx.fill(area, with: .linearGradient(
-                    Gradient(colors: [BrillyPalette.brillyTeal.opacity(0.35), BrillyPalette.brillyTeal.opacity(0.04)]),
-                    startPoint: CGPoint(x: 0, y: 0),
-                    endPoint: CGPoint(x: 0, y: size.height)
-                ))
-                ctx.stroke(stroke, with: .color(BrillyPalette.brillyTeal), lineWidth: 1.8)
 
                 // Key moment markers (Brilliant / Blunder / Mistake)
                 for (idx, p) in plies.enumerated() {
@@ -85,12 +89,22 @@ public struct EvalGraphView: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { val in
                         guard !plies.isEmpty, w > 0 else { return }
-                        let ratio = max(0, min(1, val.location.x / w))
-                        let idx = Int((ratio * Double(plies.count - 1)).rounded()) + 1
-                        onSelectPly(max(1, min(plies.count, idx)))
+                        let target: Int
+                        if plies.count == 1 {
+                            target = 1
+                        } else {
+                            let ratio = max(0, min(1, val.location.x / w))
+                            target = max(1, min(plies.count, Int((ratio * Double(plies.count - 1)).rounded()) + 1))
+                        }
+                        if target != selectedPly {
+                            onSelectPly(target)
+                        }
                     }
             )
         }
         .frame(height: 68)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Game evaluation graph")
+        .accessibilityValue("Ply \(selectedPly) of \(plies.count)")
     }
 }

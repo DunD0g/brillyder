@@ -83,8 +83,20 @@ public final class BrillyAppStore {
 
     // MARK: - Sync & Scout State
     public var syncPlatform: GameSource = .lichess
-    public var lichessUsername: String = ""
-    public var chessComUsername: String = ""
+    public var lichessUsername: String = "" {
+        didSet {
+            if isHydrated, oldValue != lichessUsername {
+                derivedCacheKeyVersion &+= 1
+            }
+        }
+    }
+    public var chessComUsername: String = "" {
+        didSet {
+            if isHydrated, oldValue != chessComUsername {
+                derivedCacheKeyVersion &+= 1
+            }
+        }
+    }
     public var recentGames: [GameRecord] = []
     public var isSyncing: Bool = false
     public var syncErrorMessage: String? = nil
@@ -94,7 +106,9 @@ public final class BrillyAppStore {
     public var isScouting: Bool = false
 
     // MARK: - Single & Batch Analysis State
-    public var analyzedGames: [AnalyzedGame] = []
+    public var analyzedGames: [AnalyzedGame] = [] {
+        didSet { derivedCacheKeyVersion &+= 1 }
+    }
     public var activeAnalyzedGame: AnalyzedGame? = nil
     public var activeSandboxFen: String? = nil
     public var isAnalyzing: Bool = false
@@ -124,10 +138,34 @@ public final class BrillyAppStore {
     public var puzzleRushSurvivalBest: Int = 0
 
     // MARK: - Engine & Storage
+    /// Background analysis engine (single + batch review).
     public let engine = BrillyNativeEngine()
+    /// Dedicated engine for interactive Play Bot, Sandbox, Conversion, and Endgame drills so batch analysis never blocks them.
+    public let interactiveEngine = BrillyNativeEngine()
     private let vault = LocalVaultStore()
-    private var analysisTask: Task<Void, Never>? = nil
-    private var batchTask: Task<Void, Never>? = nil
+
+    @ObservationIgnored private var isHydrated: Bool = false
+    @ObservationIgnored private var hasPendingSave: Bool = false
+    @ObservationIgnored private var saveDirty: Bool = false
+    @ObservationIgnored private var saveLoopTask: Task<Void, Never>? = nil
+
+    @ObservationIgnored private var analysisTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var batchTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var syncTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var scoutTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var analysisGeneration: Int = 0
+    @ObservationIgnored private var batchGeneration: Int = 0
+    @ObservationIgnored private var syncGeneration: Int = 0
+    @ObservationIgnored private var scoutGeneration: Int = 0
+
+    // MARK: - Memoization Cache (avoids redundant O(N * plies) recomputations on 120Hz SwiftUI passes)
+    @ObservationIgnored private var derivedCacheKeyVersion: Int = 0
+    @ObservationIgnored private var cachedMistakeDeck: (key: Int, value: [MistakePuzzle])? = nil
+    @ObservationIgnored private var cachedInsights: (key: Int, value: InsightsSnapshot)? = nil
+    @ObservationIgnored private var cachedAdvancedInsights: (key: Int, value: AdvancedInsightsReport)? = nil
+    @ObservationIgnored private var cachedVault: (key: Int, value: VaultCollection)? = nil
+    @ObservationIgnored private var cachedBlownLeads: (key: Int, value: [BlownLeadPosition])? = nil
+    @ObservationIgnored private var cachedUserEndgames: (key: Int, value: [EndgameDrill])? = nil
 
     // MARK: - Computed Properties
 
@@ -137,8 +175,26 @@ public final class BrillyAppStore {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// All configured user handles across both Lichess and Chess.com for accurate dual-platform ownership resolution.
+    public var userHandles: [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        for raw in [lichessUsername, chessComUsername] {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted {
+                out.append(trimmed)
+            }
+        }
+        return out
+    }
+
+    /// Merges starter courses with custom courses, allowing Web-edited starter overrides without duplicating IDs.
     public var allCourses: [OpeningCourse] {
-        starterCourses + customCourses
+        let customById = Dictionary(customCourses.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        let starterIds = Set(starterCourses.map(\.id))
+        let mergedStarters = starterCourses.map { customById[$0.id] ?? $0 }
+        let extraCustom = customCourses.filter { !starterIds.contains($0.id) }
+        return mergedStarters + extraCustom
     }
 
     public var unanalyzedRecentGames: [GameRecord] {
@@ -147,7 +203,13 @@ public final class BrillyAppStore {
     }
 
     public var mistakeDeck: [MistakePuzzle] {
-        GameAnalyzer.extractMistakePuzzles(from: analyzedGames, username: activeUsername)
+        // Touch observable dependencies for SwiftUI invalidation
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedMistakeDeck, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = GameAnalyzer.extractMistakePuzzles(from: analyzedGames, handles: handles)
+        cachedMistakeDeck = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var dueOpeningCount: Int {
@@ -163,23 +225,48 @@ public final class BrillyAppStore {
     }
 
     public var insights: InsightsSnapshot {
-        GameAnalyzer.computeInsights(analyzedGames: analyzedGames, username: activeUsername)
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedInsights, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = GameAnalyzer.computeInsights(analyzedGames: analyzedGames, handles: handles)
+        cachedInsights = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var advancedInsights: AdvancedInsightsReport {
-        AdvancedInsightsService.buildReport(analyzedGames: analyzedGames, username: activeUsername)
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedAdvancedInsights, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = AdvancedInsightsService.buildReport(analyzedGames: analyzedGames, handles: handles)
+        cachedAdvancedInsights = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var vaultCollection: VaultCollection {
-        VaultService.buildVault(from: analyzedGames, username: activeUsername)
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedVault, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = VaultService.buildVault(from: analyzedGames, handles: handles)
+        cachedVault = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var blownLeads: [BlownLeadPosition] {
-        WoodpeckerAndConversion.extractBlownLeads(from: analyzedGames, username: activeUsername)
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedBlownLeads, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = WoodpeckerAndConversion.extractBlownLeads(from: analyzedGames, handles: handles)
+        cachedBlownLeads = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var userEndgameDrills: [EndgameDrill] {
-        EndgameLibrary.extractUserEndgameDrills(from: analyzedGames, username: activeUsername)
+        _ = analyzedGames.count
+        let handles = userHandles
+        if let hit = cachedUserEndgames, hit.key == derivedCacheKeyVersion { return hit.value }
+        let value = EndgameLibrary.extractUserEndgameDrills(from: analyzedGames, handles: handles)
+        cachedUserEndgames = (derivedCacheKeyVersion, value)
+        return value
     }
 
     public var scoutGameplan: ScoutGameplan? {
@@ -204,10 +291,24 @@ public final class BrillyAppStore {
         }
     }
 
-    // MARK: - Copy & Haptics
+    // MARK: - Copy, Lifecycle & Haptics
 
     public func copy(cosmic: String, classic: String) -> String {
         vibeMode == .cosmic ? cosmic : classic
+    }
+
+    public func handleScenePhaseChange(isBackground: Bool) {
+        if isBackground {
+            BrillySoundEngine.shared.pause()
+            if isAnalyzing { cancelAnalysis() }
+            if isBatchAnalyzing { cancelBatchAnalysis() }
+            flushToDiskNow()
+        } else {
+            if soundEnabled {
+                BrillySoundEngine.shared.resumeIfNeeded()
+            }
+            validateDailyStreakLiveness()
+        }
     }
 
     public func triggerHaptic(_ style: HapticKind) {
@@ -276,28 +377,46 @@ public final class BrillyAppStore {
         self.puzzleRushBlitzBest = snap.puzzleRushBlitzBest
         self.puzzleRushSurvivalBest = snap.puzzleRushSurvivalBest
 
+        validateDailyStreakLiveness()
+
         if let first = snap.analyzedGames.first {
             self.activeAnalyzedGame = first
         }
         // Hydrate Games tab offline from analyzed games if we have them
         if !snap.analyzedGames.isEmpty {
             let cachedRecords = snap.analyzedGames.map(\.game)
-            let sampleIds = Set(recentGames.map(\.id))
-            let newOnes = cachedRecords.filter { !sampleIds.contains($0.id) }
+            let existingIds = Set(recentGames.map(\.id))
+            let newOnes = cachedRecords.filter { !existingIds.contains($0.id) }
             if !newOnes.isEmpty {
-                self.recentGames = newOnes + recentGames
+                self.recentGames = (newOnes + recentGames).sorted { $0.createdAt > $1.createdAt }
             }
         }
 
         rehydrateFsrsCards(existing: snap.fsrsCards)
+        self.isHydrated = true
+        self.derivedCacheKeyVersion &+= 1
+        if hasPendingSave {
+            hasPendingSave = false
+            persistToDisk()
+        }
     }
 
     private func rehydrateFsrsCards(existing: [FsrsOpeningCard]) {
-        var existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.cardId, $0) })
+        var existingById = Dictionary(existing.map { ($0.cardId, $0) }, uniquingKeysWith: { a, b in
+            let unlocked = a.unlocked || b.unlocked
+            let aRev = a.fsrsState.last_review ?? ""
+            let bRev = b.fsrsState.last_review ?? ""
+            var winner = (bRev != aRev ? (bRev > aRev ? b : a) : (b.attempts >= a.attempts ? b : a))
+            winner.unlocked = unlocked
+            return winner
+        })
         var hydrated: [FsrsOpeningCard] = []
+        var emittedIds = Set<String>()
+
         for (courseIdx, course) in allCourses.enumerated() {
+            let isUserImported = course.source == "pgn" || course.source == "lichess-study"
             for (lineIdx, line) in course.lines.enumerated() {
-                let shouldUnlock = ((courseIdx == 0 || courseIdx == 1) && lineIdx == 0) || course.source == "pgn"
+                let shouldUnlock = ((courseIdx == 0 || courseIdx == 1) && lineIdx == 0) || isUserImported
                 if let cards = try? CourseRepository.hydrateLineCards(
                     courseId: course.id,
                     side: course.side,
@@ -305,17 +424,43 @@ public final class BrillyAppStore {
                     existingById: existingById,
                     unlocked: shouldUnlock
                 ) {
-                    hydrated.append(contentsOf: cards)
-                    for c in cards { existingById[c.cardId] = c }
+                    for c in cards where emittedIds.insert(c.cardId).inserted {
+                        hydrated.append(c)
+                        existingById[c.cardId] = c
+                    }
                 }
             }
         }
+
+        // Preserve any unmatched cards (e.g., Web `game-deviation` cards) so they are never silently lost.
+        for card in existing where emittedIds.insert(card.cardId).inserted {
+            hydrated.append(card)
+        }
+
         self.fsrsCards = hydrated
     }
 
     public func persistToDisk() {
+        guard isHydrated else {
+            hasPendingSave = true
+            return
+        }
+        saveDirty = true
+        guard saveLoopTask == nil else { return }
+        saveLoopTask = Task {
+            while saveDirty {
+                saveDirty = false
+                let snap = currentSnapshot()
+                try? await vault.save(snap)
+            }
+            saveLoopTask = nil
+        }
+    }
+
+    public func flushToDiskNow() {
+        guard isHydrated else { return }
         let snap = currentSnapshot()
-        Task {
+        Task.detached(priority: .utility) { [vault] in
             try? await vault.save(snap)
         }
     }
@@ -352,23 +497,28 @@ public final class BrillyAppStore {
         self.convertedAdvantageIds = Set(merged.convertedAdvantageIds)
         self.dailyStreakDays = merged.dailyStreakDays
         self.lastDailyCompletedDate = merged.lastDailyCompletedDate
+        self.woodpeckerCycle = merged.woodpeckerCycle
         self.boardVisionBestScore = merged.boardVisionBestScore
         self.puzzleRushBlitzBest = merged.puzzleRushBlitzBest
         self.puzzleRushSurvivalBest = merged.puzzleRushSurvivalBest
         self.lichessUsername = merged.lichessUsername
         self.chessComUsername = merged.chessComUsername
+
+        validateDailyStreakLiveness()
+
         // Hydrate Games tab offline with imported analyzed games
         if !merged.analyzedGames.isEmpty {
             let existingIds = Set(recentGames.map(\.id))
             let importedRecords = merged.analyzedGames.map(\.game).filter { !existingIds.contains($0.id) }
             if !importedRecords.isEmpty {
-                recentGames = importedRecords + recentGames
+                recentGames = (importedRecords + recentGames).sorted { $0.createdAt > $1.createdAt }
             }
             if activeAnalyzedGame == nil {
                 activeAnalyzedGame = merged.analyzedGames.first
             }
         }
         rehydrateFsrsCards(existing: merged.fsrsCards)
+        derivedCacheKeyVersion &+= 1
         persistToDisk()
         triggerHaptic(.success)
         return summary
@@ -376,7 +526,12 @@ public final class BrillyAppStore {
 
     public func deleteCustomCourse(id: String) {
         customCourses.removeAll { $0.id == id }
-        fsrsCards.removeAll { $0.courseId == id }
+        let starterIds = Set(starterCourses.map(\.id))
+        if starterIds.contains(id) {
+            rehydrateFsrsCards(existing: fsrsCards)
+        } else {
+            fsrsCards.removeAll { $0.courseId == id }
+        }
         persistToDisk()
     }
 
@@ -395,87 +550,158 @@ public final class BrillyAppStore {
     }
 
     public func importLichessGameURL(_ urlOrId: String) async {
+        syncTask?.cancel()
+        syncGeneration &+= 1
+        let gen = syncGeneration
         isSyncing = true
         syncErrorMessage = nil
-        defer { isSyncing = false }
-        do {
-            let record = try await LichessClient.fetchSingleGame(urlOrId: urlOrId, preferredUsername: activeUsername)
-            if !recentGames.contains(where: { $0.id == record.id }) {
-                recentGames.insert(record, at: 0)
+        let handles = userHandles
+        let active = activeUsername
+
+        let task = Task { @MainActor in
+            defer {
+                if self.syncGeneration == gen { self.isSyncing = false }
             }
-            startAnalysis(for: record)
-        } catch {
-            syncErrorMessage = error.localizedDescription
-            triggerHaptic(.error)
+            do {
+                let record = try await LichessClient.fetchSingleGame(
+                    urlOrId: urlOrId,
+                    preferredUsername: active,
+                    preferredUsernames: handles
+                )
+                guard self.syncGeneration == gen, !Task.isCancelled else { return }
+                if !self.recentGames.contains(where: { $0.id == record.id }) {
+                    self.recentGames.insert(record, at: 0)
+                }
+                self.startAnalysis(for: record)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.syncGeneration == gen else { return }
+                self.syncErrorMessage = error.localizedDescription
+                self.triggerHaptic(.error)
+            }
         }
+        syncTask = task
+        await task.value
     }
 
     // MARK: - Sync & Scout Actions
 
     public func syncRecentGames() async {
+        syncTask?.cancel()
+        syncGeneration &+= 1
+        let gen = syncGeneration
         isSyncing = true
         syncErrorMessage = nil
-        defer { isSyncing = false }
+        let platform = syncPlatform
+        let ccHandle = chessComUsername
+        let liHandle = lichessUsername
 
-        do {
-            let fetched: [GameRecord]
-            if syncPlatform == .chesscom {
-                fetched = try await ChessComClient.fetchRecentGames(username: chessComUsername, maxGames: 30)
-            } else {
-                fetched = try await LichessClient.fetchRecentGames(username: lichessUsername, maxGames: 30)
+        let task = Task { @MainActor in
+            defer {
+                if self.syncGeneration == gen { self.isSyncing = false }
             }
-            if !fetched.isEmpty {
-                recentGames = fetched
-                triggerHaptic(.success)
-            } else {
-                syncErrorMessage = "No recent standard games found for that handle."
+            do {
+                let fetched: [GameRecord]
+                if platform == .chesscom {
+                    fetched = try await ChessComClient.fetchRecentGames(username: ccHandle, maxGames: 30)
+                } else {
+                    fetched = try await LichessClient.fetchRecentGames(username: liHandle, maxGames: 30)
+                }
+                guard self.syncGeneration == gen, !Task.isCancelled else { return }
+                if !fetched.isEmpty {
+                    // Preserve pasted PGNs, analyzed games, and other-platform synced games while deduplicating by id
+                    let fetchedIds = Set(fetched.map(\.id))
+                    let preserved = self.recentGames.filter { rec in
+                        rec.source != .sample && !fetchedIds.contains(rec.id) &&
+                        (rec.source != platform || self.analyzedGames.contains(where: { ag in ag.id == rec.id }))
+                    }
+                    self.recentGames = (fetched + preserved).sorted { $0.createdAt > $1.createdAt }
+                    self.triggerHaptic(.success)
+                } else {
+                    self.syncErrorMessage = "No recent standard games found for that handle."
+                }
+                self.persistToDisk()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.syncGeneration == gen else { return }
+                self.syncErrorMessage = error.localizedDescription
+                self.triggerHaptic(.error)
             }
-            persistToDisk()
-        } catch {
-            syncErrorMessage = error.localizedDescription
-            triggerHaptic(.error)
         }
+        syncTask = task
+        await task.value
     }
 
     public func runScout(opponent: String, platform: GameSource) async {
         let clean = opponent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
+        scoutTask?.cancel()
+        scoutGeneration &+= 1
+        let gen = scoutGeneration
         isScouting = true
         syncErrorMessage = nil
-        defer { isScouting = false }
 
-        do {
-            let fetched: [GameRecord]
-            if platform == .chesscom {
-                fetched = try await ChessComClient.fetchRecentGames(username: clean, maxGames: 25)
-            } else {
-                fetched = try await LichessClient.fetchRecentGames(username: clean, maxGames: 25)
+        let task = Task { @MainActor in
+            defer {
+                if self.scoutGeneration == gen { self.isScouting = false }
             }
-            scoutOpponent = clean
-            scoutGames = fetched
-            selectedTab = .insights
-            triggerHaptic(.success)
-        } catch {
-            syncErrorMessage = "Scout failed: \(error.localizedDescription)"
-            triggerHaptic(.error)
+            do {
+                let fetched: [GameRecord]
+                if platform == .chesscom {
+                    fetched = try await ChessComClient.fetchRecentGames(username: clean, maxGames: 25)
+                } else {
+                    fetched = try await LichessClient.fetchRecentGames(username: clean, maxGames: 25)
+                }
+                guard self.scoutGeneration == gen, !Task.isCancelled else { return }
+                if fetched.isEmpty {
+                    self.syncErrorMessage = "No recent standard games found for \"\(clean)\"."
+                    self.triggerHaptic(.error)
+                    return
+                }
+                self.scoutOpponent = clean
+                self.scoutGames = fetched
+                self.selectedTab = .insights
+                self.triggerHaptic(.success)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.scoutGeneration == gen else { return }
+                self.syncErrorMessage = "Scout failed: \(error.localizedDescription)"
+                self.triggerHaptic(.error)
+            }
         }
+        scoutTask = task
+        await task.value
     }
 
     public func clearScout() {
+        scoutTask?.cancel()
+        scoutGeneration &+= 1
+        isScouting = false
         scoutOpponent = ""
         scoutGames = []
     }
 
-    public func importAndAnalyzePGN(_ pgn: String) {
+    @discardableResult
+    public func importAndAnalyzePGN(_ pgn: String) -> Bool {
         do {
-            let record = try LichessClient.parsePastedPGN(pgn, preferredUsername: activeUsername)
+            let record = try LichessClient.parsePastedPGN(
+                pgn,
+                preferredUsername: activeUsername,
+                preferredUsernames: userHandles
+            )
             if !recentGames.contains(where: { $0.id == record.id }) {
                 recentGames.insert(record, at: 0)
             }
+            syncErrorMessage = nil
             startAnalysis(for: record)
+            return true
         } catch {
             syncErrorMessage = error.localizedDescription
             triggerHaptic(.error)
+            return false
         }
     }
 
@@ -496,9 +722,11 @@ public final class BrillyAppStore {
             return
         }
 
-        batchTask?.cancel()
-        isBatchAnalyzing = false
+        cancelBatchAnalysis()
         analysisTask?.cancel()
+        analysisGeneration &+= 1
+        let gen = analysisGeneration
+
         isAnalyzing = true
         analysisProgress = 0
         analyzingMatchupTitle = "\(game.white.name) vs \(game.black.name)"
@@ -516,12 +744,14 @@ public final class BrillyAppStore {
                     preset: preset
                 ) { completed, total in
                     Task { @MainActor in
+                        guard self.analysisGeneration == gen else { return }
                         self.analysisProgress = Double(completed) / Double(max(1, total))
                         self.analysisStatusText = "Ply \(completed) / \(total)"
                     }
                 }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard self.analysisGeneration == gen else { return }
                     self.analyzedGames.removeAll { $0.id == result.id }
                     self.analyzedGames.insert(result, at: 0)
                     self.activeAnalyzedGame = result
@@ -531,18 +761,23 @@ public final class BrillyAppStore {
                     self.triggerHaptic(.success)
                     self.persistToDisk()
                 }
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard self.analysisGeneration == gen else { return }
+                    self.isAnalyzing = false
+                }
             } catch {
-                if !Task.isCancelled {
-                    await MainActor.run {
-                        self.isAnalyzing = false
-                        self.syncErrorMessage = error.localizedDescription
-                    }
+                await MainActor.run {
+                    guard self.analysisGeneration == gen else { return }
+                    self.isAnalyzing = false
+                    self.syncErrorMessage = error.localizedDescription
                 }
             }
         }
     }
 
     public func cancelAnalysis() {
+        analysisGeneration &+= 1
         analysisTask?.cancel()
         analysisTask = nil
         isAnalyzing = false
@@ -552,9 +787,10 @@ public final class BrillyAppStore {
         let targets = Array(unanalyzedRecentGames.prefix(maxCount))
         guard !targets.isEmpty else { return }
 
-        analysisTask?.cancel()
-        isAnalyzing = false
+        cancelAnalysis()
         batchTask?.cancel()
+        batchGeneration &+= 1
+        let gen = batchGeneration
 
         isBatchAnalyzing = true
         batchCompletedGames = 0
@@ -572,6 +808,7 @@ public final class BrillyAppStore {
                 if Task.isCancelled { break }
                 let matchup = "\(game.white.name) vs \(game.black.name)"
                 await MainActor.run {
+                    guard self.batchGeneration == gen else { return }
                     self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(matchup)"
                 }
                 do {
@@ -583,12 +820,14 @@ public final class BrillyAppStore {
                         let sub = Double(donePlies) / Double(max(1, totalPlies))
                         let overall = (Double(idx) + sub) / Double(max(1, totalGames))
                         Task { @MainActor in
+                            guard self.batchGeneration == gen else { return }
                             self.batchProgress = overall
                             self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · Ply \(donePlies)/\(totalPlies)"
                         }
                     }
                     if Task.isCancelled { break }
                     await MainActor.run {
+                        guard self.batchGeneration == gen else { return }
                         self.analyzedGames.removeAll { $0.id == result.id }
                         self.analyzedGames.insert(result, at: 0)
                         if self.activeAnalyzedGame == nil {
@@ -598,14 +837,18 @@ public final class BrillyAppStore {
                         self.batchProgress = Double(idx + 1) / Double(max(1, totalGames))
                         self.persistToDisk()
                     }
+                } catch is CancellationError {
+                    break
                 } catch {
                     if Task.isCancelled { break }
                 }
             }
+            let cancelled = Task.isCancelled
             await MainActor.run {
+                guard self.batchGeneration == gen else { return }
                 self.isBatchAnalyzing = false
                 self.batchCurrentLabel = ""
-                if !Task.isCancelled {
+                if !cancelled {
                     self.batchProgress = 1.0
                     self.triggerHaptic(.success)
                 }
@@ -614,6 +857,7 @@ public final class BrillyAppStore {
     }
 
     public func cancelBatchAnalysis() {
+        batchGeneration &+= 1
         batchTask?.cancel()
         batchTask = nil
         isBatchAnalyzing = false
@@ -634,7 +878,7 @@ public final class BrillyAppStore {
     // MARK: - Bot Engine Helper
 
     public func computeBotReply(fen: String, depth: Int = 4) async -> ChessMove? {
-        guard let eval = try? await engine.analyze(fen: fen, depth: depth, multiPV: 1, maxTimeMs: 350),
+        guard let eval = try? await interactiveEngine.analyze(fen: fen, depth: depth, multiPV: 1, maxTimeMs: 350),
               let move = ChessMove(uci: eval.bestMoveUci) else {
             return nil
         }
@@ -714,7 +958,7 @@ public final class BrillyAppStore {
             cycle.firstTryCount = 0
             cycle.solvedCount = 0
             cycle.activeStartedAt = nowMs
-            cycle.cooldownUntil = nowMs + 24 * 3_600 * 1_000 // 24h consolidation window (overridable)
+            cycle.cooldownUntil = nowMs + 24 * 3_600 * 1_000
             triggerHaptic(.success)
         }
         woodpeckerCycle = cycle
@@ -753,24 +997,56 @@ public final class BrillyAppStore {
     }
 
     public func markDailySessionCompleted() {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        let today = fmt.string(from: Date())
+        let today = Self.dayString(for: Date())
+        let yesterday = Self.dayString(for: Date().addingTimeInterval(-86_400))
         if lastDailyCompletedDate != today {
-            dailyStreakDays += 1
+            if lastDailyCompletedDate == yesterday {
+                dailyStreakDays += 1
+            } else {
+                dailyStreakDays = 1
+            }
             lastDailyCompletedDate = today
             persistToDisk()
         }
         triggerHaptic(.success)
     }
 
+    private func validateDailyStreakLiveness() {
+        guard dailyStreakDays > 0, let last = lastDailyCompletedDate, !last.isEmpty else { return }
+        let today = Self.dayString(for: Date())
+        let yesterday = Self.dayString(for: Date().addingTimeInterval(-86_400))
+        if last != today && last != yesterday {
+            dailyStreakDays = 0
+        }
+    }
+
+    private static func dayString(for date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.calendar = Calendar(identifier: .gregorian)
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: date)
+    }
+
+    public func isBookmarked(gameId: String, ply: Int) -> Bool {
+        let canonical = "\(gameId)::\(ply)"
+        let legacy = "\(gameId)::ply::\(ply)"
+        return bookmarks.contains { $0.id == canonical || $0.id == legacy || ($0.gameId == gameId && $0.ply == ply) }
+    }
+
+    public func removeBookmark(id: String) {
+        bookmarks.removeAll { $0.id == id }
+        persistToDisk()
+    }
+
     public func toggleBookmark(ply: AnalyzedPly, game: GameRecord) {
-        let id = "\(game.id)::ply::\(ply.ply)"
-        if let idx = bookmarks.firstIndex(where: { $0.id == id }) {
+        let canonical = "\(game.id)::\(ply.ply)"
+        let legacy = "\(game.id)::ply::\(ply.ply)"
+        if let idx = bookmarks.firstIndex(where: { $0.id == canonical || $0.id == legacy || ($0.gameId == game.id && $0.ply == ply.ply) }) {
             bookmarks.remove(at: idx)
         } else {
             let bm = SavedPositionBookmark(
-                id: id,
+                id: canonical,
                 gameId: game.id,
                 ply: ply.ply,
                 fen: ply.afterFen,

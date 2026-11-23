@@ -45,7 +45,7 @@ public struct OpeningsTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 32)
+                .padding(.bottom, 84)
             }
         }
         .navigationTitle("Openings")
@@ -151,6 +151,10 @@ private struct ImportCourseSheet: View {
                     TextEditor(text: $pgn)
                         .scrollContentBackground(.hidden)
                         .font(.system(.caption, design: .monospaced))
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .padding(12)
                         .brillySurface(store.surfaceStyle, cornerRadius: 16)
@@ -213,22 +217,31 @@ private struct CourseDetailSheet: View {
     @State private var walkLayout: WalkLayout = .line
     @State private var selectedLineIndex: Int = 0
     @State private var selectedTreeFen: String? = nil
+    @State private var cachedTreeRoots: [RepertoireTreeNode] = []
+    @State private var confirmingDelete: Bool = false
 
     // Walkthrough state
     @State private var walkStep: Int = 0
     @State private var isAutoPlaying: Bool = false
 
     // Drill state
-    @State private var drillCards: [FsrsOpeningCard] = []
+    @State private var drillCardIds: [String] = []
     @State private var drillIdx: Int = 0
     @State private var drillBoard: ChessBoard = ChessBoard()
+    @State private var drillLastMove: (from: Square, to: Square)? = nil
     @State private var drillShownAt: Date = Date()
     @State private var drillUsedHint: Bool = false
+    @State private var drillHadMistake: Bool = false
     @State private var drillFeedback: String = "Play your repertoire move on the board."
     @State private var drillSolved: Bool = false
 
-    private var currentLine: OpeningLine {
-        course.lines[min(selectedLineIndex, max(0, course.lines.count - 1))]
+    private var currentLine: OpeningLine? {
+        guard !course.lines.isEmpty else { return nil }
+        return course.lines[min(selectedLineIndex, course.lines.count - 1)]
+    }
+
+    private var isDeletableCustom: Bool {
+        course.source == "pgn" || course.source == "lichess-study"
     }
 
     var body: some View {
@@ -259,11 +272,10 @@ private struct CourseDetailSheet: View {
             }
             .navigationTitle(course.name)
             .toolbar {
-                if course.source == "pgn" {
+                if isDeletableCustom {
                     ToolbarItem(placement: .automatic) {
                         Button(role: .destructive) {
-                            store.deleteCustomCourse(id: course.id)
-                            dismiss()
+                            confirmingDelete = true
                         } label: {
                             Image(systemName: "trash")
                                 .foregroundStyle(BrillyPalette.blunderRose)
@@ -284,18 +296,39 @@ private struct CourseDetailSheet: View {
                     }
                 }
             }
+            .confirmationDialog(
+                "Delete \"\(course.name)\"?",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Course & Cards", role: .destructive) {
+                    store.deleteCustomCourse(id: course.id)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the custom repertoire and its FSRS cards from this device.")
+            }
+            .onAppear {
+                refreshTreeCache()
+            }
             .onChange(of: activeTab) { _, newTab in
                 isAutoPlaying = false
                 if newTab == .drill {
                     prepareDrill()
+                } else if newTab == .walkthrough && walkLayout == .tree {
+                    refreshTreeCache()
                 }
             }
+            .onChange(of: walkLayout) { _, newLayout in
+                if newLayout == .tree { refreshTreeCache() }
+            }
             .task(id: isAutoPlaying) {
-                guard isAutoPlaying else { return }
+                guard isAutoPlaying, let line = currentLine else { return }
                 while !Task.isCancelled && isAutoPlaying {
                     try? await Task.sleep(for: .milliseconds(1200))
                     guard !Task.isCancelled, isAutoPlaying else { break }
-                    if walkStep < currentLine.moves.count {
+                    if walkStep < line.moves.count {
                         walkStep += 1
                     } else {
                         isAutoPlaying = false
@@ -303,6 +336,10 @@ private struct CourseDetailSheet: View {
                 }
             }
         }
+    }
+
+    private func refreshTreeCache() {
+        cachedTreeRoots = RepertoireTreeService.buildTree(for: course, fsrsCards: store.fsrsCards)
     }
 
     // MARK: - 1. Mothership Setup
@@ -368,7 +405,6 @@ private struct CourseDetailSheet: View {
     }
 
     private var treeView: some View {
-        let roots = RepertoireTreeService.buildTree(for: course, fsrsCards: store.fsrsCards)
         let previewBoard = (selectedTreeFen.flatMap { try? ChessBoard(fen: $0) }) ?? boardAfter(moves: course.mothershipSetup.previewMoves)
 
         return VStack(spacing: 12) {
@@ -385,8 +421,14 @@ private struct CourseDetailSheet: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(BrillyPalette.brillyTeal)
 
-                ForEach(roots) { node in
-                    TreeNodeRow(node: node, depth: 0, selectedFen: $selectedTreeFen)
+                if cachedTreeRoots.isEmpty {
+                    Text("No repertoire branches found in this course.")
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                } else {
+                    ForEach(cachedTreeRoots) { node in
+                        TreeNodeRow(node: node, depth: 0, selectedFen: $selectedTreeFen)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -395,204 +437,241 @@ private struct CourseDetailSheet: View {
         }
     }
 
+    @ViewBuilder
     private var lineWalkthroughBody: some View {
-        let clampedStep = max(0, min(walkStep, currentLine.moves.count))
-        let prefix = Array(currentLine.moves.prefix(clampedStep))
-        let board = boardAfter(moves: prefix)
-        let activeAnnotation = currentLine.annotations.first { $0.ply == clampedStep - 1 }
+        if let line = currentLine {
+            let clampedStep = max(0, min(walkStep, line.moves.count))
+            let prefix = Array(line.moves.prefix(clampedStep))
+            let board = boardAfter(moves: prefix)
+            let activeAnnotation = line.annotations.first { $0.ply == clampedStep - 1 }
 
-        return VStack(spacing: 12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(course.lines.enumerated()), id: \.element.id) { idx, line in
-                        let sel = idx == selectedLineIndex
-                        Button {
-                            selectedLineIndex = idx
-                            walkStep = 0
-                            isAutoPlaying = false
-                        } label: {
-                            Text("\(line.eco) · \(line.title)")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            InteractiveChessBoardView(
-                board: board,
-                orientation: course.side.pieceColor,
-                theme: store.boardTheme,
-                surfaceStyle: store.surfaceStyle,
-                interactive: false,
-                arrows: activeAnnotation?.arrows ?? [],
-                highlights: activeAnnotation?.highlights ?? []
-            )
-
-            BrillyGlassCluster(style: store.surfaceStyle, spacing: 10) {
-                HStack(spacing: 10) {
-                    walkBtn("backward.end.fill") { isAutoPlaying = false; walkStep = 0 }
-                    walkBtn("chevron.left") { isAutoPlaying = false; walkStep = max(0, clampedStep - 1) }
-                    walkBtn(isAutoPlaying ? "pause.fill" : "play.fill") {
-                        if clampedStep >= currentLine.moves.count { walkStep = 0 }
-                        isAutoPlaying.toggle()
-                    }
-                    walkBtn("chevron.right") { isAutoPlaying = false; walkStep = min(currentLine.moves.count, clampedStep + 1) }
-                    walkBtn("forward.end.fill") { isAutoPlaying = false; walkStep = currentLine.moves.count }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(clampedStep == 0 ? currentLine.title : "Move \((clampedStep + 1) / 2): \(currentLine.moves[clampedStep - 1])")
-                        .font(.headline)
-                        .foregroundStyle(BrillyPalette.inkPrimary)
-                    Spacer()
-                    Text("\(clampedStep) / \(currentLine.moves.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(BrillyPalette.inkSecondary)
-                }
-                Text(activeAnnotation?.plan ?? currentLine.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-                if store.vibeMode == .cosmic, let cue = activeAnnotation?.cosmicCue {
-                    Text(cue)
-                        .font(.caption.italic())
-                        .foregroundStyle(BrillyPalette.brillyTeal)
-                }
-
-                // Wrong-Move Trap Spotlight
-                if let traps = activeAnnotation?.wrongMoveTraps, !traps.isEmpty {
-                    Divider().overlay(Color.white.opacity(0.1))
-                    ForEach(traps, id: \.playedSan) { trap in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label("Avoid Trap: \(trap.playedSan)", systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.blunderRose)
-                            Text("Punishment: \(trap.punishmentLine.joined(separator: " ")) — \(trap.reason)")
-                                .font(.caption2)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
+            VStack(spacing: 12) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(course.lines.enumerated()), id: \.element.id) { idx, ln in
+                            let sel = idx == selectedLineIndex
+                            Button {
+                                selectedLineIndex = idx
+                                walkStep = 0
+                                isAutoPlaying = false
+                            } label: {
+                                Text("\(ln.eco) · \(ln.title)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .brillySurface(store.surfaceStyle, cornerRadius: 18)
-
-            Button {
-                store.unlockLine(courseId: course.id, lineId: currentLine.id)
-                activeTab = .drill
-            } label: {
-                Label("Unlock & Drill This Line", systemImage: "bolt.fill")
-                    .font(.headline)
-                    .foregroundStyle(BrillyPalette.voidBg)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.brillyTeal))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    // MARK: - 3. FSRS Signal Strength Drill
-
-    private var drillView: some View {
-        VStack(spacing: 12) {
-            if drillCards.isEmpty {
-                Text("No drill cards available for this line.")
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-            } else {
-                let card = drillCards[min(drillIdx, drillCards.count - 1)]
-                HStack {
-                    Text("Card \(drillIdx + 1) / \(drillCards.count)")
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(BrillyPalette.brillyTeal)
-                    Spacer()
-                    Text("Recall \(FSRS6Scheduler.recallProbability(for: card))%")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(BrillyPalette.inkSecondary)
                 }
 
                 InteractiveChessBoardView(
-                    board: drillBoard,
+                    board: board,
                     orientation: course.side.pieceColor,
                     theme: store.boardTheme,
                     surfaceStyle: store.surfaceStyle,
-                    interactive: !drillSolved,
-                    arrows: drillUsedHint ? arrowFor(uci: card.expectedUci) : []
-                ) { move in
-                    let elapsedMs = Int(Date().timeIntervalSince(drillShownAt) * 1000.0)
-                    let hit = move.uci == card.expectedUci
-                    let result = store.recordOpeningAttempt(
-                        cardId: card.cardId,
-                        attempt: OpeningAttemptInput(correct: hit, responseMs: elapsedMs, hintUsed: drillUsedHint)
-                    )
-                    if hit {
-                        _ = try? drillBoard.apply(move)
-                        drillSolved = true
-                        drillFeedback = "Locked in \(card.expectedSan)! FSRS graded \(result?.rating.label ?? "Good")."
-                    } else {
-                        drillFeedback = "Expected a different course move (FSRS graded Again). Try again or tap Hint."
+                    interactive: false,
+                    arrows: activeAnnotation?.arrows ?? [],
+                    highlights: activeAnnotation?.highlights ?? []
+                )
+
+                BrillyGlassCluster(style: store.surfaceStyle, spacing: 10) {
+                    HStack(spacing: 10) {
+                        walkBtn("backward.end.fill", label: "Start of line") { isAutoPlaying = false; walkStep = 0 }
+                        walkBtn("chevron.left", label: "Previous move") { isAutoPlaying = false; walkStep = max(0, clampedStep - 1) }
+                        walkBtn(isAutoPlaying ? "pause.fill" : "play.fill", label: isAutoPlaying ? "Pause" : "Auto play") {
+                            if clampedStep >= line.moves.count { walkStep = 0 }
+                            isAutoPlaying.toggle()
+                        }
+                        walkBtn("chevron.right", label: "Next move") { isAutoPlaying = false; walkStep = min(line.moves.count, clampedStep + 1) }
+                        walkBtn("forward.end.fill", label: "End of line") { isAutoPlaying = false; walkStep = line.moves.count }
                     }
                 }
 
-                Text(drillFeedback)
-                    .font(.subheadline)
-                    .foregroundStyle(drillSolved ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 16)
-
-                HStack(spacing: 10) {
-                    Button {
-                        drillUsedHint = true
-                    } label: {
-                        Label("Hint", systemImage: "lightbulb.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(BrillyPalette.goldAmber)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(clampedStep == 0 ? line.title : "Move \((clampedStep + 1) / 2): \(line.moves[clampedStep - 1])")
+                            .font(.headline)
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Spacer()
+                        Text("\(clampedStep) / \(line.moves.count)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(BrillyPalette.inkSecondary)
                     }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        drillIdx = (drillIdx + 1) % drillCards.count
-                        loadDrillCard()
-                    } label: {
-                        Text(drillSolved ? "Next Card" : "Skip")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(drillSolved ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(drillSolved ? BrillyPalette.brillyTeal : Color.white.opacity(0.10)))
+                    Text(activeAnnotation?.plan ?? line.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    if store.vibeMode == .cosmic, let cue = activeAnnotation?.cosmicCue {
+                        Text(cue)
+                            .font(.caption.italic())
+                            .foregroundStyle(BrillyPalette.brillyTeal)
                     }
-                    .buttonStyle(.plain)
+
+                    if let traps = activeAnnotation?.wrongMoveTraps, !traps.isEmpty {
+                        Divider().overlay(Color.white.opacity(0.1))
+                        ForEach(traps, id: \.playedSan) { trap in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label("Avoid Trap: \(trap.playedSan)", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                Text("Punishment: \(trap.punishmentLine.joined(separator: " ")) — \(trap.reason)")
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .brillySurface(store.surfaceStyle, cornerRadius: 18)
+
+                Button {
+                    store.unlockLine(courseId: course.id, lineId: line.id)
+                    activeTab = .drill
+                } label: {
+                    Label("Unlock & Drill This Line", systemImage: "bolt.fill")
+                        .font(.headline)
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.brillyTeal))
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            Text("This course has no playable lines yet.")
+                .font(.subheadline)
+                .foregroundStyle(BrillyPalette.inkSecondary)
+                .padding(24)
+        }
+    }
+
+    // MARK: - 3. FSRS Signal Strength Drill (Live card lookup + no double FSRS grading!)
+
+    private var drillView: some View {
+        VStack(spacing: 12) {
+            if drillCardIds.isEmpty {
+                Text("No drill cards available for this line.")
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            } else {
+                let safeIdx = min(drillIdx, drillCardIds.count - 1)
+                let cardId = drillCardIds[safeIdx]
+                if let card = store.fsrsCards.first(where: { $0.cardId == cardId }) {
+                    let orient = (try? ChessBoard(fen: card.fen))?.turn ?? course.side.pieceColor
+
+                    HStack {
+                        Text("Card \(safeIdx + 1) / \(drillCardIds.count)")
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                        Spacer()
+                        Text("Recall \(FSRS6Scheduler.recallProbability(for: card))%")
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+
+                    InteractiveChessBoardView(
+                        board: drillBoard,
+                        orientation: orient,
+                        theme: store.boardTheme,
+                        surfaceStyle: store.surfaceStyle,
+                        interactive: !drillSolved,
+                        lastMove: drillLastMove,
+                        arrows: (drillUsedHint && !drillSolved) ? arrowFor(uci: card.expectedUci) : []
+                    ) { move in
+                        let elapsedMs = Int(Date().timeIntervalSince(drillShownAt) * 1000.0)
+                        let hit = move.uci == card.expectedUci
+                        if hit {
+                            if (try? drillBoard.apply(move)) != nil {
+                                drillLastMove = (move.from, move.to)
+                            }
+                            drillSolved = true
+                            if !drillHadMistake {
+                                let result = store.recordOpeningAttempt(
+                                    cardId: card.cardId,
+                                    attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: drillUsedHint)
+                                )
+                                drillFeedback = "Locked in \(card.expectedSan)! FSRS graded \(result?.rating.label ?? "Good")."
+                            } else {
+                                store.triggerHaptic(.success)
+                                drillFeedback = "Got it (\(card.expectedSan))! Scheduled soon after your earlier miss."
+                            }
+                        } else {
+                            if !drillHadMistake {
+                                drillHadMistake = true
+                                _ = store.recordOpeningAttempt(
+                                    cardId: card.cardId,
+                                    attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: drillUsedHint)
+                                )
+                            } else {
+                                store.triggerHaptic(.error)
+                            }
+                            drillFeedback = "Expected a different course move (FSRS graded Again). Try again or tap Hint."
+                        }
+                    }
+
+                    Text(drillFeedback)
+                        .font(.subheadline)
+                        .foregroundStyle(drillSolved ? BrillyPalette.brillyTeal : (drillHadMistake ? BrillyPalette.blunderRose : BrillyPalette.inkPrimary))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            drillUsedHint = true
+                        } label: {
+                            Label("Hint", systemImage: "lightbulb.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(drillSolved)
+
+                        Button {
+                            drillIdx = (safeIdx + 1) % drillCardIds.count
+                            loadDrillCard()
+                        } label: {
+                            Text(drillSolved ? "Next Card" : "Skip")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(drillSolved ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Capsule().fill(drillSolved ? BrillyPalette.brillyTeal : Color.white.opacity(0.10)))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
     }
 
     private func prepareDrill() {
-        store.unlockLine(courseId: course.id, lineId: currentLine.id)
-        drillCards = store.fsrsCards
-            .filter { $0.courseId == course.id && $0.lineId == currentLine.id }
+        guard let line = currentLine else {
+            drillCardIds = []
+            return
+        }
+        store.unlockLine(courseId: course.id, lineId: line.id)
+        drillCardIds = store.fsrsCards
+            .filter { $0.courseId == course.id && $0.lineId == line.id }
             .sorted { $0.ply < $1.ply }
+            .map(\.cardId)
         drillIdx = 0
         loadDrillCard()
     }
 
     private func loadDrillCard() {
-        guard drillIdx < drillCards.count else { return }
-        let card = drillCards[drillIdx]
+        guard drillIdx < drillCardIds.count,
+              let card = store.fsrsCards.first(where: { $0.cardId == drillCardIds[drillIdx] }) else { return }
         drillBoard = (try? ChessBoard(fen: card.fen)) ?? ChessBoard()
+        drillLastMove = nil
         drillShownAt = Date()
         drillUsedHint = false
+        drillHadMistake = false
         drillSolved = false
         drillFeedback = "Move \(card.ply / 2 + 1) — play the repertoire move!"
     }
@@ -610,7 +689,7 @@ private struct CourseDetailSheet: View {
         return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
     }
 
-    private func walkBtn(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func walkBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button {
             store.triggerHaptic(.move)
             action()
@@ -623,6 +702,7 @@ private struct CourseDetailSheet: View {
                 .brillySurface(store.surfaceStyle, cornerRadius: 14, interactive: true)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -652,7 +732,7 @@ private struct TreeNodeRow: View {
             }
             .buttonStyle(.plain)
 
-            ForEach(node.children.prefix(3)) { child in
+            ForEach(node.children) { child in
                 TreeNodeRow(node: child, depth: depth + 1, selectedFen: $selectedFen)
             }
         }

@@ -1,6 +1,8 @@
 import Foundation
 
 public enum ChessComClient {
+    private static let strictUsernameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+
     private struct ArchivesResponse: Decodable {
         let archives: [String]?
     }
@@ -31,42 +33,59 @@ public enum ChessComClient {
     public static func fetchRecentGames(username: String, maxGames: Int = 20) async throws -> [GameRecord] {
         let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { throw SyncError.emptyUsername }
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        guard trimmed.unicodeScalars.allSatisfy({ strictUsernameChars.contains($0) }),
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: strictUsernameChars),
               let archivesUrl = URL(string: "https://api.chess.com/pub/player/\(encoded)/games/archives") else {
             throw SyncError.networkFailure("Invalid Chess.com username.")
         }
 
+        let targetCount = max(1, min(50, maxGames))
         let archivesPayload: ArchivesResponse = try await fetchJSON(from: archivesUrl, username: trimmed)
         let archives = Array((archivesPayload.archives ?? []).suffix(6).reversed())
 
         var collected: [GameRecord] = []
+        var seenIds = Set<String>()
         for archiveStr in archives {
-            if collected.count >= maxGames { break }
+            try Task.checkCancellation()
+            if collected.count >= targetCount { break }
             guard let url = URL(string: archiveStr) else { continue }
-            guard let monthPayload: ArchiveGamesResponse = try? await fetchJSON(from: url, username: trimmed) else {
+            let monthPayload: ArchiveGamesResponse
+            do {
+                monthPayload = try await fetchJSON(from: url, username: trimmed)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let syncErr as SyncError {
+                if case .rateLimited = syncErr { throw syncErr }
+                continue
+            } catch {
                 continue
             }
             let sortedMonth = (monthPayload.games ?? []).sorted { ($0.end_time ?? 0) > ($1.end_time ?? 0) }
             for raw in sortedMonth {
-                if collected.count >= maxGames { break }
+                if collected.count >= targetCount { break }
                 if let rules = raw.rules, rules != "chess" { continue }
-                if let record = normalizeGame(raw, username: trimmed) {
+                if let record = normalizeGame(raw, username: trimmed), seenIds.insert(record.id).inserted {
                     collected.append(record)
                 }
             }
         }
 
-        return collected
+        collected.sort { $0.createdAt > $1.createdAt }
+        return Array(collected.prefix(targetCount))
     }
 
     private static func fetchJSON<T: Decodable>(from url: URL, username: String) async throws -> T {
         var req = URLRequest(url: url, timeoutInterval: 16)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.3 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await URLSession.shared.data(for: req)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let err as URLError where err.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw SyncError.networkFailure("Could not reach Chess.com: \(error.localizedDescription)")
         }
@@ -96,7 +115,7 @@ public enum ChessComClient {
         let res = resultString(white: raw.white?.result, black: raw.black?.result)
         let winner: String? = res == "1-0" ? "white" : (res == "0-1" ? "black" : nil)
         let sanMoves = parsed.moves.map(\.applied.san)
-        let lookup = MoveClassifier.lookupOpening(byMoves: sanMoves)
+        let lookup = parsed.startFen == ChessBoard.initialFEN ? MoveClassifier.lookupOpening(byMoves: sanMoves) : nil
         let openingName = parsed.headers["Opening"] ?? parseOpeningFromEcoUrl(parsed.headers["ECOUrl"]) ?? lookup?.name ?? "Unknown Opening"
         let openingEco = parsed.headers["ECO"] ?? lookup?.eco ?? ""
         let id = raw.uuid ?? raw.url?.split(separator: "/").last.map(String.init) ?? UUID().uuidString
@@ -158,6 +177,6 @@ public enum ChessComClient {
         if mins.truncatingRemainder(dividingBy: 1) == 0 {
             return "\(Int(mins))+\(inc)"
         }
-        return String(format: "%.1f+%d", mins, inc)
+        return String(format: "%.1f+%d", locale: Locale(identifier: "en_US_POSIX"), mins, inc)
     }
 }

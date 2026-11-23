@@ -13,7 +13,7 @@ public struct InsightsTabView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    // MARK: - Active Scout Gameplan Card (when Scout Mode is active!)
+                    // MARK: - Active Scout Gameplan Card
                     if let plan = store.scoutGameplan {
                         scoutGameplanCard(plan)
                     }
@@ -25,12 +25,18 @@ public struct InsightsTabView: View {
                                 .font(.title2)
                                 .foregroundStyle(BrillyPalette.blunderRose)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(store.copy(cosmic: "Tilt Thrusters Overheating (\(adv.currentLossStreak)L Streak)", classic: "Stop-Loss Alert (\(adv.currentLossStreak) Losses in a Row)"))
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.blunderRose)
-                                Text("Take a 15-minute breather or run a quick 60s Gravity Check before queueing again.")
-                                    .font(.caption)
-                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                Text(store.copy(
+                                    cosmic: "Tilt Thrusters Overheating (\(adv.currentLossStreak)L Streak)",
+                                    classic: "Stop-Loss Alert (\(adv.currentLossStreak) Losses in a Row)"
+                                ))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                                Text(store.copy(
+                                    cosmic: "Take a 15-minute breather or run a quick 60s Gravity Check before queueing again.",
+                                    classic: "Take a short break or run a 60-second warmup before queueing again."
+                                ))
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
                             }
                             Spacer()
                         }
@@ -43,13 +49,22 @@ public struct InsightsTabView: View {
                             Image(systemName: "chart.xyaxis.line")
                                 .font(.system(size: 44))
                                 .foregroundStyle(BrillyPalette.brillyTeal)
-                            Text("No Telemetry Yet")
+                            Text(store.copy(cosmic: "No Telemetry Yet", classic: "No Analytics Yet"))
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
                             Text("Sync your games and run Batch Analyze in the Games tab to unlock Accuracy Rings, Clock Leaks, Tilt Guard, Missed Motifs, and Endgame Weaknesses.")
                                 .font(.subheadline)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                 .multilineTextAlignment(.center)
+                            Button("Go to Games") {
+                                store.selectedTab = .games
+                            }
+                            .font(.headline)
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 11)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .buttonStyle(.plain)
                         }
                         .padding(26)
                         .brillySurface(store.surfaceStyle, cornerRadius: 24)
@@ -104,12 +119,12 @@ public struct InsightsTabView: View {
                         .padding(18)
                         .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
 
-                        // MARK: - 1.5. Accuracy Trend & 20-Game Checkpoints
-                        accuracyTrendAndCheckpointsCard(adv: adv)
+                        // MARK: - 1.5. Accuracy Trend & 20-Game Checkpoints (Scoped Strictly to Recent 20!)
+                        accuracyTrendAndCheckpointsCard()
 
                         // MARK: - 2. Clock Leaks & Tilt Guard
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Clock Leaks & Tilt Guard")
+                            Text(store.copy(cosmic: "Clock Leaks & Tilt Guard", classic: "Time Management & Tilt"))
                                 .font(.headline)
                                 .foregroundStyle(BrillyPalette.inkPrimary)
 
@@ -185,7 +200,7 @@ public struct InsightsTabView: View {
                             .brillySurface(store.surfaceStyle, cornerRadius: 20)
                         }
 
-                        // MARK: - 5. Endgame Weakness Tracker (Routes Straight to Syzygy Lab!)
+                        // MARK: - 5. Endgame Weakness Tracker
                         if !adv.endgameWeaknesses.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Endgame Weakness Tracker")
@@ -249,46 +264,54 @@ public struct InsightsTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 32)
+                .padding(.bottom, 84)
             }
         }
         .navigationTitle("Insights")
     }
 
-    private func accuracyTrendAndCheckpointsCard(adv: AdvancedInsightsReport) -> some View {
-        let recent = Array(store.analyzedGames.sorted { $0.game.createdAt < $1.game.createdAt }.suffix(20))
+    private func accuracyTrendAndCheckpointsCard() -> some View {
+        let handles = store.userHandles
+        let validGames = store.analyzedGames.filter { !$0.plies.isEmpty && !$0.game.isCustomFenGame }
+        let recent = Array(validGames.sorted { $0.game.createdAt < $1.game.createdAt }.suffix(20))
         let accPoints: [Double] = recent.map { ag in
-            let c = ag.game.userColor ?? .white
+            let c = ag.game.resolvedUserColor(handles: handles) ?? .white
             return (c == .white ? ag.whiteSummary : ag.blackSummary).accuracy
         }
         let evalAt10List: [Double] = recent.compactMap { ag in
             guard ag.plies.count >= 18 else { return nil }
-            let c = ag.game.userColor ?? .white
+            let c = ag.game.resolvedUserColor(handles: handles) ?? .white
             let cp = ag.plies[min(19, ag.plies.count - 1)].evalAfter.cpWhite
             return Double(c == .white ? cp : -cp) / 100.0
         }
         let avgEval10 = evalAt10List.isEmpty ? 0.0 : evalAt10List.reduce(0, +) / Double(evalAt10List.count)
-        let impulsePerGame = Double(adv.impulseBlunders) / Double(max(1, recent.count))
-        let blownPct = Double(store.blownLeads.count) / Double(max(1, recent.count)) * 100.0
+
+        // Compute impulse & blown lead metrics strictly over the same `recent` 20-game window (never >100%)
+        let recentReport = AdvancedInsightsService.buildReport(analyzedGames: recent, handles: handles)
+        let recentBlownCount = WoodpeckerAndConversion.extractBlownLeads(from: recent, handles: handles).count
+        let impulsePerGame = Double(recentReport.impulseBlunders) / Double(max(1, recent.count))
+        let blownPct = min(100.0, Double(recentBlownCount) / Double(max(1, recent.count)) * 100.0)
 
         return VStack(alignment: .leading, spacing: 12) {
-            Text("20-Game Checkpoints & Accuracy Trend")
+            Text("Last \(recent.count)-Game Checkpoints & Accuracy Trend")
                 .font(.headline)
                 .foregroundStyle(BrillyPalette.inkPrimary)
 
             if accPoints.count >= 2 {
                 Canvas { ctx, size in
+                    let pad: CGFloat = 6
+                    let usableW = max(1, size.width - pad * 2)
                     var path = Path()
                     for (i, acc) in accPoints.enumerated() {
-                        let x = CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * size.width
-                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.05, max: 0.98)))
+                        let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
+                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
                         if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
                         else { path.addLine(to: CGPoint(x: x, y: y)) }
                     }
                     ctx.stroke(path, with: .color(BrillyPalette.brillyTeal), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
                     for (i, acc) in accPoints.enumerated() {
-                        let x = CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * size.width
-                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.05, max: 0.98)))
+                        let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
+                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
                         ctx.fill(Path(ellipseIn: CGRect(x: x - 3, y: y - 3, width: 6, height: 6)), with: .color(BrillyPalette.brillyTeal))
                     }
                 }

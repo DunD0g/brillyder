@@ -14,7 +14,6 @@ public struct TrainTabView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    // Clean Daily-First Mode Strip (15m Coach default; Woodpecker / Convert / Mistakes / Labs one tap away)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(TrainSubMode.allCases) { mode in
@@ -50,7 +49,7 @@ public struct TrainTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .padding(.bottom, 32)
+                .padding(.bottom, 84)
             }
         }
         .navigationTitle(store.copy(cosmic: "BrillyDer", classic: "Train"))
@@ -66,153 +65,156 @@ public struct TrainTabView: View {
 
     @ViewBuilder
     private func dailyCoachBody(plan: DailyWorkoutPlan) -> some View {
-        // MARK: - 1. Daily-First 15m Coach Hero
+        // MARK: - 1. Daily-First Coach Hero
         VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(store.copy(cosmic: "DAILY FLIGHT PLAN", classic: "DAILY IMPROVEMENT PLAN"))
-                                    .font(.caption.weight(.bold))
-                                    .tracking(1.1)
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(store.copy(cosmic: "DAILY FLIGHT PLAN", classic: "DAILY IMPROVEMENT PLAN"))
+                        .font(.caption.weight(.bold))
+                        .tracking(1.1)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
 
-                                Text(store.copy(cosmic: "15-Minute Orbit Coach", classic: "Daily Guided Coach"))
-                                    .font(.title2.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.inkPrimary)
-                            }
-                            Spacer()
-                            Label("\(store.dueOpeningCount) due", systemImage: "brain.head.profile")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                    Text(store.copy(
+                        cosmic: "\(store.dailyDuration.rawValue)-Minute Orbit Coach",
+                        classic: "\(store.dailyDuration.rawValue)-Minute Daily Coach"
+                    ))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                }
+                Spacer()
+                Label("\(store.dueOpeningCount) due", systemImage: "brain.head.profile")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+            }
+
+            // Duration Picker (10m | 15m | 25m)
+            HStack(spacing: 8) {
+                ForEach(DailyDurationMinutes.allCases) { dur in
+                    let selected = store.dailyDuration == dur
+                    Button {
+                        withAnimation(.snappy) {
+                            store.dailyDuration = dur
                         }
-
-                        // Duration Picker (10m | 15m | 25m)
-                        HStack(spacing: 8) {
-                            ForEach(DailyDurationMinutes.allCases) { dur in
-                                let selected = store.dailyDuration == dur
-                                Button {
-                                    withAnimation(.snappy) {
-                                        store.dailyDuration = dur
-                                    }
-                                } label: {
-                                    Text(dur.label)
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-
-                        // 4-Stage Summary Grid
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            stageChip(
-                                title: "1. Openings",
-                                value: "\(plan.stage1OpeningCards.count) FSRS",
-                                icon: "book.fill",
-                                tint: BrillyPalette.brillyTeal
-                            )
-                            stageChip(
-                                title: "2. Blunders",
-                                value: "\(plan.stage2Blunders.count) Rewind",
-                                icon: "arrow.uturn.backward.circle.fill",
-                                tint: BrillyPalette.blunderRose
-                            )
-                            stageChip(
-                                title: "3. Speed",
-                                value: "\(plan.stage3SpeedDrills.count) Patterns",
-                                icon: "bolt.fill",
-                                tint: BrillyPalette.warpPurple
-                            )
-                            stageChip(
-                                title: "4. Target",
-                                value: plan.stage4FocusLabel,
-                                icon: "scope",
-                                tint: BrillyPalette.goldAmber
-                            )
-                        }
-
-                        Button {
-                            showingDailySession = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "play.fill")
-                                Text(store.copy(cosmic: "Launch \(store.dailyDuration.label) Mission", classic: "Start \(store.dailyDuration.label) Daily Session"))
-                                    .fontWeight(.bold)
-                            }
-                            .font(.headline)
-                            .foregroundStyle(BrillyPalette.voidBg)
+                    } label: {
+                        Text(dur.label)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 8)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [BrillyPalette.brillyTeal, Color(hex: 0x06B6D4)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
+                                Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
                             )
-                        }
-                        .buttonStyle(.plain)
                     }
-                    .padding(18)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
+                    .buttonStyle(.plain)
+                }
+            }
 
-                    // MARK: - 2. 60-Second Gravity Check
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(BrillyPalette.warpPurple.opacity(0.22))
-                                .frame(width: 48, height: 48)
-                            Image(systemName: "timer")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(BrillyPalette.warpPurple)
-                        }
+            // 4-Stage Summary Grid
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                stageChip(
+                    title: "1. Openings",
+                    value: "\(plan.stage1OpeningCards.count) FSRS",
+                    icon: "book.fill",
+                    tint: BrillyPalette.brillyTeal
+                )
+                stageChip(
+                    title: "2. Blunders",
+                    value: "\(plan.stage2Blunders.count) Rewind",
+                    icon: "arrow.uturn.backward.circle.fill",
+                    tint: BrillyPalette.blunderRose
+                )
+                stageChip(
+                    title: "3. Speed",
+                    value: "\(plan.stage3SpeedDrills.count) Patterns",
+                    icon: "bolt.fill",
+                    tint: BrillyPalette.warpPurple
+                )
+                stageChip(
+                    title: "4. Target",
+                    value: plan.stage4Drills.isEmpty ? plan.stage4FocusLabel : "\(plan.stage4Drills.count) \(plan.stage4FocusLabel)",
+                    icon: "scope",
+                    tint: BrillyPalette.goldAmber
+                )
+            }
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(store.copy(cosmic: "60s Gravity Check", classic: "60-Second Warmup"))
-                                .font(.headline)
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text("4 rapid-fire tactics & opening flashes before you play.")
-                                .font(.caption)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
-                        }
-
-                        Spacer()
-
-                        Button("Go") {
-                            showingGravityCheck = true
-                        }
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(BrillyPalette.inkPrimary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                        .buttonStyle(.plain)
-                    }
-                    .padding(16)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
-
-                    // MARK: - 3. Quick Status Row (Tucked Cleanly Below Hero)
-                    HStack(spacing: 12) {
-                        statCard(
-                            label: "Analyzed Games",
-                            value: "\(store.analyzedGames.count)",
-                            tint: BrillyPalette.brillyTeal
+            Button {
+                showingDailySession = true
+            } label: {
+                HStack {
+                    Image(systemName: "play.fill")
+                    Text(store.copy(cosmic: "Launch \(store.dailyDuration.label) Mission", classic: "Start \(store.dailyDuration.label) Daily Session"))
+                        .fontWeight(.bold)
+                }
+                .font(.headline)
+                .foregroundStyle(BrillyPalette.voidBg)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [BrillyPalette.brillyTeal, Color(hex: 0x06B6D4)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                        statCard(
-                            label: "Mistake Deck",
-                            value: "\(store.mistakeDeck.count)",
-                            tint: BrillyPalette.blunderRose
-                        )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
+
+        // MARK: - 2. 60-Second Gravity Check
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(BrillyPalette.warpPurple.opacity(0.22))
+                    .frame(width: 48, height: 48)
+                Image(systemName: "timer")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(BrillyPalette.warpPurple)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(store.copy(cosmic: "60s Gravity Check", classic: "60-Second Warmup"))
+                    .font(.headline)
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                Text("4 rapid-fire tactics & opening flashes before you play.")
+                    .font(.caption)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+
+            Spacer()
+
+            Button("Go") {
+                showingGravityCheck = true
+            }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(BrillyPalette.inkPrimary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
+
+        // MARK: - 3. Quick Status Row
+        HStack(spacing: 12) {
+            statCard(
+                label: "Analyzed Games",
+                value: "\(store.analyzedGames.count)",
+                tint: BrillyPalette.brillyTeal
+            )
+            statCard(
+                label: "Mistake Deck",
+                value: "\(store.mistakeDeck.count)",
+                tint: BrillyPalette.blunderRose
+            )
             statCard(
                 label: "Bookmarks",
                 value: "\(store.bookmarks.count)",
@@ -290,14 +292,16 @@ private struct DailySessionSheet: View {
     @State private var board: ChessBoard = ChessBoard()
     @State private var statusMessage: String = "Find the strongest repertoire or tactical move."
     @State private var isSolved: Bool = false
+    @State private var hadMistakeOnCurrent: Bool = false
     @State private var usedHint: Bool = false
     @State private var shownAt: Date = Date()
-    @State private var correctCount: Int = 0
+    @State private var cleanSolveCount: Int = 0
     @State private var lastMove: (from: Square, to: Square)? = nil
 
     private func buildInitialSteps() -> [DrillStep] {
-        let courseNames = Dictionary(uniqueKeysWithValues: store.allCourses.map { ($0.id, $0.name) })
+        let courseNames = Dictionary(store.allCourses.map { ($0.id, $0.name) }, uniquingKeysWith: { _, latest in latest })
         var out: [DrillStep] = []
+
         for c in plan.stage1OpeningCards {
             let fenBoard = try? ChessBoard(fen: c.fen)
             let sideToMove = fenBoard?.turn ?? c.side.pieceColor
@@ -339,6 +343,19 @@ private struct DailySessionSheet: View {
                 cardId: nil
             ))
         }
+        for p in plan.stage4Drills {
+            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
+            out.append(DrillStep(
+                id: "s4_\(p.id)",
+                stageTitle: "Stage 4 · \(plan.stage4FocusLabel) (\(sideToMove.displayName))",
+                fen: p.fen,
+                orientation: sideToMove,
+                expectedUci: p.bestMoveUci,
+                expectedSan: p.bestMoveSan,
+                prompt: p.headline,
+                cardId: nil
+            ))
+        }
         if out.isEmpty {
             for fb in DailyCoachPlanner.fallbackGravityFlashes {
                 let sideToMove = (try? ChessBoard(fen: fb.fen))?.turn ?? fb.orientation
@@ -370,7 +387,7 @@ private struct DailySessionSheet: View {
                         Text(store.copy(cosmic: "Orbit Complete!", classic: "Daily Session Complete!"))
                             .font(.title2.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                        Text("Solved \(correctCount) / \(frozenSteps.count) positions cleanly.")
+                        Text("Solved \(cleanSolveCount) / \(frozenSteps.count) positions on first try.")
                             .foregroundStyle(BrillyPalette.inkSecondary)
                         Button("Finish & Log Streak") {
                             store.markDailySessionCompleted()
@@ -388,77 +405,80 @@ private struct DailySessionSheet: View {
                     .padding()
                 } else if stepIndex < frozenSteps.count {
                     let current = frozenSteps[stepIndex]
-                    VStack(spacing: 14) {
-                        HStack {
-                            Text(current.stageTitle)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .lineLimit(1)
-                            Spacer()
-                            Text("\(stepIndex + 1) / \(frozenSteps.count)")
-                                .font(.caption.monospacedDigit().weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkSecondary)
-                        }
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            HStack {
+                                Text(current.stageTitle)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(stepIndex + 1) / \(frozenSteps.count)")
+                                    .font(.caption.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
 
-                        TractorBeamProgressBar(
-                            progress: Double(stepIndex + (isSolved ? 1 : 0)) / Double(max(1, frozenSteps.count)),
-                            height: 9
-                        )
+                            TractorBeamProgressBar(
+                                progress: Double(stepIndex + (isSolved ? 1 : 0)) / Double(max(1, frozenSteps.count)),
+                                height: 9
+                            )
 
-                        InteractiveChessBoardView(
-                            board: board,
-                            orientation: current.orientation,
-                            theme: store.boardTheme,
-                            surfaceStyle: store.surfaceStyle,
-                            interactive: !isSolved,
-                            lastMove: lastMove,
-                            arrows: usedHint ? hintArrows(for: current.expectedUci) : []
-                        ) { move in
-                            handleMove(move, for: current)
-                        }
+                            InteractiveChessBoardView(
+                                board: board,
+                                orientation: current.orientation,
+                                theme: store.boardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: !isSolved,
+                                lastMove: lastMove,
+                                arrows: (usedHint && !isSolved) ? hintArrows(for: current.expectedUci) : []
+                            ) { move in
+                                handleMove(move, for: current)
+                            }
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(current.prompt)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text(statusMessage)
-                                .font(.caption)
-                                .foregroundStyle(isSolved ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
-
-                        HStack(spacing: 10) {
-                            Button {
-                                usedHint = true
-                                statusMessage = "Hint: Look closely at \(current.expectedSan.prefix(2))…"
-                            } label: {
-                                Label("Hint", systemImage: "lightbulb.fill")
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(current.prompt)
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(BrillyPalette.goldAmber)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                Text(statusMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(isSolved ? BrillyPalette.brillyTeal : (hadMistakeOnCurrent ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary))
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
-                            Button {
-                                advanceStep()
-                            } label: {
-                                Label(isSolved ? "Next" : "Skip", systemImage: "arrow.right")
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(isSolved ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .background(
-                                        Capsule().fill(isSolved ? BrillyPalette.brillyTeal : Color.white.opacity(0.10))
-                                    )
+                            HStack(spacing: 10) {
+                                Button {
+                                    usedHint = true
+                                    statusMessage = "Hint: Look closely at \(current.expectedSan.prefix(2))…"
+                                } label: {
+                                    Label("Hint", systemImage: "lightbulb.fill")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.goldAmber)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(isSolved)
+
+                                Button {
+                                    advanceStep()
+                                } label: {
+                                    Label(isSolved ? "Next" : "Skip", systemImage: "arrow.right")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(isSolved ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(
+                                            Capsule().fill(isSolved ? BrillyPalette.brillyTeal : Color.white.opacity(0.10))
+                                        )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
             .navigationTitle("Daily Coach")
@@ -483,6 +503,7 @@ private struct DailySessionSheet: View {
         board = (try? ChessBoard(fen: cur.fen)) ?? ChessBoard()
         lastMove = nil
         isSolved = false
+        hadMistakeOnCurrent = false
         usedHint = false
         shownAt = Date()
         statusMessage = "Play \(cur.orientation.displayName)'s move on the board."
@@ -495,23 +516,34 @@ private struct DailySessionSheet: View {
                 lastMove = (move.from, move.to)
             }
             isSolved = true
-            correctCount += 1
-            if let cardId = step.cardId {
-                let res = store.recordOpeningAttempt(
-                    cardId: cardId,
-                    attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: usedHint)
-                )
-                statusMessage = "Spot on (\(step.expectedSan)) · FSRS rated \(res?.rating.label ?? "Good")!"
+            if !hadMistakeOnCurrent {
+                cleanSolveCount += 1
+                if let cardId = step.cardId {
+                    let res = store.recordOpeningAttempt(
+                        cardId: cardId,
+                        attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: usedHint)
+                    )
+                    statusMessage = "Spot on (\(step.expectedSan)) · FSRS rated \(res?.rating.label ?? "Good")!"
+                } else {
+                    store.triggerHaptic(.success)
+                    statusMessage = "Spot on! \(step.expectedSan) is the engine's top move."
+                }
             } else {
+                // Already recorded FSRS lapse on first miss — don't double-grade!
                 store.triggerHaptic(.success)
-                statusMessage = "Spot on! \(step.expectedSan) is the engine's top move."
+                statusMessage = "Got it (\(step.expectedSan))! Scheduled soon for spaced reinforcement."
             }
         } else {
-            if let cardId = step.cardId {
-                _ = store.recordOpeningAttempt(
-                    cardId: cardId,
-                    attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: usedHint)
-                )
+            if !hadMistakeOnCurrent {
+                hadMistakeOnCurrent = true
+                if let cardId = step.cardId {
+                    _ = store.recordOpeningAttempt(
+                        cardId: cardId,
+                        attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: usedHint)
+                    )
+                } else {
+                    store.triggerHaptic(.error)
+                }
             } else {
                 store.triggerHaptic(.error)
             }
@@ -537,23 +569,31 @@ private struct GravityCheckSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var items: [GravityFlashItem] = []
+    @State private var initialized: Bool = false
     @State private var index: Int = 0
     @State private var board: ChessBoard = ChessBoard()
+    @State private var lastMove: (from: Square, to: Square)? = nil
     @State private var score: Int = 0
     @State private var feedback: String = ""
+    @State private var lastWasHit: Bool? = nil
+    @State private var awaitingNext: Bool = false
     @State private var finished: Bool = false
+    @State private var remainingSec: Int = 60
+    @State private var itemShownAt: Date = Date()
+    @State private var timerTask: Task<Void, Never>? = nil
+    @State private var advanceTask: Task<Void, Never>? = nil
 
     var body: some View {
         NavigationStack {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
 
-                if finished || items.isEmpty {
+                if initialized && (finished || items.isEmpty) {
                     VStack(spacing: 16) {
                         Text("\(score) / \(max(1, items.count))")
                             .font(.system(size: 48, weight: .black, design: .rounded))
                             .foregroundStyle(BrillyPalette.brillyTeal)
-                        Text(score == items.count ? "Locked In — Ready to Queue!" : "Warmed Up & Sharp!")
+                        Text(score == items.count && !items.isEmpty ? "Locked In — Ready to Queue!" : (remainingSec == 0 ? "Time's Up — Nice Warmup!" : "Warmed Up & Sharp!"))
                             .font(.title3.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
                         Button("Done") { dismiss() }
@@ -566,63 +606,67 @@ private struct GravityCheckSheet: View {
                     }
                     .padding(28)
                     .brillySurface(store.surfaceStyle, cornerRadius: 24)
-                } else {
+                    .padding()
+                } else if initialized && index < items.count {
                     let cur = items[index]
-                    VStack(spacing: 14) {
-                        HStack {
-                            Text(cur.subtitle)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.warpPurple)
-                            Spacer()
-                            Text("Flash \(index + 1) / \(items.count)")
-                                .font(.caption.monospacedDigit().weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkSecondary)
-                        }
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            HStack {
+                                Text(cur.subtitle)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.warpPurple)
+                                Spacer()
+                                Label("\(remainingSec)s", systemImage: "timer")
+                                    .font(.caption.monospacedDigit().weight(.black))
+                                    .foregroundStyle(remainingSec <= 10 ? BrillyPalette.blunderRose : BrillyPalette.goldAmber)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                                Text("\(index + 1) / \(items.count)")
+                                    .font(.caption.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
 
-                        InteractiveChessBoardView(
-                            board: board,
-                            orientation: cur.orientation,
-                            theme: store.boardTheme,
-                            surfaceStyle: store.surfaceStyle
-                        ) { move in
-                            let hit = move.uci == cur.expectedUci
-                            if hit {
-                                score += 1
-                                store.triggerHaptic(.success)
-                                feedback = "Direct hit: \(cur.expectedSan)!"
-                            } else {
-                                store.triggerHaptic(.error)
-                                feedback = "Best was \(cur.expectedSan)."
+                            InteractiveChessBoardView(
+                                board: board,
+                                orientation: cur.orientation,
+                                theme: store.boardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: !awaitingNext,
+                                lastMove: lastMove
+                            ) { move in
+                                handleFlashMove(move, item: cur)
                             }
-                            if let cardId = cur.cardId {
-                                _ = store.recordOpeningAttempt(
-                                    cardId: cardId,
-                                    attempt: OpeningAttemptInput(correct: hit, responseMs: 3200)
-                                )
-                            }
-                            if index + 1 < items.count {
-                                index += 1
-                                board = (try? ChessBoard(fen: items[index].fen)) ?? ChessBoard()
-                            } else {
-                                finished = true
-                            }
-                        }
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(cur.prompt)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                            if !feedback.isEmpty {
-                                Text(feedback)
-                                    .font(.caption)
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(cur.prompt)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                if !feedback.isEmpty {
+                                    Text(feedback)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(lastWasHit == true ? BrillyPalette.brillyTeal : BrillyPalette.blunderRose)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                            if awaitingNext {
+                                Button("Continue") {
+                                    advanceTask?.cancel()
+                                    moveToNextItem()
+                                }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                .buttonStyle(.plain)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
             .navigationTitle(store.copy(cosmic: "Gravity Check", classic: "60s Warmup"))
@@ -632,14 +676,98 @@ private struct GravityCheckSheet: View {
                 }
             }
             .onAppear {
-                items = DailyCoachPlanner.buildGravityCheckFlashes(
-                    fsrsCards: store.fsrsCards,
-                    mistakeDeck: store.mistakeDeck
-                )
-                if let first = items.first {
-                    board = (try? ChessBoard(fen: first.fen)) ?? ChessBoard()
+                if !initialized {
+                    items = DailyCoachPlanner.buildGravityCheckFlashes(
+                        fsrsCards: store.fsrsCards,
+                        mistakeDeck: store.mistakeDeck
+                    )
+                    initialized = true
+                    loadItem(at: 0)
+                    startCountdown()
+                }
+            }
+            .onDisappear {
+                timerTask?.cancel()
+                advanceTask?.cancel()
+            }
+        }
+    }
+
+    private func loadItem(at idx: Int) {
+        guard idx < items.count else {
+            finishSession()
+            return
+        }
+        let item = items[idx]
+        board = (try? ChessBoard(fen: item.fen)) ?? ChessBoard()
+        lastMove = nil
+        feedback = ""
+        lastWasHit = nil
+        awaitingNext = false
+        itemShownAt = Date()
+    }
+
+    private func handleFlashMove(_ move: ChessMove, item: GravityFlashItem) {
+        guard !awaitingNext else { return }
+        let elapsedMs = max(200, Int(Date().timeIntervalSince(itemShownAt) * 1000.0))
+        let hit = move.uci == item.expectedUci
+        if let _ = try? board.apply(move) {
+            lastMove = (move.from, move.to)
+        }
+        lastWasHit = hit
+        awaitingNext = true
+
+        if hit {
+            score += 1
+            store.triggerHaptic(.success)
+            feedback = "Direct hit: \(item.expectedSan)!"
+        } else {
+            store.triggerHaptic(.error)
+            feedback = "Best was \(item.expectedSan)."
+        }
+
+        if let cardId = item.cardId {
+            _ = store.recordOpeningAttempt(
+                cardId: cardId,
+                attempt: OpeningAttemptInput(correct: hit, responseMs: elapsedMs)
+            )
+        }
+
+        advanceTask?.cancel()
+        advanceTask = Task {
+            try? await Task.sleep(for: .milliseconds(850))
+            guard !Task.isCancelled else { return }
+            moveToNextItem()
+        }
+    }
+
+    private func moveToNextItem() {
+        if index + 1 < items.count {
+            index += 1
+            loadItem(at: index)
+        } else {
+            finishSession()
+        }
+    }
+
+    private func startCountdown() {
+        timerTask?.cancel()
+        remainingSec = 60
+        timerTask = Task {
+            while !Task.isCancelled && remainingSec > 0 && !finished {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled || finished { break }
+                remainingSec -= 1
+                if remainingSec <= 0 {
+                    finishSession()
                 }
             }
         }
+    }
+
+    private func finishSession() {
+        timerTask?.cancel()
+        advanceTask?.cancel()
+        finished = true
     }
 }

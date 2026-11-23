@@ -7,6 +7,11 @@ on:
       - "ios/**"
       - ".github/workflows/ios-ipa.yml"
       - "src/data/starterCourses.json"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ipa.yml"
+      - "src/data/starterCourses.json"
   workflow_dispatch:
     inputs:
       configuration:
@@ -51,6 +56,8 @@ jobs:
 
       - name: Install XcodeGen and generate BrillyDer.xcodeproj
         working-directory: ios
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
           command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
           xcodegen generate
@@ -82,6 +89,7 @@ jobs:
           test -d "$APP_PATH"
           test -f "$APP_PATH/PrivacyInfo.xcprivacy"
           /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$APP_PATH/Info.plist"
           find "$APP_PATH" -name "starterCourses.json" | grep -q "starterCourses.json"
 
           rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa
@@ -98,17 +106,17 @@ jobs:
             echo "- **Artifact:** \`BrillyDer-iOS-unsigned.ipa\` ($IPA_SIZE)"
             echo "- **Configuration:** \`$BUILD_CONFIG\`"
             echo "- **iOS SDK:** \`$(xcrun --sdk iphoneos --show-sdk-version)\`"
-            echo "- **Checks Verified:** \`swift test\` passed, \`PrivacyInfo.xcprivacy\` & \`starterCourses.json\` bundled."
+            echo "- **Checks Verified:** \`swift test\` passed, \`PrivacyInfo.xcprivacy\`, \`UILaunchScreen\`, \`NSPhotoLibraryAddUsageDescription\` & \`starterCourses.json\` bundled."
             echo ""
             echo "### Installing on your iPhone"
             echo "- **Sideload (free Apple ID):** Download the artifact zip, extract \`BrillyDer-iOS-unsigned.ipa\`, and install via **AltStore**, **SideStore**, or **Sideloadly**."
-            echo "- **Xcode / TestFlight:** Once Xcode 26 is installed locally, run \`cd ios && xcodegen generate && open BrillyDer.xcodeproj\` to sign & deploy directly via ⌘R or Archive to TestFlight."
+            echo "- **Xcode / TestFlight:** Run \`cd ios && xcodegen generate && open BrillyDer.xcodeproj\` to sign & deploy directly via ⌘R or Archive to TestFlight."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload BrillyDer-iOS-unsigned.ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BrillyDer-iOS-unsigned-ipa
+          name: ${{ (inputs.configuration || 'Release') == 'Release' && 'BrillyDer-iOS-unsigned-ipa' || 'BrillyDer-iOS-unsigned-debug-ipa' }}
           path: ios/build/BrillyDer-iOS-unsigned.ipa
           retention-days: 30
           if-no-files-found: error

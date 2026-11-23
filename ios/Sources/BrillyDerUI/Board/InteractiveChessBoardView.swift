@@ -11,9 +11,14 @@ public struct MoveBadgeOverlay: Equatable, Sendable {
     }
 }
 
-/// 120Hz native SwiftUI interactive chessboard (tap-to-move + drag-to-move, legal hints,
-/// coaching arrows, rank-8 safe classification badge, dismissible promotion overlay).
+/// 120Hz native SwiftUI interactive chessboard (tap-to-move + drag-to-move, legal & en-passant hints,
+/// single-layer vector coaching arrows, rank-8 safe classification badge, dismissible promotion overlay).
 public struct InteractiveChessBoardView: View {
+    private struct BoardDragState: Equatable {
+        var fromSquare: Square? = nil
+        var location: CGPoint? = nil
+    }
+
     let board: ChessBoard
     let orientation: PieceColor
     let theme: BoardThemeID
@@ -26,8 +31,7 @@ public struct InteractiveChessBoardView: View {
     let onMove: ((ChessMove) -> Void)?
 
     @State private var selectedSquare: Square? = nil
-    @State private var draggedFrom: Square? = nil
-    @State private var dragLocation: CGPoint? = nil
+    @GestureState private var dragState = BoardDragState()
     @State private var pendingPromotion: (from: Square, to: Square, color: PieceColor)? = nil
 
     public init(
@@ -54,20 +58,27 @@ public struct InteractiveChessBoardView: View {
         self.onMove = onMove
     }
 
-    private var legalFromSelected: [ChessMove] {
-        guard let sq = selectedSquare ?? draggedFrom else { return [] }
-        return board.legalMoves(from: sq)
-    }
-
-    private var legalTargets: Set<Square> {
-        Set(legalFromSelected.map(\.to))
-    }
-
     public var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let sqSize = side / 8.0
             let checkedKingSq: Square? = board.isInCheck() ? board.kingSquare(for: board.turn) : nil
+
+            // Compute once per frame before the 8x8 grid (eliminates 64x redundant legalMoves() calls)
+            let activeSource = dragState.fromSquare ?? selectedSquare
+            let activeLegalMoves: [ChessMove] = activeSource.map { board.legalMoves(from: $0) } ?? []
+            let legalTargets = Set(activeLegalMoves.map(\.to))
+            let epCaptureSq: Square? = {
+                guard let src = activeSource,
+                      board[src]?.type == .pawn,
+                      let ep = board.enPassantSquare,
+                      legalTargets.contains(ep) else { return nil }
+                return ep
+            }()
+            let highlightMap: [String: ArrowKind] = Dictionary(
+                highlights.map { ($0.square.lowercased(), $0.color) },
+                uniquingKeysWith: { _, latest in latest }
+            )
 
             ZStack(alignment: .topLeading) {
                 // 1. 64 Squares Grid
@@ -81,6 +92,10 @@ public struct InteractiveChessBoardView: View {
                                     row: row,
                                     col: col,
                                     sqSize: sqSize,
+                                    activeSource: activeSource,
+                                    legalTargets: legalTargets,
+                                    epCaptureSq: epCaptureSq,
+                                    highlightColor: highlightMap[sq.algebraic],
                                     checkedKingSq: checkedKingSq
                                 )
                             }
@@ -94,7 +109,7 @@ public struct InteractiveChessBoardView: View {
                         .strokeBorder(Color.white.opacity(surfaceStyle == .liquidGlass ? 0.22 : 0.12), lineWidth: 1)
                 )
 
-                // 2. Vector Coaching Arrows
+                // 2. Single-layer Vector Coaching Arrows (no alpha overlap seam between shaft & head)
                 if !arrows.isEmpty {
                     Canvas { ctx, size in
                         let cell = size.width / 8.0
@@ -110,25 +125,26 @@ public struct InteractiveChessBoardView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 3. Move Classification Badge (safely inside upper-right corner — never clipped on rank 8!)
-                if let badge = moveBadge {
+                // 3. Move Classification Badge (safely inside upper-right corner — never clipped on rank 8)
+                if let badge = moveBadge, sqSize >= 20 {
                     let pt = topRightCorner(for: badge.square, sqSize: sqSize)
                     let badgeSize = max(18, sqSize * 0.36)
+                    let fg = BrillyPalette.badgeForeground(for: badge.classification)
                     ZStack {
                         Circle()
                             .fill(BrillyPalette.color(for: badge.classification))
                         if badge.classification == .book {
                             Image(systemName: "book.fill")
                                 .font(.system(size: badgeSize * 0.48, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(fg)
                         } else if badge.classification == .best {
                             Image(systemName: "star.fill")
                                 .font(.system(size: badgeSize * 0.48, weight: .bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(fg)
                         } else {
                             Text(badge.classification.symbol)
                                 .font(.system(size: badgeSize * 0.54, weight: .black, design: .rounded))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(fg)
                         }
                     }
                     .frame(width: badgeSize, height: badgeSize)
@@ -138,9 +154,9 @@ public struct InteractiveChessBoardView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 4. Lifted Dragged Piece
-                if let fromSq = draggedFrom,
-                   let loc = dragLocation,
+                // 4. Lifted Dragged Piece (auto-resets on system cancellation via @GestureState)
+                if let fromSq = dragState.fromSquare,
+                   let loc = dragState.location,
                    let piece = board[fromSq] {
                     ChessPieceView(piece: piece, squareSize: sqSize * 1.18)
                         .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
@@ -157,47 +173,55 @@ public struct InteractiveChessBoardView: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { value in
+                    .updating($dragState) { value, state, _ in
                         guard interactive, pendingPromotion == nil else { return }
-                        if draggedFrom == nil {
-                            if let sq = squareAt(point: value.startLocation, sqSize: sqSize),
+                        if state.fromSquare == nil {
+                            if hypot(value.translation.width, value.translation.height) > 8,
+                               let sq = squareAt(point: value.startLocation, sqSize: sqSize),
                                let piece = board[sq],
                                piece.color == board.turn {
-                                // Only start visual lift once finger actually moves
-                                if hypot(value.translation.width, value.translation.height) > 6 {
-                                    draggedFrom = sq
-                                    selectedSquare = sq
-                                    dragLocation = value.location
-                                }
+                                state.fromSquare = sq
+                                state.location = value.location
                             }
                         } else {
-                            dragLocation = value.location
+                            state.location = value.location
                         }
                     }
                     .onEnded { value in
-                        guard interactive, pendingPromotion == nil else {
-                            draggedFrom = nil
-                            dragLocation = nil
-                            return
-                        }
-                        if let fromSq = draggedFrom {
-                            draggedFrom = nil
-                            dragLocation = nil
-                            if let toSq = squareAt(point: value.location, sqSize: sqSize), toSq != fromSq {
+                        guard interactive, pendingPromotion == nil else { return }
+                        let distance = hypot(value.translation.width, value.translation.height)
+                        if distance > 10 {
+                            guard let fromSq = squareAt(point: value.startLocation, sqSize: sqSize),
+                                  let piece = board[fromSq],
+                                  piece.color == board.turn else { return }
+                            // Hit-test at the lifted piece's visual center so drops feel spot-on under thumbs
+                            let dropPoint = CGPoint(x: value.location.x, y: value.location.y - sqSize * 0.25)
+                            if let toSq = squareAt(point: dropPoint, sqSize: sqSize), toSq != fromSq {
                                 attemptMove(from: fromSq, to: toSq)
+                            } else {
+                                selectedSquare = fromSq
                             }
                         } else if let tappedSq = squareAt(point: value.location, sqSize: sqSize) {
-                            handleSquareTap(tappedSq)
+                            handleSquareTap(tappedSq, legalTargets: legalTargets)
                         }
-                    }
+                    },
+                including: (interactive && pendingPromotion == nil) ? .all : .none
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .aspectRatio(1, contentMode: .fit)
         .onChange(of: board.fen) { _, _ in
             selectedSquare = nil
-            draggedFrom = nil
-            dragLocation = nil
+            pendingPromotion = nil
+        }
+        .onChange(of: interactive) { _, isNowInteractive in
+            if !isNowInteractive {
+                selectedSquare = nil
+                pendingPromotion = nil
+            }
+        }
+        .onChange(of: orientation) { _, _ in
+            selectedSquare = nil
             pendingPromotion = nil
         }
     }
@@ -210,15 +234,19 @@ public struct InteractiveChessBoardView: View {
         row: Int,
         col: Int,
         sqSize: CGFloat,
+        activeSource: Square?,
+        legalTargets: Set<Square>,
+        epCaptureSq: Square?,
+        highlightColor: ArrowKind?,
         checkedKingSq: Square?
     ) -> some View {
         let isLight = sq.isLightSquare
-        let isSelected = selectedSquare == sq
+        let isSelected = activeSource == sq
         let isLast = lastMove?.from == sq || lastMove?.to == sq
         let isLegalDest = legalTargets.contains(sq)
-        let highlight = highlights.first { $0.square.lowercased() == sq.algebraic }
         let piece = board[sq]
-        let isHiddenByDrag = draggedFrom == sq
+        let isHiddenByDrag = dragState.fromSquare == sq
+        let showCoords = sqSize >= 22
 
         ZStack {
             (isLight ? theme.lightSquare : theme.darkSquare)
@@ -226,8 +254,8 @@ public struct InteractiveChessBoardView: View {
             if isLast {
                 theme.lastMove
             }
-            if let hl = highlight {
-                BrillyPalette.color(for: hl.color).opacity(0.32)
+            if let hlColor = highlightColor {
+                BrillyPalette.color(for: hlColor).opacity(0.32)
             }
             if isSelected {
                 theme.selected
@@ -241,27 +269,25 @@ public struct InteractiveChessBoardView: View {
                 )
             }
 
-            // Rank & file coordinates along bottom-right / top-left edges
-            if col == 0 {
+            if showCoords && col == 0 {
                 Text(String(sq.rankChar))
                     .font(.system(size: max(8, sqSize * 0.19), weight: .bold, design: .rounded))
-                    .foregroundStyle((isLight ? theme.darkSquare : theme.lightSquare).opacity(0.88))
+                    .foregroundStyle(theme.coordColor(isLightSquare: isLight))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(2)
             }
-            if row == 7 {
+            if showCoords && row == 7 {
                 Text(String(sq.fileChar))
                     .font(.system(size: max(8, sqSize * 0.19), weight: .bold, design: .rounded))
-                    .foregroundStyle((isLight ? theme.darkSquare : theme.lightSquare).opacity(0.88))
+                    .foregroundStyle(theme.coordColor(isLightSquare: isLight))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(2)
             }
 
-            // Legal move target indicators
             if isLegalDest {
-                if piece != nil {
+                if piece != nil || epCaptureSq == sq {
                     Circle()
-                        .strokeBorder(theme.accent.opacity(0.82), lineWidth: max(3, sqSize * 0.09))
+                        .strokeBorder(theme.accent.opacity(0.84), lineWidth: max(3, sqSize * 0.09))
                         .padding(sqSize * 0.06)
                 } else {
                     Circle()
@@ -277,7 +303,7 @@ public struct InteractiveChessBoardView: View {
         .frame(width: sqSize, height: sqSize)
     }
 
-    // MARK: - Promotion Picker (Dismissible!)
+    // MARK: - Promotion Picker (Dismissible & High-Contrast!)
 
     @ViewBuilder
     private func promotionOverlay(
@@ -286,7 +312,7 @@ public struct InteractiveChessBoardView: View {
         sqSize: CGFloat
     ) -> some View {
         ZStack {
-            Color.black.opacity(0.55)
+            Color.black.opacity(0.58)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .onTapGesture {
                     pendingPromotion = nil
@@ -307,9 +333,14 @@ public struct InteractiveChessBoardView: View {
                         } label: {
                             ChessPieceView(piece: Piece(color: promo.color, type: choice), squareSize: max(46, sqSize * 0.95))
                                 .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(promo.color == .black ? Color(hex: 0xCBD5E1).opacity(0.28) : Color.white.opacity(0.08))
+                                )
                                 .brillySurface(surfaceStyle, cornerRadius: 14, tint: BrillyPalette.brillyTeal, interactive: true)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Promote to \(promotionTitle(for: choice))")
                     }
                 }
 
@@ -326,9 +357,19 @@ public struct InteractiveChessBoardView: View {
         .frame(width: boardSide, height: boardSide)
     }
 
+    private func promotionTitle(for type: PieceType) -> String {
+        switch type {
+        case .queen: return "Queen"
+        case .rook: return "Rook"
+        case .bishop: return "Bishop"
+        case .knight: return "Knight"
+        default: return "Piece"
+        }
+    }
+
     // MARK: - Interaction Helpers
 
-    private func handleSquareTap(_ sq: Square) {
+    private func handleSquareTap(_ sq: Square, legalTargets: Set<Square>) {
         if let selected = selectedSquare {
             if selected == sq {
                 selectedSquare = nil
@@ -388,6 +429,7 @@ public struct InteractiveChessBoardView: View {
         return CGPoint(x: CGFloat(col + 1) * sqSize, y: CGFloat(row) * sqSize)
     }
 
+    /// Unified single-polygon arrow drawn cleanly with zero alpha double-blending at the head-shaft junction.
     private func drawArrow(in ctx: inout GraphicsContext, from: CGPoint, to: CGPoint, color: Color, cellSize: CGFloat) {
         let dx = to.x - from.x
         let dy = to.y - from.y
@@ -395,23 +437,25 @@ public struct InteractiveChessBoardView: View {
         guard len > 1 else { return }
         let ux = dx / len
         let uy = dy / len
-
-        let headLen = cellSize * 0.34
-        let headHalfWidth = cellSize * 0.22
-        let shaftEnd = CGPoint(x: to.x - ux * headLen * 0.85, y: to.y - uy * headLen * 0.85)
-
-        var shaft = Path()
-        shaft.move(to: from)
-        shaft.addLine(to: shaftEnd)
-        ctx.stroke(shaft, with: .color(color), style: StrokeStyle(lineWidth: cellSize * 0.14, lineCap: .round))
-
         let perpX = -uy
         let perpY = ux
-        var head = Path()
-        head.move(to: to)
-        head.addLine(to: CGPoint(x: to.x - ux * headLen + perpX * headHalfWidth, y: to.y - uy * headLen + perpY * headHalfWidth))
-        head.addLine(to: CGPoint(x: to.x - ux * headLen - perpX * headHalfWidth, y: to.y - uy * headLen - perpY * headHalfWidth))
-        head.closeSubpath()
-        ctx.fill(head, with: .color(color))
+
+        let halfShaft = cellSize * 0.072
+        let headLen = min(len * 0.55, cellSize * 0.34)
+        let headHalfWidth = cellSize * 0.22
+        let neck = CGPoint(x: to.x - ux * headLen, y: to.y - uy * headLen)
+        let tailStart = CGPoint(x: from.x + ux * (cellSize * 0.08), y: from.y + uy * (cellSize * 0.08))
+
+        var arrow = Path()
+        arrow.move(to: CGPoint(x: tailStart.x + perpX * halfShaft, y: tailStart.y + perpY * halfShaft))
+        arrow.addLine(to: CGPoint(x: neck.x + perpX * halfShaft, y: neck.y + perpY * halfShaft))
+        arrow.addLine(to: CGPoint(x: neck.x + perpX * headHalfWidth, y: neck.y + perpY * headHalfWidth))
+        arrow.addLine(to: to)
+        arrow.addLine(to: CGPoint(x: neck.x - perpX * headHalfWidth, y: neck.y - perpY * headHalfWidth))
+        arrow.addLine(to: CGPoint(x: neck.x - perpX * halfShaft, y: neck.y - perpY * halfShaft))
+        arrow.addLine(to: CGPoint(x: tailStart.x - perpX * halfShaft, y: tailStart.y - perpY * halfShaft))
+        arrow.closeSubpath()
+
+        ctx.fill(arrow, with: .color(color))
     }
 }

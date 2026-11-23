@@ -23,9 +23,10 @@ public enum GameAnalyzer {
     ) async throws -> AnalyzedGame {
         let parsed = try PGNParser.parse(game.pgn)
         let totalPlies = parsed.moves.count
+        let isStandardStart = (parsed.startFen == ChessBoard.initialFEN)
+        let tcInc = PGNParser.parseTimeControl(parsed.headers["TimeControl"])?.incrementSeconds ?? 0.0
         onProgress?(0, max(1, totalPlies))
 
-        // Evaluate starting position
         let initialEvalResult = try await engine.analyze(
             fen: parsed.startFen,
             depth: preset.rawValue,
@@ -47,6 +48,9 @@ public enum GameAnalyzer {
             evalByPlyIndex.append(eval)
             onProgress?(idx + 1, max(1, totalPlies))
         }
+        if totalPlies == 0 {
+            onProgress?(1, 1)
+        }
 
         var plies: [AnalyzedPly] = []
         plies.reserveCapacity(totalPlies)
@@ -61,7 +65,8 @@ public enum GameAnalyzer {
         for (idx, pgnMove) in parsed.moves.enumerated() {
             let applied = pgnMove.applied
             let evalBefore = evalByPlyIndex[idx]
-            let evalAfter = evalByPlyIndex[idx + 1]
+            var evalAfter = evalByPlyIndex[idx + 1]
+            let beforeBoard = (try? ChessBoard(fen: applied.beforeFen)) ?? ChessBoard()
             let afterBoard = (try? ChessBoard(fen: applied.afterFen)) ?? ChessBoard()
 
             let posKey = afterBoard.positionKey
@@ -69,11 +74,24 @@ public enum GameAnalyzer {
             seenKeys[posKey] = repeatCount
             sanPrefix.append(applied.san)
 
+            // Score terminal 3-fold repetition draws at 0.0 so throwing a winning game into a draw is flagged as a blunder
+            if repeatCount >= 3 && idx == totalPlies - 1 && game.resultString == "1/2-1/2" {
+                let drawScore = ChessMath.buildEngineScore(cpWhite: 0)
+                evalAfter = EngineEval(
+                    fen: evalAfter.fen,
+                    depth: evalAfter.depth,
+                    bestMoveUci: evalAfter.bestMoveUci,
+                    pv: evalAfter.pv,
+                    score: drawScore,
+                    lines: evalAfter.lines
+                )
+            }
+
             let mover = applied.piece.color
             let winBefore = ChessMath.moverWinPercent(evalBefore.score, mover: mover)
             let winAfter = ChessMath.moverWinPercent(evalAfter.score, mover: mover)
             let isTopMove = applied.move.uci == evalBefore.bestMoveUci
-            let winLoss = isTopMove ? 0.0 : max(0.0, winBefore - winAfter)
+            let winLoss = (isTopMove && !(repeatCount >= 3 && game.resultString == "1/2-1/2")) ? 0.0 : max(0.0, winBefore - winAfter)
             let moveAcc = ChessMath.calculateMoveAccuracy(winLoss: winLoss)
 
             let hasSecond = evalBefore.lines.count >= 2
@@ -106,8 +124,8 @@ public enum GameAnalyzer {
 
             let classification = MoveClassifier.classify(MoveClassificationInput(
                 plyIndex: idx,
-                sanPrefix: sanPrefix,
-                openingPlyHint: game.openingPly,
+                sanPrefix: isStandardStart ? sanPrefix : [],
+                openingPlyHint: isStandardStart ? game.openingPly : 0,
                 playedUci: applied.move.uci,
                 bestMoveUci: evalBefore.bestMoveUci,
                 afterBoard: afterBoard,
@@ -148,18 +166,24 @@ public enum GameAnalyzer {
             )
 
             var timeSpent: Double? = nil
+            var clockTag: String? = nil
             if let clk = pgnMove.clockSeconds {
                 if let prev = prevClockByColor[mover] {
-                    timeSpent = max(0, prev - clk)
+                    timeSpent = max(0, prev + tcInc - clk)
+                }
+                if clk < 60.0 {
+                    clockTag = "time-trouble"
+                } else if let spent = timeSpent, spent < 5.0 && clk > 180.0 {
+                    clockTag = "impulse"
                 }
                 prevClockByColor[mover] = clk
             }
 
-            let phase = MoveClassifier.detectPhase(plyIndex: idx, board: afterBoard)
+            let phase = MoveClassifier.detectPhase(plyIndex: idx, board: afterBoard, isStandardStart: isStandardStart)
 
             plies.append(AnalyzedPly(
                 ply: idx + 1,
-                moveNumber: idx / 2 + 1,
+                moveNumber: beforeBoard.fullmoveNumber,
                 color: mover,
                 san: applied.san,
                 uci: applied.move.uci,
@@ -172,15 +196,20 @@ public enum GameAnalyzer {
                 clockText: pgnMove.clockText,
                 clockSeconds: pgnMove.clockSeconds,
                 timeSpentSeconds: timeSpent,
+                clockTag: clockTag,
                 bestMoveUci: evalBefore.bestMoveUci,
                 bestMoveSan: bestSan,
                 bestPvSan: bestPvSan,
                 topLines: topLines,
+                threatMoveUci: nil,
+                threatMoveSan: nil,
                 evalBefore: evalBefore.score,
                 evalAfter: evalAfter.score,
                 secondBestGapWin: secondBestGap,
+                secondBestGapPawns: nil,
                 isCriticalMoment: winLoss > 12 || classification == .brilliant || classification == .great,
                 isClutchSave: isClutch,
+                deepened: false,
                 winLoss: (winLoss * 10.0).rounded() / 10.0,
                 accuracy: moveAcc,
                 classification: classification,
@@ -191,7 +220,9 @@ public enum GameAnalyzer {
 
         let whiteSummary = summarize(plies: plies, color: .white, game: game)
         let blackSummary = summarize(plies: plies, color: .black, game: game)
-        let detected = MoveClassifier.lookupOpening(byMoves: sanPrefix)?.name ?? game.openingName
+        let detected = isStandardStart
+            ? (MoveClassifier.lookupOpening(byMoves: sanPrefix)?.name ?? game.openingName)
+            : game.openingName
 
         return AnalyzedGame(
             id: game.id,
@@ -209,23 +240,12 @@ public enum GameAnalyzer {
 
     public static func extractMistakePuzzles(
         from analyzedGames: [AnalyzedGame],
-        username: String? = nil
+        handles: [String] = []
     ) -> [MistakePuzzle] {
         var puzzles: [MistakePuzzle] = []
-        let lowUser = username?.trimmingCharacters(in: .whitespaces).lowercased()
 
-        for ag in analyzedGames {
-            let userColor: PieceColor?
-            if let uc = ag.game.userColor {
-                userColor = uc
-            } else if let lowUser, !lowUser.isEmpty {
-                if ag.game.white.name.lowercased() == lowUser { userColor = .white }
-                else if ag.game.black.name.lowercased() == lowUser { userColor = .black }
-                else { userColor = nil }
-            } else {
-                userColor = nil
-            }
-
+        for ag in analyzedGames where !ag.game.isCustomFenGame && !ag.plies.isEmpty {
+            let userColor = ag.game.resolvedUserColor(handles: handles)
             let opponent = userColor == .black ? ag.game.white.name : ag.game.black.name
 
             for p in ag.plies {
@@ -262,9 +282,10 @@ public enum GameAnalyzer {
 
     public static func computeInsights(
         analyzedGames: [AnalyzedGame],
-        username: String? = nil
+        handles: [String] = []
     ) -> InsightsSnapshot {
-        guard !analyzedGames.isEmpty else {
+        let validGames = analyzedGames.filter { !$0.game.isCustomFenGame && !$0.plies.isEmpty }
+        guard !validGames.isEmpty else {
             return InsightsSnapshot(
                 analyzedCount: 0,
                 avgAccuracy: 0,
@@ -291,14 +312,14 @@ public enum GameAnalyzer {
         var blunders = 0
         var openingMap: [String: (games: Int, wins: Int, accSum: Double)] = [:]
 
-        for ag in analyzedGames {
-            let color = ag.game.userColor ?? .white
+        for ag in validGames {
+            let color = ag.game.resolvedUserColor(handles: handles) ?? .white
             let summary = color == .white ? ag.whiteSummary : ag.blackSummary
             accSum += summary.accuracy
             brilliants += summary.count(for: .brilliant)
             blunders += summary.count(for: .blunder)
 
-            let res = ag.game.userResult(for: username)
+            let res = ag.game.userResult(handles: handles)
             if res == "W" { wins += 1 }
             else if res == "D" { draws += 1 }
             else if res == "L" { losses += 1 }
@@ -336,8 +357,8 @@ public enum GameAnalyzer {
         .prefix(5)
 
         return InsightsSnapshot(
-            analyzedCount: analyzedGames.count,
-            avgAccuracy: ((accSum / Double(analyzedGames.count)) * 10.0).rounded() / 10.0,
+            analyzedCount: validGames.count,
+            avgAccuracy: ((accSum / Double(validGames.count)) * 10.0).rounded() / 10.0,
             wins: wins,
             draws: draws,
             losses: losses,

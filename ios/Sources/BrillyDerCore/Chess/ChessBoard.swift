@@ -69,7 +69,7 @@ public struct ChessBoard: Hashable, Sendable {
             throw ChessError.invalidFEN("Expected at least 4 space-separated fields")
         }
 
-        let ranks = parts[0].split(separator: "/")
+        let ranks = parts[0].split(separator: "/", omittingEmptySubsequences: false)
         guard ranks.count == 8 else {
             throw ChessError.invalidFEN("Expected 8 ranks")
         }
@@ -89,6 +89,9 @@ public struct ChessBoard: Hashable, Sendable {
                 } else if let piece = Piece(fenChar: ch) {
                     guard file < 8 else {
                         throw ChessError.invalidFEN("Rank \(rank + 1) exceeds 8 files")
+                    }
+                    if piece.type == .pawn && (rank == 0 || rank == 7) {
+                        throw ChessError.invalidFEN("Pawns cannot occupy rank 1 or rank 8")
                     }
                     let sq = Square(unchecked: rank * 8 + file)
                     board[sq.rawValue] = piece
@@ -113,16 +116,30 @@ public struct ChessBoard: Hashable, Sendable {
         guard let side = PieceColor(rawValue: parts[1]) else {
             throw ChessError.invalidFEN("Invalid side to move '\(parts[1])'")
         }
-        guard let rights = CastlingRights(fen: parts[2]) else {
+        guard var rights = CastlingRights(fen: parts[2]) else {
             throw ChessError.invalidFEN("Invalid castling rights '\(parts[2])'")
         }
+        // Auto-strip impossible castling rights where king/rook aren't on home squares
+        if board[Square.e1.rawValue] != Piece(color: .white, type: .king) { rights.remove([.whiteKingside, .whiteQueenside]) }
+        if board[Square.h1.rawValue] != Piece(color: .white, type: .rook) { rights.remove(.whiteKingside) }
+        if board[Square.a1.rawValue] != Piece(color: .white, type: .rook) { rights.remove(.whiteQueenside) }
+        if board[Square.e8.rawValue] != Piece(color: .black, type: .king) { rights.remove([.blackKingside, .blackQueenside]) }
+        if board[Square.h8.rawValue] != Piece(color: .black, type: .rook) { rights.remove(.blackKingside) }
+        if board[Square.a8.rawValue] != Piece(color: .black, type: .rook) { rights.remove(.blackQueenside) }
 
         let ep: Square?
         if parts[3] == "-" {
             ep = nil
         } else {
-            guard let sq = Square(algebraic: parts[3]), sq.rank == 2 || sq.rank == 5 else {
-                throw ChessError.invalidFEN("Invalid en passant square '\(parts[3])'")
+            let expectedRank = side == .white ? 5 : 2
+            guard let sq = Square(algebraic: parts[3]), sq.rank == expectedRank else {
+                throw ChessError.invalidFEN("Invalid en passant square '\(parts[3])' for side '\(side.rawValue)'")
+            }
+            let pawnBehindRank = side == .white ? 4 : 3
+            let pawnBehindIdx = pawnBehindRank * 8 + sq.file
+            guard board[sq.rawValue] == nil,
+                  board[pawnBehindIdx] == Piece(color: side.opposite, type: .pawn) else {
+                throw ChessError.invalidFEN("En passant square '\(parts[3])' inconsistent with board pieces")
             }
             ep = sq
         }
@@ -139,6 +156,9 @@ public struct ChessBoard: Hashable, Sendable {
         self.whiteKingSquare = wk
         self.blackKingSquare = bk
         self.zobristHash = 0
+        if self.isInCheck(side.opposite) {
+            throw ChessError.invalidFEN("Side not to move cannot already be in check")
+        }
         self.zobristHash = computeZobristHash()
     }
 
@@ -172,10 +192,29 @@ public struct ChessBoard: Hashable, Sendable {
         return "\(rows.joined(separator: "/")) \(turn.rawValue) \(castling.fenString) \(epStr) \(halfmoveClock) \(fullmoveNumber)"
     }
 
-    /// First 4 FEN fields (board, turn, castling, en passant) — matches web `fenPositionKey`.
+    /// Effective en passant square — only non-nil if an opposing pawn actually stands adjacent to capture.
+    /// Prevents phantom EP from breaking FIDE transposition & repetition equality (matches chess.js v1).
+    private func effectiveEnPassantSquare() -> Square? {
+        guard let ep = enPassantSquare else { return nil }
+        let attackerRank = turn == .white ? ep.rank - 1 : ep.rank + 1
+        guard (0..<8).contains(attackerRank) else { return nil }
+        for df in [-1, 1] {
+            let f = ep.file + df
+            if f >= 0 && f < 8,
+               let p = squares[attackerRank * 8 + f],
+               p.color == turn && p.type == .pawn {
+                return ep
+            }
+        }
+        return nil
+    }
+
+    /// First 4 FEN fields with normalized effective EP — matches web `fenPositionKey` & FIDE transpositions.
     public var positionKey: String {
         let parts = fen.split(separator: " ")
-        return parts.prefix(4).joined(separator: " ")
+        let epPart = effectiveEnPassantSquare()?.algebraic ?? "-"
+        guard parts.count >= 3 else { return fen }
+        return "\(parts[0]) \(parts[1]) \(parts[2]) \(epPart)"
     }
 
     public func computeZobristHash() -> UInt64 {
@@ -187,7 +226,7 @@ public struct ChessBoard: Hashable, Sendable {
         }
         if turn == .black { h ^= Zobrist.sideKey }
         h ^= Zobrist.castlingKeys[Int(castling.rawValue)]
-        if let ep = enPassantSquare {
+        if let ep = effectiveEnPassantSquare() {
             h ^= Zobrist.epFileKeys[ep.file]
         }
         return h
@@ -469,9 +508,9 @@ public struct ChessBoard: Hashable, Sendable {
         guard let moving = squares[move.from.rawValue] else { return }
         let mover = moving.color
 
-        // Remove old castling & ep hash
+        // Remove old castling & effective EP hash
         zobristHash ^= Zobrist.castlingKeys[Int(castling.rawValue)]
-        if let oldEp = enPassantSquare {
+        if let oldEp = effectiveEnPassantSquare() {
             zobristHash ^= Zobrist.epFileKeys[oldEp.file]
         }
 
@@ -546,10 +585,10 @@ public struct ChessBoard: Hashable, Sendable {
 
         turn = mover.opposite
 
-        // Re-apply hash for new side, castling, ep
+        // Re-apply hash for new side, castling, effective EP
         zobristHash ^= Zobrist.sideKey
         zobristHash ^= Zobrist.castlingKeys[Int(castling.rawValue)]
-        if let newEp = enPassantSquare {
+        if let newEp = effectiveEnPassantSquare() {
             zobristHash ^= Zobrist.epFileKeys[newEp.file]
         }
     }
@@ -701,7 +740,7 @@ public struct ChessBoard: Hashable, Sendable {
             let promoStr = String(s[s.index(after: eqIdx)...]).lowercased()
             promo = PieceType(rawValue: promoStr)
             s = String(s[..<eqIdx])
-        } else if let last = s.last, ["Q", "R", "B", "N"].contains(String(last)), s.count >= 3 {
+        } else if let last = s.last, ["Q", "R", "B", "N", "q", "r", "b", "n"].contains(String(last)), s.count >= 3 {
             let withoutLast = String(s.dropLast())
             if withoutLast.last?.isNumber == true {
                 promo = PieceType(rawValue: last.lowercased())

@@ -7,6 +7,7 @@ import AVFoundation
 @main
 struct BrillyDerApp: App {
     @State private var store = BrillyAppStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         Self.configureAudioSession()
@@ -17,6 +18,17 @@ struct BrillyDerApp: App {
             BrillyDerRootView()
                 .environment(store)
                 .preferredColorScheme(.dark)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .background:
+                store.handleScenePhaseChange(isBackground: true)
+            case .active:
+                Self.configureAudioSession()
+                store.handleScenePhaseChange(isBackground: false)
+            default:
+                break
+            }
         }
     }
 

@@ -19,6 +19,13 @@ public enum SyncError: Error, LocalizedError, Sendable {
 }
 
 public enum LichessClient {
+    private static let strictUsernameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    private static let reservedPathSegments: Set<String> = [
+        "training", "analysis", "study", "tv", "inbox", "player", "team",
+        "tournament", "swiss", "broadcast", "editor", "paste", "login",
+        "signup", "account", "forum", "blog", "coach", "video", "api", "games"
+    ]
+
     private struct RawPlayer: Decodable {
         struct User: Decodable { let name: String? }
         let user: User?
@@ -50,18 +57,23 @@ public enum LichessClient {
     public static func fetchRecentGames(username: String, maxGames: Int = 20) async throws -> [GameRecord] {
         let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw SyncError.emptyUsername }
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        guard trimmed.unicodeScalars.allSatisfy({ strictUsernameChars.contains($0) }),
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: strictUsernameChars),
               let url = URL(string: "https://lichess.org/api/games/user/\(encoded)?max=\(max(1, min(50, maxGames)))&pgnInJson=true&clocks=true&opening=true&perfType=bullet,blitz,rapid,classical") else {
             throw SyncError.networkFailure("Invalid Lichess username.")
         }
 
         var req = URLRequest(url: url, timeoutInterval: 18)
         req.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.3 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await URLSession.shared.data(for: req)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let err as URLError where err.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw SyncError.networkFailure("Could not reach Lichess: \(error.localizedDescription)")
         }
@@ -77,29 +89,58 @@ public enum LichessClient {
         guard let text = String(data: data, encoding: .utf8) else { return [] }
         let decoder = JSONDecoder()
         var games: [GameRecord] = []
+        var seenIds = Set<String>()
 
         for line in text.split(separator: "\n") {
+            try Task.checkCancellation()
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedLine.isEmpty, let lineData = trimmedLine.data(using: .utf8) else { continue }
             guard let raw = try? decoder.decode(RawGame.self, from: lineData) else { continue }
-            if let mapped = mapRawGame(raw, username: trimmed) {
+            if let mapped = mapRawGame(raw, handles: [trimmed]), seenIds.insert(mapped.id).inserted {
                 games.append(mapped)
             }
         }
-        return games
+        return games.sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// Fetches a single public Lichess game from a URL (`https://lichess.org/AbCdEfGh`) or 8-char game ID.
-    public static func fetchSingleGame(urlOrId: String, preferredUsername: String? = nil) async throws -> GameRecord {
+    /// Fetches a single public Lichess game from a URL (`https://lichess.org/AbCdEfGh`, `lichess.org/AbCdEfGh/black`) or 8-char game ID.
+    public static func fetchSingleGame(
+        urlOrId: String,
+        preferredUsername: String? = nil,
+        preferredUsernames: [String] = []
+    ) async throws -> GameRecord {
         let cleaned = urlOrId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let gameId: String
-        if let url = URL(string: cleaned), let host = url.host, host.contains("lichess.org") {
-            let firstPath = url.pathComponents.filter { $0 != "/" }.first ?? ""
-            gameId = String(firstPath.prefix(8))
+        guard !cleaned.isEmpty else {
+            throw SyncError.invalidPGN("Enter a Lichess game link or 8-character ID.")
+        }
+
+        let candidateUrlString: String
+        if cleaned.lowercased().hasPrefix("lichess.org/") || cleaned.lowercased().hasPrefix("www.lichess.org/") {
+            candidateUrlString = "https://" + cleaned
         } else {
+            candidateUrlString = cleaned
+        }
+
+        let gameId: String
+        if let url = URL(string: candidateUrlString),
+           let host = url.host?.lowercased(),
+           host == "lichess.org" || host.hasSuffix(".lichess.org") {
+            let segments = url.pathComponents.filter { $0 != "/" }
+            guard let first = segments.first,
+                  !reservedPathSegments.contains(first.lowercased()),
+                  first.count == 8 || first.count == 12 else {
+                throw SyncError.invalidPGN("Enter a valid Lichess game link (e.g. lichess.org/AbCdEfGh).")
+            }
+            gameId = String(first.prefix(8))
+        } else {
+            guard (cleaned.count == 8 || cleaned.count == 12),
+                  !reservedPathSegments.contains(cleaned.lowercased()) else {
+                throw SyncError.invalidPGN("Enter a valid Lichess game link or 8-character ID.")
+            }
             gameId = String(cleaned.prefix(8))
         }
-        guard gameId.count == 8, gameId.allSatisfy({ $0.isLetter || $0.isNumber }) else {
+
+        guard gameId.count == 8, gameId.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
             throw SyncError.invalidPGN("Enter a valid Lichess game link or 8-character ID.")
         }
         guard let apiUrl = URL(string: "https://lichess.org/game/export/\(gameId)?pgnInJson=true&clocks=true&opening=true") else {
@@ -107,20 +148,44 @@ public enum LichessClient {
         }
         var req = URLRequest(url: apiUrl, timeoutInterval: 15)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.5", forHTTPHeaderField: "User-Agent")
+        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await URLSession.shared.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw SyncError.userNotFound("Lichess game \"\(gameId)\" not found.")
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let err as URLError where err.code == .cancelled {
+            throw CancellationError()
+        } catch {
+            throw SyncError.networkFailure("Could not reach Lichess: \(error.localizedDescription)")
+        }
+
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 404 {
+                throw SyncError.userNotFound("Lichess game \"\(gameId)\" not found.")
+            }
+            if http.statusCode == 429 {
+                throw SyncError.rateLimited("Lichess rate limit hit — retry in a minute.")
+            }
+            if !(200..<300).contains(http.statusCode) {
+                throw SyncError.networkFailure("Lichess API error (\(http.statusCode)).")
+            }
         }
         let raw = try JSONDecoder().decode(RawGame.self, from: data)
-        guard let mapped = mapRawGame(raw, username: preferredUsername ?? "") else {
-            throw SyncError.invalidPGN("Could not parse Lichess game \(gameId).")
+        var handles = preferredUsernames
+        if let u = preferredUsername, !u.isEmpty { handles.append(u) }
+        guard let mapped = mapRawGame(raw, handles: handles) else {
+            throw SyncError.invalidPGN("Could not parse Lichess game \(gameId) (only standard chess is supported).")
         }
         return mapped
     }
 
-    public static func parsePastedPGN(_ pgn: String, preferredUsername: String? = nil) throws -> GameRecord {
+    public static func parsePastedPGN(
+        _ pgn: String,
+        preferredUsername: String? = nil,
+        preferredUsernames: [String] = []
+    ) throws -> GameRecord {
         let trimmed = pgn.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw SyncError.invalidPGN("Paste a PGN to analyze.") }
 
@@ -140,28 +205,32 @@ public enum LichessClient {
         let whiteElo = headers["WhiteElo"].flatMap(Int.init)
         let blackElo = headers["BlackElo"].flatMap(Int.init)
 
-        var userColor: PieceColor? = nil
-        if let u = preferredUsername?.trimmingCharacters(in: .whitespaces).lowercased(), !u.isEmpty {
-            if whiteName.lowercased() == u { userColor = .white }
-            else if blackName.lowercased() == u { userColor = .black }
-        }
+        var handles = preferredUsernames
+        if let u = preferredUsername, !u.isEmpty { handles.append(u) }
+        let handleSet = Set(handles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
 
+        var userColor: PieceColor? = nil
+        if handleSet.contains(whiteName.lowercased()) { userColor = .white }
+        else if handleSet.contains(blackName.lowercased()) { userColor = .black }
+
+        let isStandardStart = parsed.startFen == ChessBoard.initialFEN
         let sanMoves = parsed.moves.map(\.applied.san)
-        let lookup = MoveClassifier.lookupOpening(byMoves: sanMoves)
+        let lookup = isStandardStart ? MoveClassifier.lookupOpening(byMoves: sanMoves) : nil
         let openingName = headers["Opening"] ?? lookup?.name ?? "Custom PGN"
         let openingEco = headers["ECO"] ?? lookup?.eco ?? ""
         let tcLabel = headers["TimeControl"] ?? "PGN"
         let res = parsed.result
         let winner: String? = res == "1-0" ? "white" : (res == "0-1" ? "black" : nil)
+        let createdAtMs = parsePGNTimestampMs(headers: headers) ?? Int64(Date().timeIntervalSince1970 * 1000.0)
 
         return GameRecord(
             id: stableId(for: trimmed),
             source: .pgn,
             rated: false,
-            variant: "standard",
+            variant: isStandardStart ? "standard" : "fromPosition",
             speed: "rapid",
             perf: "pgn",
-            createdAt: Int64(Date().timeIntervalSince1970 * 1000.0),
+            createdAt: createdAtMs,
             status: "normal",
             winner: winner,
             resultString: res,
@@ -239,8 +308,9 @@ public enum LichessClient {
 
     // MARK: - Helpers
 
-    private static func mapRawGame(_ raw: RawGame, username: String) -> GameRecord? {
+    private static func mapRawGame(_ raw: RawGame, handles: [String]) -> GameRecord? {
         if raw.status == "aborted" || raw.status == "noStart" { return nil }
+        if let variant = raw.variant, variant != "standard" { return nil }
         let pgn = raw.pgn ?? raw.moves ?? ""
         guard !pgn.isEmpty, let parsed = try? PGNParser.parse(pgn), parsed.moves.count >= 2 else {
             return nil
@@ -253,13 +323,13 @@ public enum LichessClient {
             ?? raw.players?.black?.aiLevel.map { "Stockfish L\($0)" }
             ?? "Black"
 
-        let low = username.lowercased()
+        let handleSet = Set(handles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
         let userColor: PieceColor?
-        if whiteName.lowercased() == low { userColor = .white }
-        else if blackName.lowercased() == low { userColor = .black }
+        if handleSet.contains(whiteName.lowercased()) { userColor = .white }
+        else if handleSet.contains(blackName.lowercased()) { userColor = .black }
         else { userColor = nil }
 
-        var resultString: String
+        let resultString: String
         if raw.winner == "white" { resultString = "1-0" }
         else if raw.winner == "black" { resultString = "0-1" }
         else if raw.status == "draw" || raw.status == "stalemate" { resultString = "1/2-1/2" }
@@ -302,12 +372,35 @@ public enum LichessClient {
         )
     }
 
+    private static func parsePGNTimestampMs(headers: [String: String]) -> Int64? {
+        let rawDate = (headers["UTCDate"] ?? headers["Date"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let rawDate, !rawDate.contains("?"), !rawDate.isEmpty else { return nil }
+        let rawTime = (headers["UTCTime"] ?? headers["Time"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(secondsFromGMT: 0)
+        fmt.calendar = Calendar(identifier: .gregorian)
+
+        if let rawTime, !rawTime.contains("?"), !rawTime.isEmpty {
+            fmt.dateFormat = "yyyy.MM.dd HH:mm:ss"
+            if let date = fmt.date(from: "\(rawDate) \(rawTime)") {
+                return Int64(date.timeIntervalSince1970 * 1000.0)
+            }
+        }
+        fmt.dateFormat = "yyyy.MM.dd"
+        if let date = fmt.date(from: rawDate) {
+            return Int64(date.timeIntervalSince1970 * 1000.0)
+        }
+        return nil
+    }
+
     private static func formatTimeControl(initial: Int?, inc: Int?, speed: String?) -> String {
         if let initial {
             let i = inc ?? 0
             if initial < 60 { return "\(initial)s+\(i)" }
             if initial % 60 == 0 { return "\(initial / 60)+\(i)" }
-            return String(format: "%.1f+%d", Double(initial) / 60.0, i)
+            return String(format: "%.1f+%d", locale: Locale(identifier: "en_US_POSIX"), Double(initial) / 60.0, i)
         }
         return (speed ?? "Standard").capitalized
     }

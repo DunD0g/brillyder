@@ -115,12 +115,17 @@ public enum DailyCoachPlanner {
             .filter { FSRS6Scheduler.isCardDue($0, now: now) }
             .sorted { $0.dueAt < $1.dueAt }
 
+        let unlockedSorted = fsrsCards
+            .filter(\.unlocked)
+            .sorted { $0.dueAt < $1.dueAt }
+
         let stage1: [FsrsOpeningCard]
         if !dueCards.isEmpty {
             stage1 = Array(dueCards.prefix(q.openingDue))
+        } else if !unlockedSorted.isEmpty {
+            stage1 = Array(unlockedSorted.prefix(q.openingDue))
         } else {
-            // Surface first unlocked/learning cards if none are due right now
-            stage1 = Array(fsrsCards.prefix(q.openingDue))
+            stage1 = []
         }
 
         var usedIds = Set<String>()
@@ -138,10 +143,10 @@ public enum DailyCoachPlanner {
         let stage2 = pick(blunders + mistakeDeck, count: q.blunderRewind)
         let stage3 = pick(mistakeDeck, count: q.speedPatterns)
 
-        // Stage 4 targets weakest phase (endgame errors first, then middlegame tactics)
-        let endgameMistakes = mistakeDeck.filter { $0.phase == .endgame }
-        let stage4FocusLabel = endgameMistakes.count >= 2 ? "Endgame Precision" : "Tactical Sharpness"
-        let stage4 = pick(endgameMistakes.count >= 2 ? endgameMistakes : mistakeDeck, count: q.weaknessFocus)
+        // Stage 4 targets weakest unused phase (endgame errors first, topped up with remaining unused mistakes)
+        let unusedEndgames = mistakeDeck.filter { $0.phase == .endgame && !usedIds.contains($0.id) }
+        let stage4FocusLabel = unusedEndgames.count >= 2 ? "Endgame Precision" : "Tactical Sharpness"
+        let stage4 = pick(unusedEndgames + mistakeDeck, count: q.weaknessFocus)
 
         return DailyWorkoutPlan(
             duration: duration,
@@ -180,8 +185,10 @@ public enum DailyCoachPlanner {
             items.append(fb)
         }
 
-        // Add 1 due opening memory flash if available
-        if let due = fsrsCards.first(where: { FSRS6Scheduler.isCardDue($0, now: now) }) ?? fsrsCards.first {
+        // Add 1 unlocked due opening memory flash if available (never pull locked unlearned cards)
+        let unlockedDue = fsrsCards.filter { FSRS6Scheduler.isCardDue($0, now: now) }.sorted { $0.dueAt < $1.dueAt }.first
+            ?? fsrsCards.filter(\.unlocked).sorted { $0.dueAt < $1.dueAt }.first
+        if let due = unlockedDue {
             items.append(GravityFlashItem(
                 id: "grav_open_\(due.cardId)",
                 kind: "opening",

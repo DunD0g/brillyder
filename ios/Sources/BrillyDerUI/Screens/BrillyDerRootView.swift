@@ -59,20 +59,25 @@ public struct BrillyDerRootView: View {
                 .tag(BrillyTab.insights)
             }
             .tint(BrillyPalette.brillyTeal)
-
-            // Non-blocking floating Alien / Classic celebration toast
-            if let celebration = store.activeCelebration {
-                VStack {
+        }
+        // Safe-area-aware floating HUD banners (never obscured by Dynamic Island or notch)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 8) {
+                if let celebration = store.activeCelebration {
                     AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
                         withAnimation(.easeOut(duration: 0.2)) {
                             store.activeCelebration = nil
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 56)
-                    Spacer()
+                    .padding(.top, 6)
                 }
-                .zIndex(10)
+
+                if store.isBatchAnalyzing && store.selectedTab != .games {
+                    globalBatchPill
+                        .padding(.horizontal, 16)
+                        .padding(.top, store.activeCelebration == nil ? 6 : 0)
+                }
             }
         }
         .sheet(isPresented: $bindableStore.showingSettings) {
@@ -89,13 +94,60 @@ public struct BrillyDerRootView: View {
         }
     }
 
+    private var globalBatchPill: some View {
+        let pct = Int((store.batchProgress * 100).rounded())
+        return HStack(spacing: 10) {
+            Button {
+                store.selectedTab = .games
+            } label: {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(BrillyPalette.brillyTeal)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(store.copy(cosmic: "Batch Scan · \(pct)%", classic: "Batch Analyzing · \(pct)%"))
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                        Text(store.batchCurrentLabel)
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 4)
+
+            Button("Stop") {
+                store.cancelBatchAnalysis()
+            }
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(BrillyPalette.blunderRose)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: BrillyPalette.brillyTeal)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
     @ToolbarContentBuilder
     private var cockpitToolbar: some ToolbarContent {
         if store.dailyStreakDays > 0 {
             ToolbarItem(placement: .automatic) {
-                Label("\(store.dailyStreakDays)d", systemImage: "flame.fill")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(BrillyPalette.goldAmber)
+                Button {
+                    store.selectedTrainMode = .daily
+                    store.selectedTab = .train
+                } label: {
+                    Label("\(store.dailyStreakDays)d", systemImage: "flame.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                }
+                .accessibilityLabel("Daily training streak: \(store.dailyStreakDays) days")
             }
         }
 
@@ -110,7 +162,7 @@ public struct BrillyDerRootView: View {
                         .foregroundStyle(BrillyPalette.inkPrimary)
                 }
             }
-            .accessibilityLabel("Brilly Vault")
+            .accessibilityLabel(store.copy(cosmic: "Brilly Vault", classic: "Trophy Vault"))
         }
 
         ToolbarItem(placement: .automatic) {
@@ -121,7 +173,7 @@ public struct BrillyDerRootView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkPrimary)
             }
-            .accessibilityLabel("Cockpit Settings")
+            .accessibilityLabel(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
         }
     }
 }

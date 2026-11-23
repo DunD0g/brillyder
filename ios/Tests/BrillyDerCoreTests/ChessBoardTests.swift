@@ -34,7 +34,7 @@ struct ChessBoardTests {
         #expect(!inCheck.legalMoves().contains(ChessMove(from: .e1, to: .g1)))
         #expect(!inCheck.legalMoves().contains(ChessMove(from: .e1, to: .c1)))
 
-        let throughCheck = try ChessBoard(fen: "5r1k/8/8/8/8/8/8/R3K2R w KQ - 0 1")
+        let throughCheck = try ChessBoard(fen: "1k3r2/8/8/8/8/8/8/R3K2R w KQ - 0 1")
         #expect(!throughCheck.legalMoves().contains(ChessMove(from: .e1, to: .g1)))
         #expect(throughCheck.legalMoves().contains(ChessMove(from: .e1, to: .c1)))
     }

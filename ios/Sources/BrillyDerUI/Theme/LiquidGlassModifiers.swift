@@ -57,7 +57,7 @@ public struct BrillySurfaceModifier: ViewModifier {
                         .overlay(
                             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                                 .strokeBorder(
-                                    (tint ?? Color.white).opacity(tint == nil ? 0.10 : 0.30),
+                                    (tint ?? Color.white).opacity(tint == nil ? 0.12 : 0.34),
                                     lineWidth: 1
                                 )
                         )
@@ -83,6 +83,14 @@ public struct BrillyCapsuleButtonModifier: ViewModifier {
                     .overlay(Capsule().fill(tint.opacity(0.22)))
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 1))
             }
+        } else if reduceTransparency {
+            content
+                .background(
+                    Capsule()
+                        .fill(BrillyPalette.hullBg)
+                        .overlay(Capsule().fill(tint.opacity(0.28)))
+                )
+                .overlay(Capsule().strokeBorder(tint.opacity(0.65), lineWidth: 1.2))
         } else {
             content
                 .background(Capsule().fill(tint.opacity(0.20)))
@@ -93,6 +101,8 @@ public struct BrillyCapsuleButtonModifier: ViewModifier {
 
 /// Groups neighboring Liquid Glass controls inside `GlassEffectContainer` on iOS 26+ so their edges fluidly morph.
 public struct BrillyGlassCluster<Content: View>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     let style: SurfaceStyle
     let spacing: CGFloat
     @ViewBuilder let content: () -> Content
@@ -104,7 +114,7 @@ public struct BrillyGlassCluster<Content: View>: View {
     }
 
     public var body: some View {
-        if style == .liquidGlass {
+        if style == .liquidGlass && !reduceTransparency {
             if #available(iOS 26.0, macOS 26.0, *) {
                 GlassEffectContainer(spacing: spacing) {
                     content()
@@ -130,7 +140,6 @@ public struct CosmicVoidBackdrop: View {
         ZStack {
             BrillyPalette.voidBg.ignoresSafeArea()
             if style == .liquidGlass {
-                // Soft ambient aurora orbs for iOS 26 Liquid Glass optical refraction
                 RadialGradient(
                     colors: [BrillyPalette.brillyTeal.opacity(0.22), .clear],
                     center: .topLeading,
