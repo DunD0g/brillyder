@@ -1,0 +1,452 @@
+import SwiftUI
+import BrillyDerCore
+
+public struct TrainLabsView: View {
+    @Environment(BrillyAppStore.self) private var store
+
+    enum LabKind: String, CaseIterable {
+        case endgame = "Syzygy Endgame Lab"
+        case vision = "60s Board Vision"
+    }
+
+    @State private var activeLab: LabKind = .endgame
+    @State private var selectedCategory: EndgameCategory? = nil
+    @State private var activeDrill: EndgameDrill? = nil
+
+    public var body: some View {
+        VStack(spacing: 14) {
+            Picker("Lab", selection: $activeLab) {
+                ForEach(LabKind.allCases, id: \.self) { k in
+                    Text(k.rawValue).tag(k)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if activeLab == .endgame {
+                endgameLabBody
+            } else {
+                BoardVisionPanel()
+            }
+        }
+        .onAppear {
+            if let cat = store.preferredEndgameCategory {
+                activeLab = .endgame
+                selectedCategory = cat
+                store.preferredEndgameCategory = nil
+            }
+        }
+        .sheet(item: $activeDrill) { drill in
+            EndgameDrillPlaySheet(drill: drill).environment(store)
+        }
+    }
+
+    private var endgameLabBody: some View {
+        let combined = store.userEndgameDrills + EndgameLibrary.theoreticalDrills
+        let filtered = combined.filter { selectedCategory == nil || $0.category == selectedCategory }
+
+        return VStack(alignment: .leading, spacing: 12) {
+            // Category Filter Chips
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    catChip("All", cat: nil)
+                    ForEach(EndgameCategory.allCases) { cat in
+                        catChip(cat.rawValue, cat: cat)
+                    }
+                }
+            }
+
+            LazyVStack(spacing: 10) {
+                ForEach(filtered) { drill in
+                    let mastered = store.masteredEndgameIds.contains(drill.id)
+                    Button {
+                        activeDrill = drill
+                    } label: {
+                        HStack(spacing: 12) {
+                            InteractiveChessBoardView(
+                                board: (try? ChessBoard(fen: drill.fen)) ?? ChessBoard(),
+                                orientation: drill.userColor,
+                                theme: store.boardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: false
+                            )
+                            .frame(width: 66, height: 66)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(drill.category.rawValue)
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                    Text("· \(drill.goal == .win ? "Play to Win" : "Hold Draw")")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(drill.goal == .win ? Color(hex: 0x22C55E) : BrillyPalette.goldAmber)
+                                    Spacer()
+                                    if mastered {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .foregroundStyle(BrillyPalette.brillyTeal)
+                                    }
+                                }
+                                Text(drill.title)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .lineLimit(1)
+                                Text(drill.keyIdea)
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(12)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16, interactive: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func catChip(_ label: String, cat: EndgameCategory?) -> some View {
+        let sel = selectedCategory == cat
+        return Button(label) {
+            selectedCategory = cat
+        }
+        .font(.caption.weight(.bold))
+        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Interactive Syzygy Endgame Drill Sheet
+
+private struct EndgameDrillPlaySheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    let drill: EndgameDrill
+
+    @State private var board: ChessBoard = ChessBoard()
+    @State private var status: String = ""
+    @State private var syzygy: SyzygyProbeResult? = nil
+    @State private var botThinking = false
+    @State private var showHint = false
+    @State private var movesPlayed = 0
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                ScrollView {
+                    VStack(spacing: 14) {
+                        HStack {
+                            Label(drill.goal == .win ? "Goal: Win" : "Goal: Hold Draw", systemImage: "flag.checkered")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+                            Spacer()
+                            if let syz = syzygy {
+                                Text(syz.humanLabel)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                            }
+                        }
+
+                        InteractiveChessBoardView(
+                            board: board,
+                            orientation: drill.userColor,
+                            theme: store.boardTheme,
+                            surfaceStyle: store.surfaceStyle,
+                            interactive: !botThinking && board.turn == drill.userColor && board.outcome == .ongoing
+                        ) { move in
+                            handleUserMove(move)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(status.isEmpty ? drill.keyIdea : status)
+                                .font(.subheadline)
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            if showHint {
+                                Text("Key first idea: \(drill.firstHintSan)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                        HStack(spacing: 10) {
+                            Button("Hint") { showHint = true }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                .buttonStyle(.plain)
+
+                            Button("Reset") { resetDrill() }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle(drill.title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .onAppear { resetDrill() }
+        }
+    }
+
+    private func resetDrill() {
+        board = (try? ChessBoard(fen: drill.fen)) ?? ChessBoard()
+        status = drill.keyIdea
+        showHint = false
+        movesPlayed = 0
+        probeCurrent()
+    }
+
+    private func probeCurrent() {
+        let fen = board.fen
+        Task {
+            syzygy = await SyzygyClient.shared.probe(fen: fen)
+        }
+    }
+
+    private func handleUserMove(_ move: ChessMove) {
+        guard (try? board.apply(move)) != nil else { return }
+        movesPlayed += 1
+        store.triggerHaptic(.move)
+
+        // Check immediate completion
+        switch board.outcome {
+        case .checkmate(let winner):
+            if winner == drill.userColor {
+                status = "Checkmate! Endgame mastered!"
+                store.markEndgameMastered(drill.id)
+            } else {
+                status = "Checkmated — tap Reset to try again."
+            }
+            return
+        case .stalemate, .insufficientMaterial, .fiftyMoveRule:
+            if drill.goal == .draw {
+                status = "Draw secured! Fortress mastered!"
+                store.markEndgameMastered(drill.id)
+            } else {
+                status = "Drawn — you had a win here! Tap Reset to retry."
+            }
+            return
+        case .ongoing:
+            break
+        }
+
+        // Bot reply via Syzygy (exact) or native engine fallback
+        botThinking = true
+        let fenAfterUser = board.fen
+        Task {
+            let probe = await SyzygyClient.shared.probe(fen: fenAfterUser)
+            self.syzygy = probe
+
+            // Check goal progress for draws after 12 solid plies
+            if drill.goal == .draw && movesPlayed >= 6 && (probe?.category == "draw" || probe?.category == "blessed-loss") {
+                status = "Holding solid theoretical draw! Keep defending or claim mastery."
+                store.markEndgameMastered(drill.id)
+            }
+
+            if let bestSyz = probe?.moves.first, let m = ChessMove(uci: bestSyz.uci) {
+                _ = try? board.apply(m)
+            } else if let reply = await store.computeBotReply(fen: fenAfterUser, depth: 4) {
+                _ = try? board.apply(reply)
+            }
+            botThinking = false
+            probeCurrent()
+        }
+    }
+}
+
+// MARK: - 60-Second Board Vision Coordinate Sniper
+
+private struct BoardVisionPanel: View {
+    @Environment(BrillyAppStore.self) private var store
+
+    @State private var isRunning = false
+    @State private var orientation: PieceColor = .white
+    @State private var hideCoords = true
+    @State private var timeRemaining = 60
+    @State private var score = 0
+    @State private var mistakes = 0
+    @State private var targetSquare: Square = Square(unchecked: 28) // e4
+    @State private var flashColor: Color? = nil
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("60s Board Vision")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                    Text("Personal Best: \(store.boardVisionBestScore)")
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                }
+                Spacer()
+                if isRunning {
+                    Text("\(timeRemaining)s")
+                        .font(.title2.monospacedDigit().weight(.black))
+                        .foregroundStyle(timeRemaining <= 10 ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
+                }
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+
+            // Target Prompt Banner
+            HStack {
+                Text(isRunning ? "TAP SQUARE" : "READY")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+                Spacer()
+                Text(isRunning ? targetSquare.algebraic.uppercased() : "--")
+                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .foregroundStyle(flashColor ?? BrillyPalette.brillyTeal)
+                Spacer()
+                Text("Score \(score)")
+                    .font(.headline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.warpPurple)
+
+            // Tappable 8x8 Coordinate Board
+            GeometryReader { geo in
+                let side = min(geo.size.width, geo.size.height)
+                let cell = side / 8.0
+                VStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(0..<8, id: \.self) { col in
+                                let rank = orientation == .white ? (7 - row) : row
+                                let file = orientation == .white ? col : (7 - col)
+                                let sq = Square(unchecked: rank * 8 + file)
+                                ZStack {
+                                    sq.isLightSquare ? store.boardTheme.lightSquare : store.boardTheme.darkSquare
+                                    if !hideCoords {
+                                        Text(sq.algebraic)
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(Color.black.opacity(0.45))
+                                    }
+                                }
+                                .frame(width: cell, height: cell)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    handleTap(sq)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(width: side, height: side)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .frame(maxWidth: .infinity)
+            }
+            .aspectRatio(1, contentMode: .fit)
+
+            // Controls
+            HStack(spacing: 10) {
+                Button(isRunning ? "Stop" : "Start 60s") {
+                    if isRunning {
+                        stopGame()
+                    } else {
+                        startGame()
+                    }
+                }
+                .font(.headline)
+                .foregroundStyle(isRunning ? BrillyPalette.inkPrimary : BrillyPalette.voidBg)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(isRunning ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
+                .buttonStyle(.plain)
+
+                Button(orientation == .white ? "White" : "Black") {
+                    orientation = orientation.opposite
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                .buttonStyle(.plain)
+
+                Button(hideCoords ? "Labels Off" : "Labels On") {
+                    hideCoords.toggle()
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                .buttonStyle(.plain)
+            }
+        }
+        .task(id: isRunning) {
+            guard isRunning else { return }
+            while isRunning && timeRemaining > 0 && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard isRunning && !Task.isCancelled else { break }
+                timeRemaining -= 1
+                if timeRemaining == 0 {
+                    stopGame()
+                }
+            }
+        }
+    }
+
+    private func startGame() {
+        score = 0
+        mistakes = 0
+        timeRemaining = 60
+        isRunning = true
+        pickNextSquare()
+    }
+
+    private func stopGame() {
+        isRunning = false
+        store.recordBoardVisionScore(score)
+        store.triggerHaptic(.success)
+    }
+
+    private func pickNextSquare() {
+        var next = Square(unchecked: Int.random(in: 0..<64))
+        if next == targetSquare {
+            next = Square(unchecked: (next.rawValue + 17) % 64)
+        }
+        targetSquare = next
+    }
+
+    private func handleTap(_ sq: Square) {
+        guard isRunning else { return }
+        if sq == targetSquare {
+            score += 1
+            flashColor = Color(hex: 0x22C55E)
+            store.triggerHaptic(.move)
+            pickNextSquare()
+        } else {
+            mistakes += 1
+            flashColor = BrillyPalette.blunderRose
+            store.triggerHaptic(.error)
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            flashColor = nil
+        }
+    }
+}

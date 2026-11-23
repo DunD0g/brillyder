@@ -258,3 +258,32 @@
 - **Xcode 26 Device Run & TestFlight:** Install Xcode 26 from the Mac App Store, generate `BrillyDer.xcodeproj` via `xcodegen generate`, sign & run on iPhone Simulator / physical device.
 - **iOS Phase 2:** Plug in MIT C++ NNUE engine (e.g. Caissa) behind `ChessEngine` for 3500+ Elo deep analysis, Syzygy Endgame Lab, Advantage Conversion, Brilly Vault modal, Shareable PNG Cards, and WidgetKit Home/Lock Screen daily streak widgets.
 - **iOS Phase 3:** Visual Repertoire Move Tree, Scout Mode Gameplan, Frozen Woodpecker Cycles, 60s Board Vision, and optional CoreML Maia.
+
+---
+
+## v2.4 (iOS Phase 2 — Full Web-Parity Power Suite & Full-Screen Fix)
+**Status:** Completed & Verified
+
+### Built
+- **Full-Screen Edge-to-Edge Fix & iOS 26 Liquid Glass Polish:**
+  - Moved `UILaunchScreen`, `UIApplicationSceneManifest`, `ITSAppUsesNonExemptEncryption`, and orientations directly into `ios/project.yml` `info.properties` so `xcodegen generate` always preserves full-screen display metadata (verified via `PlistBuddy` in both local builds and GitHub Actions CI).
+  - Cleaned up top-right iOS 26 toolbar buttons to render native single-layer Liquid Glass platters, added bottom scroll clearance across all 5 tabs above the floating tab bar, and prevented Daily Coach chip truncation.
+- **Games Tab (`GamesTabView.swift`, `PositionEditorSheet.swift`):**
+  - Added **Batch Analyze** (`Analyze 5 / 10 / All Unanalyzed`) with live progress HUD & Stop control, result/unanalyzed filters, **Scout Opponent** sheet, and full interactive **Board / FEN Position Editor** (with legality guards for adjacent kings, rank 1/8 pawns, and opponent-in-check).
+- **Analyze Tab (`AnalyzeTabView.swift`, `EvalGraphView.swift`, `ShareCardRenderer.swift`):**
+  - Added interactive tappable/draggable **Eval Graph**, **Opening Deviation ("Leak Patcher")** card with 1-tap FSRS Queue Boost, live **7-Piece Syzygy Tablebase** readout (`SyzygyClient.swift`), **Play vs Bot** from any position, **Custom FEN Sandbox** live MultiPV mode, Copy FEN/PGN, and native `ImageRenderer` **Shareable PNG Position Cards**.
+- **Brilly Vault Modal (`BrillyVaultSheet.swift`, `VaultService.swift`):**
+  - Added top-right `💎 N` toolbar button strictly counting user `!!` Brilliant moves, opening a 5-tab modal (`!! Brilliant`, `Clutch`, `Traps`, `Sweeps`, `Saved`) with jump-to-ply & PNG Share Card.
+- **Train Power Suite (`TrainTabView.swift`, `TrainPowerModesView.swift`, `TrainLabsView.swift`):**
+  - Preserved the **15m Daily Coach** hero front-and-center while adding segmented access to **Woodpecker Cycles** (`30/50/100`, Cycles `#1–7`, First-Try %, 24h cooldown, speed-up log), **Advantage Conversion ("Tractor Beam")**, **Mistake Deck** (motif-filtered), and **Labs** (**Syzygy Endgame Lab** with all 12 verified theoretical drills + user slips, and **60s Board Vision** coordinate sniper).
+- **Openings & Insights Suites (`OpeningsTabView.swift`, `InsightsTabView.swift`, `RepertoireTreeService.swift`, `AdvancedInsightsService.swift`):**
+  - Added **Repertoire Move Tree (`Line | Move Tree`)** with FSRS recall dots, **Import Custom PGN Course**, **Export Canonical PGN**, and **Wrong-Move Trap Spotlight** in Openings.
+  - Added **Clock Leaks (Impulse vs Time Trouble)**, **Tilt Guard (`0L / 1L / 2L / 3L+` + stop-loss alert)**, **Patterns You Miss Most** (1-tap Train), **Endgame Weakness Tracker** (1-tap Lab), and **Scout Gameplan** in Insights.
+
+### Verified
+- `cd ios && swift test`: **5 suites, 23 tests passed** (including all 12 theoretical Syzygy endgames, 8-course PGN round-trip, DeviationDetector, strict Vault count, Perft 1–3, and all 8 starter courses).
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: Local Xcode `Release-iphoneos` `arm64` `** BUILD SUCCEEDED **`, generated `ios/build/BrillyDer-iOS-unsigned.ipa` with verified `UILaunchScreen` in `BrillyDer.app/Info.plist`.
+
+### Remaining / Next Up (iOS Phase 3)
+- **Native MIT C++ NNUE Engine Upgrade:** Bind a 3500+ Elo MIT-licensed C++ NNUE engine (e.g. Caissa) behind `ChessEngineProtocol` for ultra-deep instant analysis.
+- **WidgetKit & CoreML:** Home/Lock Screen daily streak & due-cards widgets + optional local CoreML Maia bot.

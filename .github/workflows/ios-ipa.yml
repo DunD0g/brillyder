@@ -81,6 +81,7 @@ jobs:
           APP_PATH="build/DerivedData/Build/Products/${BUILD_CONFIG}-iphoneos/BrillyDer.app"
           test -d "$APP_PATH"
           test -f "$APP_PATH/PrivacyInfo.xcprivacy"
+          /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP_PATH/Info.plist"
           find "$APP_PATH" -name "starterCourses.json" | grep -q "starterCourses.json"
 
           rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa

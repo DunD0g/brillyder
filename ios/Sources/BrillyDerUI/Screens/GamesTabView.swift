@@ -4,14 +4,24 @@ import BrillyDerCore
 public struct GamesTabView: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var searchText: String = ""
+    @State private var resultFilter: String = "All" // All | W | D | L | Unanalyzed
     @State private var showingPgnSheet: Bool = false
+    @State private var showingPositionEditor: Bool = false
+    @State private var showingScoutSheet: Bool = false
     @State private var pgnDraft: String = ""
+    @State private var scoutDraft: String = ""
+    @State private var scoutPlatform: GameSource = .lichess
 
     private var filteredGames: [GameRecord] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return store.recentGames }
+        let analyzedIds = Set(store.analyzedGames.map(\.id))
         return store.recentGames.filter { g in
-            g.white.name.lowercased().contains(q)
+            if resultFilter == "Unanalyzed" && analyzedIds.contains(g.id) { return false }
+            if ["W", "D", "L"].contains(resultFilter) && g.userResult(for: store.activeUsername) != resultFilter {
+                return false
+            }
+            guard !q.isEmpty else { return true }
+            return g.white.name.lowercased().contains(q)
                 || g.black.name.lowercased().contains(q)
                 || g.openingName.lowercased().contains(q)
                 || g.openingEco.lowercased().contains(q)
@@ -26,7 +36,7 @@ public struct GamesTabView: View {
 
             ScrollView {
                 VStack(spacing: 14) {
-                    // MARK: - Platform Sync Card
+                    // MARK: - 1. Platform Sync Card
                     VStack(spacing: 12) {
                         Picker("Platform", selection: $bindableStore.syncPlatform) {
                             Text("Lichess").tag(GameSource.lichess)
@@ -69,30 +79,27 @@ public struct GamesTabView: View {
                             .disabled(store.isSyncing)
                         }
 
-                        HStack {
-                            Button {
-                                showingPgnSheet = true
-                            } label: {
-                                Label("Paste PGN", systemImage: "doc.on.clipboard")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
-                            }
-                            .buttonStyle(.plain)
+                        // Compact Tools Row: Paste PGN | Board Editor | Scout
+                        HStack(spacing: 8) {
+                            toolChip("Paste PGN", icon: "doc.on.clipboard") { showingPgnSheet = true }
+                            toolChip("Board Editor", icon: "square.grid.3x3.topleft.filled") { showingPositionEditor = true }
+                            toolChip("Scout", icon: "binoculars.fill") { showingScoutSheet = true }
+                        }
 
-                            Spacer()
-
-                            if let err = store.syncErrorMessage {
-                                Text(err)
-                                    .font(.caption)
-                                    .foregroundStyle(BrillyPalette.blunderRose)
-                                    .lineLimit(2)
-                            }
+                        if let err = store.syncErrorMessage {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .padding(16)
                     .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
 
-                    // MARK: - Search Field
+                    // MARK: - 2. Batch Analyze Control Card
+                    batchAnalyzeCard
+
+                    // MARK: - 3. Search & Filter Chips
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(BrillyPalette.inkSecondary)
@@ -104,7 +111,24 @@ public struct GamesTabView: View {
                     .padding(.vertical, 10)
                     .brillySurface(store.surfaceStyle, cornerRadius: 14)
 
-                    // MARK: - Game List
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(["All", "Unanalyzed", "W", "D", "L"], id: \.self) { f in
+                                let sel = resultFilter == f
+                                Button(f == "W" ? "Wins" : (f == "D" ? "Draws" : (f == "L" ? "Losses" : f))) {
+                                    resultFilter = f
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // MARK: - 4. Game List
                     LazyVStack(spacing: 10) {
                         ForEach(filteredGames) { game in
                             gameRow(game)
@@ -112,53 +136,193 @@ public struct GamesTabView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
             }
         }
         .navigationTitle("Games")
-        .sheet(isPresented: $showingPgnSheet) {
-            NavigationStack {
-                ZStack {
-                    CosmicVoidBackdrop(style: store.surfaceStyle)
-                    VStack(spacing: 14) {
-                        TextEditor(text: $pgnDraft)
-                            .scrollContentBackground(.hidden)
-                            .font(.system(.callout, design: .monospaced))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .padding(12)
-                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
+        .sheet(isPresented: $showingPgnSheet) { pgnSheet }
+        .sheet(isPresented: $showingPositionEditor) {
+            PositionEditorSheet().environment(store)
+        }
+        .sheet(isPresented: $showingScoutSheet) { scoutSheet }
+    }
 
-                        Button {
-                            let draft = pgnDraft
-                            showingPgnSheet = false
-                            pgnDraft = ""
-                            store.importAndAnalyzePGN(draft)
-                        } label: {
-                            Text("Analyze PGN")
-                                .font(.headline)
-                                .foregroundStyle(BrillyPalette.voidBg)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 13)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.brillyTeal))
-                        }
+    // MARK: - Batch Analyze Card
+
+    @ViewBuilder
+    private var batchAnalyzeCard: some View {
+        let pending = store.unanalyzedRecentGames.count
+        if store.isBatchAnalyzing {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(store.copy(cosmic: "Batch Telemetry Scan", classic: "Batch Analyzing Games"), systemImage: "cpu")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    Spacer()
+                    Button("Stop") { store.cancelBatchAnalysis() }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.blunderRose)
                         .buttonStyle(.plain)
-                        .disabled(pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    .padding(16)
                 }
-                .navigationTitle("Paste PGN")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showingPgnSheet = false }
+                ProgressView(value: Double(store.batchCompletedGames), total: Double(max(1, store.batchTotalGames)))
+                    .tint(BrillyPalette.brillyTeal)
+                Text(store.batchCurrentLabel)
+                    .font(.caption)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+                    .lineLimit(1)
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.brillyTeal)
+        } else if pending > 0 {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Batch Analyze")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Text("\(pending) unanalyzed game\(pending == 1 ? "" : "s") ready to feed Insights, Mistakes & Vault.")
+                            .font(.caption)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
                     }
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    batchButton("Analyze \(min(5, pending))", count: 5)
+                    if pending > 5 {
+                        batchButton("Analyze \(min(10, pending))", count: 10)
+                    }
+                    if pending > 10 {
+                        batchButton("All (\(pending))", count: pending)
+                    }
+                }
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.warpPurple)
+        }
+    }
+
+    private func batchButton(_ title: String, count: Int) -> some View {
+        Button {
+            store.startBatchAnalysis(maxCount: count)
+        } label: {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toolChip(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BrillyPalette.brillyTeal)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var pgnSheet: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+                VStack(spacing: 14) {
+                    TextEditor(text: $pgnDraft)
+                        .scrollContentBackground(.hidden)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .padding(12)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                    Button {
+                        let draft = pgnDraft
+                        showingPgnSheet = false
+                        pgnDraft = ""
+                        store.importAndAnalyzePGN(draft)
+                    } label: {
+                        Text("Analyze PGN")
+                            .font(.headline)
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.brillyTeal))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(16)
+            }
+            .navigationTitle("Paste PGN")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingPgnSheet = false }
+                }
+            }
+        }
+    }
+
+    private var scoutSheet: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+                VStack(spacing: 16) {
+                    Text("Scout an opponent's recent public games to uncover their favorite openings and softest targets.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+
+                    Picker("Platform", selection: $scoutPlatform) {
+                        Text("Lichess").tag(GameSource.lichess)
+                        Text("Chess.com").tag(GameSource.chesscom)
+                    }
+                    .pickerStyle(.segmented)
+
+                    TextField("Opponent username", text: $scoutDraft)
+                        .textFieldStyle(.plain)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+
+                    Button {
+                        let handle = scoutDraft
+                        let plat = scoutPlatform
+                        showingScoutSheet = false
+                        Task { await store.runScout(opponent: handle, platform: plat) }
+                    } label: {
+                        Label("Build Scout Gameplan", systemImage: "binoculars.fill")
+                            .font(.headline)
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.warpPurple))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(scoutDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    Spacer()
+                }
+                .padding(18)
+            }
+            .navigationTitle("Scout Opponent")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingScoutSheet = false }
                 }
             }
         }
     }
 
     private func gameRow(_ game: GameRecord) -> some View {
-        let userHandle = store.syncPlatform == .chesscom ? store.chessComUsername : store.lichessUsername
-        let res = game.userResult(for: userHandle)
+        let res = game.userResult(for: store.activeUsername)
         let accent: Color = res == "W" ? Color(hex: 0x22C55E) : (res == "L" ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
         let cached = store.analyzedGames.first(where: { $0.id == game.id })
 

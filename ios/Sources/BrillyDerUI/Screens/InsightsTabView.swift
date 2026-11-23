@@ -6,12 +6,38 @@ public struct InsightsTabView: View {
 
     public var body: some View {
         let snap = store.insights
+        let adv = store.advancedInsights
 
         ZStack {
             CosmicVoidBackdrop(style: store.surfaceStyle)
 
             ScrollView {
                 VStack(spacing: 16) {
+                    // MARK: - Active Scout Gameplan Card (when Scout Mode is active!)
+                    if let plan = store.scoutGameplan {
+                        scoutGameplanCard(plan)
+                    }
+
+                    // MARK: - Tilt Guard Stop-Loss Banner
+                    if adv.currentLossStreak >= 2 {
+                        HStack(spacing: 10) {
+                            Image(systemName: "flame.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(store.copy(cosmic: "Tilt Thrusters Overheating (\(adv.currentLossStreak)L Streak)", classic: "Stop-Loss Alert (\(adv.currentLossStreak) Losses in a Row)"))
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                Text("Take a 15-minute breather or run a quick 60s Gravity Check before queueing again.")
+                                    .font(.caption)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(14)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.blunderRose)
+                    }
+
                     if snap.analyzedCount == 0 {
                         VStack(spacing: 14) {
                             Image(systemName: "chart.xyaxis.line")
@@ -20,7 +46,7 @@ public struct InsightsTabView: View {
                             Text("No Telemetry Yet")
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text("Analyze your first game in the Games tab to unlock accuracy trends, phase breakdowns, and opening win rates.")
+                            Text("Sync your games and run Batch Analyze in the Games tab to unlock Accuracy Rings, Clock Leaks, Tilt Guard, Missed Motifs, and Endgame Weaknesses.")
                                 .font(.subheadline)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                 .multilineTextAlignment(.center)
@@ -28,7 +54,7 @@ public struct InsightsTabView: View {
                         .padding(26)
                         .brillySurface(store.surfaceStyle, cornerRadius: 24)
                     } else {
-                        // Hero Accuracy Ring + W/D/L
+                        // MARK: - 1. Hero Accuracy Ring + W/D/L
                         HStack(spacing: 18) {
                             ZStack {
                                 Circle()
@@ -59,7 +85,7 @@ public struct InsightsTabView: View {
                                 Text("\(snap.analyzedCount) Analyzed Games")
                                     .font(.headline)
                                     .foregroundStyle(BrillyPalette.inkPrimary)
-                                HStack(spacing: 12) {
+                                HStack(spacing: 10) {
                                     recordPill("W", snap.wins, Color(hex: 0x22C55E))
                                     recordPill("D", snap.draws, BrillyPalette.inkSecondary)
                                     recordPill("L", snap.losses, BrillyPalette.blunderRose)
@@ -78,7 +104,40 @@ public struct InsightsTabView: View {
                         .padding(18)
                         .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
 
-                        // Phase Accuracy Breakdown
+                        // MARK: - 2. Clock Leaks & Tilt Guard
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Clock Leaks & Tilt Guard")
+                                .font(.headline)
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+
+                            HStack(spacing: 10) {
+                                miniMetric("Impulse (<5s)", value: "\(adv.impulseBlunders)", tint: BrillyPalette.goldAmber)
+                                miniMetric("Time Trouble (<60s)", value: "\(adv.timeTroubleBlunders)", tint: BrillyPalette.blunderRose)
+                            }
+
+                            HStack(spacing: 8) {
+                                ForEach(adv.tiltBuckets) { b in
+                                    VStack(spacing: 4) {
+                                        Text("\(Int(b.winRatePct))%")
+                                            .font(.caption.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(b.games > 0 ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+                                        Text(b.label)
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Text("\(b.games)g")
+                                            .font(.caption2)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20)
+
+                        // MARK: - 3. Phase Accuracy Breakdown
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Accuracy by Phase")
                                 .font(.headline)
@@ -90,7 +149,73 @@ public struct InsightsTabView: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
-                        // Top Openings
+                        // MARK: - 4. Patterns You Miss Most (1-Tap Train!)
+                        if !adv.missedMotifs.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Patterns You Miss Most")
+                                    .font(.headline)
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                ForEach(adv.missedMotifs) { m in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(m.tag)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                            Text("\(m.count) error\(m.count == 1 ? "" : "s") · avg -\(Int(m.avgWinLoss))% win")
+                                                .font(.caption)
+                                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                        }
+                                        Spacer()
+                                        Button("Train") {
+                                            store.openMotifTrainer(tag: m.tag)
+                                        }
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(16)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 20)
+                        }
+
+                        // MARK: - 5. Endgame Weakness Tracker (Routes Straight to Syzygy Lab!)
+                        if !adv.endgameWeaknesses.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Endgame Weakness Tracker")
+                                    .font(.headline)
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                ForEach(adv.endgameWeaknesses) { item in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.category.rawValue)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                            Text("\(String(format: "%.1f", item.accuracy))% acc · \(item.errors) error\(item.errors == 1 ? "" : "s")")
+                                                .font(.caption)
+                                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                        }
+                                        Spacer()
+                                        Button("Lab") {
+                                            store.openEndgameLab(category: item.category)
+                                        }
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(16)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 20)
+                        }
+
+                        // MARK: - 6. Top Openings
                         if !snap.topOpenings.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Top Openings")
@@ -120,10 +245,58 @@ public struct InsightsTabView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
             }
         }
         .navigationTitle("Insights")
+    }
+
+    private func scoutGameplanCard(_ plan: ScoutGameplan) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("How to Beat \(plan.opponentName)", systemImage: "binoculars.fill")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(BrillyPalette.warpPurple)
+                Spacer()
+                Button("Exit Scout") { store.clearScout() }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrillyPalette.blunderRose)
+                    .buttonStyle(.plain)
+            }
+
+            Text(plan.tacticalSummary)
+                .font(.caption)
+                .foregroundStyle(BrillyPalette.inkPrimary)
+
+            if !plan.favoriteWhiteOpenings.isEmpty {
+                Text("As White: \(plan.favoriteWhiteOpenings.map { "\($0.name) (\($0.games)g)" }.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+            if !plan.favoriteBlackOpenings.isEmpty {
+                Text("As Black: \(plan.favoriteBlackOpenings.map { "\($0.name) (\($0.games)g)" }.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple)
+    }
+
+    private func miniMetric(_ label: String, value: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.title3.monospacedDigit().weight(.bold))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(BrillyPalette.inkSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
     }
 
     private func recordPill(_ label: String, _ count: Int, _ color: Color) -> some View {

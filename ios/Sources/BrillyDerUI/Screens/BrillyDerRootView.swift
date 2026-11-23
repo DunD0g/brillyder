@@ -66,36 +66,48 @@ public struct BrillyDerRootView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $bindableStore.showingVault) {
+            BrillyVaultSheet()
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     @ToolbarContentBuilder
     private var cockpitToolbar: some ToolbarContent {
-        ToolbarItem(placement: .automatic) {
-            BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
-                HStack(spacing: 8) {
-                    if store.dailyStreakDays > 0 {
-                        Label("\(store.dailyStreakDays)d", systemImage: "flame.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.goldAmber)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                    }
-
-                    Button {
-                        store.showingSettings = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Cockpit Settings")
-                }
+        if store.dailyStreakDays > 0 {
+            ToolbarItem(placement: .automatic) {
+                Label("\(store.dailyStreakDays)d", systemImage: "flame.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrillyPalette.goldAmber)
             }
+        }
+
+        ToolbarItem(placement: .automatic) {
+            Button {
+                store.showingVault = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "diamond.fill")
+                        .font(.caption.weight(.bold))
+                    Text("\(store.vaultCollection.headlineBrilliantCount)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                }
+                .foregroundStyle(BrillyPalette.brillyTeal)
+            }
+            .accessibilityLabel("Brilly Vault")
+        }
+
+        ToolbarItem(placement: .automatic) {
+            Button {
+                store.showingSettings = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+            }
+            .accessibilityLabel("Cockpit Settings")
         }
     }
 }

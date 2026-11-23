@@ -93,6 +93,10 @@ public struct VaultSnapshot: Codable, Sendable {
     public var lastDailyCompletedDate: String?
     public var lichessUsername: String
     public var chessComUsername: String
+    public var woodpeckerCycle: WoodpeckerCycleRecord?
+    public var masteredEndgameIds: [String]
+    public var convertedAdvantageIds: [String]
+    public var boardVisionBestScore: Int
 
     public init(
         analyzedGames: [AnalyzedGame] = [],
@@ -102,7 +106,11 @@ public struct VaultSnapshot: Codable, Sendable {
         dailyStreakDays: Int = 0,
         lastDailyCompletedDate: String? = nil,
         lichessUsername: String = "",
-        chessComUsername: String = ""
+        chessComUsername: String = "",
+        woodpeckerCycle: WoodpeckerCycleRecord? = nil,
+        masteredEndgameIds: [String] = [],
+        convertedAdvantageIds: [String] = [],
+        boardVisionBestScore: Int = 0
     ) {
         self.analyzedGames = analyzedGames
         self.fsrsCards = fsrsCards
@@ -112,6 +120,26 @@ public struct VaultSnapshot: Codable, Sendable {
         self.lastDailyCompletedDate = lastDailyCompletedDate
         self.lichessUsername = lichessUsername
         self.chessComUsername = chessComUsername
+        self.woodpeckerCycle = woodpeckerCycle
+        self.masteredEndgameIds = masteredEndgameIds
+        self.convertedAdvantageIds = convertedAdvantageIds
+        self.boardVisionBestScore = boardVisionBestScore
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.analyzedGames = (try? c.decode([AnalyzedGame].self, forKey: .analyzedGames)) ?? []
+        self.fsrsCards = (try? c.decode([FsrsOpeningCard].self, forKey: .fsrsCards)) ?? []
+        self.customCourses = (try? c.decode([OpeningCourse].self, forKey: .customCourses)) ?? []
+        self.bookmarks = (try? c.decode([SavedPositionBookmark].self, forKey: .bookmarks)) ?? []
+        self.dailyStreakDays = (try? c.decode(Int.self, forKey: .dailyStreakDays)) ?? 0
+        self.lastDailyCompletedDate = try? c.decode(String.self, forKey: .lastDailyCompletedDate)
+        self.lichessUsername = (try? c.decode(String.self, forKey: .lichessUsername)) ?? ""
+        self.chessComUsername = (try? c.decode(String.self, forKey: .chessComUsername)) ?? ""
+        self.woodpeckerCycle = try? c.decode(WoodpeckerCycleRecord.self, forKey: .woodpeckerCycle)
+        self.masteredEndgameIds = (try? c.decode([String].self, forKey: .masteredEndgameIds)) ?? []
+        self.convertedAdvantageIds = (try? c.decode([String].self, forKey: .convertedAdvantageIds)) ?? []
+        self.boardVisionBestScore = (try? c.decode(Int.self, forKey: .boardVisionBestScore)) ?? 0
     }
 }
 

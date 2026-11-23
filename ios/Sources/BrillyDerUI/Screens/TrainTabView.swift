@@ -13,9 +13,61 @@ public struct TrainTabView: View {
             CosmicVoidBackdrop(style: store.surfaceStyle)
 
             ScrollView {
-                VStack(spacing: 18) {
-                    // MARK: - 1. Daily-First 15m Coach Hero
-                    VStack(alignment: .leading, spacing: 14) {
+                VStack(spacing: 16) {
+                    // Clean Daily-First Mode Strip (15m Coach default; Woodpecker / Convert / Mistakes / Labs one tap away)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(TrainSubMode.allCases) { mode in
+                                let sel = store.selectedTrainMode == mode
+                                Button(mode.rawValue) {
+                                    withAnimation(.snappy) {
+                                        store.selectedTrainMode = mode
+                                    }
+                                    store.triggerHaptic(.move)
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    switch store.selectedTrainMode {
+                    case .daily:
+                        dailyCoachBody(plan: plan)
+                    case .woodpecker:
+                        WoodpeckerCyclePanel()
+                    case .conversion:
+                        AdvantageConversionPanel()
+                    case .mistakes:
+                        MistakeDeckPanel()
+                    case .labs:
+                        TrainLabsView()
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 32)
+            }
+        }
+        .navigationTitle(store.copy(cosmic: "BrillyDer", classic: "Train"))
+        .sheet(isPresented: $showingDailySession) {
+            DailySessionSheet(plan: store.dailyWorkoutPlan)
+                .environment(store)
+        }
+        .sheet(isPresented: $showingGravityCheck) {
+            GravityCheckSheet()
+                .environment(store)
+        }
+    }
+
+    @ViewBuilder
+    private func dailyCoachBody(plan: DailyWorkoutPlan) -> some View {
+        // MARK: - 1. Daily-First 15m Coach Hero
+        VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(store.copy(cosmic: "DAILY FLIGHT PLAN", classic: "DAILY IMPROVEMENT PLAN"))
@@ -161,25 +213,11 @@ public struct TrainTabView: View {
                             value: "\(store.mistakeDeck.count)",
                             tint: BrillyPalette.blunderRose
                         )
-                        statCard(
-                            label: "Bookmarks",
-                            value: "\(store.bookmarks.count)",
-                            tint: BrillyPalette.goldAmber
-                        )
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-        }
-        .navigationTitle(store.copy(cosmic: "BrillyDer", classic: "Train"))
-        .sheet(isPresented: $showingDailySession) {
-            DailySessionSheet(plan: store.dailyWorkoutPlan)
-                .environment(store)
-        }
-        .sheet(isPresented: $showingGravityCheck) {
-            GravityCheckSheet()
-                .environment(store)
+            statCard(
+                label: "Bookmarks",
+                value: "\(store.bookmarks.count)",
+                tint: BrillyPalette.goldAmber
+            )
         }
     }
 
@@ -196,6 +234,7 @@ public struct TrainTabView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(BrillyPalette.inkPrimary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
         }
