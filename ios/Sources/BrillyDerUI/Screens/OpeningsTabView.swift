@@ -230,10 +230,11 @@ private struct CourseDetailSheet: View {
     @State private var drillBoard: ChessBoard = ChessBoard()
     @State private var drillLastMove: (from: Square, to: Square)? = nil
     @State private var drillShownAt: Date = Date()
-    @State private var drillUsedHint: Bool = false
+    @State private var drillHintLevel: Int = 0
     @State private var drillHadMistake: Bool = false
     @State private var drillFeedback: String = "Play your repertoire move on the board."
     @State private var drillSolved: Bool = false
+    @State private var drillSolvedBadge: MoveBadgeOverlay? = nil
 
     private var currentLine: OpeningLine? {
         guard !course.lines.isEmpty else { return nil }
@@ -559,10 +560,23 @@ private struct CourseDetailSheet: View {
                 let safeIdx = min(drillIdx, drillCardIds.count - 1)
                 let cardId = drillCardIds[safeIdx]
                 if let card = store.fsrsCards.first(where: { $0.cardId == cardId }) {
-                    let orient = (try? ChessBoard(fen: card.fen))?.turn ?? course.side.pieceColor
+                    let fenBoard = try? ChessBoard(fen: card.fen)
+                    let orient = fenBoard?.turn ?? course.side.pieceColor
+                    let moveNum = fenBoard?.fullmoveNumber ?? (card.ply / 2 + 1)
+                    let ann = currentLine?.annotations.first { $0.ply == card.ply }
+                    let hintHighlights: [SquareHighlight] = {
+                        guard drillHintLevel >= 1 && !drillSolved,
+                              let legal = DailyCoachPlanner.legalMove(uci: card.expectedUci, on: drillBoard) else { return [] }
+                        return [SquareHighlight(square: legal.from.algebraic, color: .plan)]
+                    }()
+                    let hintArrows: [BoardArrow] = {
+                        guard drillHintLevel >= 2 && !drillSolved,
+                              let legal = DailyCoachPlanner.legalMove(uci: card.expectedUci, on: drillBoard) else { return [] }
+                        return [BoardArrow(from: legal.from.algebraic, to: legal.to.algebraic, color: .best)]
+                    }()
 
                     HStack {
-                        Text("Card \(safeIdx + 1) / \(drillCardIds.count)")
+                        Text("Card \(safeIdx + 1) / \(drillCardIds.count) · Move \(moveNum)\(orient == .black ? "..." : "")")
                             .font(.caption.monospacedDigit().weight(.bold))
                             .foregroundStyle(BrillyPalette.brillyTeal)
                         Spacer()
@@ -578,19 +592,25 @@ private struct CourseDetailSheet: View {
                         surfaceStyle: store.surfaceStyle,
                         interactive: !drillSolved,
                         lastMove: drillLastMove,
-                        arrows: (drillUsedHint && !drillSolved) ? arrowFor(uci: card.expectedUci) : []
+                        arrows: hintArrows,
+                        highlights: hintHighlights,
+                        moveBadge: drillSolvedBadge
                     ) { move in
+                        guard !drillSolved else { return }
                         let elapsedMs = Int(Date().timeIntervalSince(drillShownAt) * 1000.0)
+                        let usedHint = drillHintLevel > 0
                         let hit = move.uci == card.expectedUci
                         if hit {
                             if (try? drillBoard.apply(move)) != nil {
                                 drillLastMove = (move.from, move.to)
                             }
                             drillSolved = true
+                            drillHintLevel = 0
+                            drillSolvedBadge = MoveBadgeOverlay(square: move.to, classification: .best)
                             if !drillHadMistake {
                                 let result = store.recordOpeningAttempt(
                                     cardId: card.cardId,
-                                    attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: drillUsedHint)
+                                    attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: usedHint)
                                 )
                                 drillFeedback = "Locked in \(card.expectedSan)! FSRS graded \(result?.rating.label ?? "Good")."
                             } else {
@@ -598,39 +618,67 @@ private struct CourseDetailSheet: View {
                                 drillFeedback = "Got it (\(card.expectedSan))! Scheduled soon after your earlier miss."
                             }
                         } else {
+                            var temp = drillBoard
+                            let playedSan = (try? temp.apply(move).san) ?? move.uci
+                            let trap = ann?.wrongMoveTraps?.first { $0.playedSan == playedSan }
                             if !drillHadMistake {
                                 drillHadMistake = true
                                 _ = store.recordOpeningAttempt(
                                     cardId: card.cardId,
-                                    attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: drillUsedHint)
+                                    attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: usedHint)
                                 )
                             } else {
                                 store.triggerHaptic(.error)
                             }
-                            drillFeedback = "Expected a different course move (FSRS graded Again). Try again or tap Hint."
+                            if let trap {
+                                drillFeedback = "Trap (\(playedSan)): \(trap.reason)"
+                            } else {
+                                drillFeedback = "Played \(playedSan) — try a different repertoire move, or tap Hint."
+                            }
                         }
                     }
 
-                    Text(drillFeedback)
-                        .font(.subheadline)
-                        .foregroundStyle(drillSolved ? BrillyPalette.brillyTeal : (drillHadMistake ? BrillyPalette.blunderRose : BrillyPalette.inkPrimary))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .brillySurface(store.surfaceStyle, cornerRadius: 16)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(drillFeedback)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(drillSolved ? BrillyPalette.brillyTeal : (drillHadMistake ? BrillyPalette.blunderRose : BrillyPalette.inkPrimary))
+                        if drillSolved, let plan = ann?.plan, !plan.isEmpty {
+                            Text(plan)
+                                .font(.caption)
+                                .foregroundStyle(Color(hex: 0xCBD5E1))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: drillSolved ? BrillyPalette.brillyTeal : nil)
 
                     HStack(spacing: 10) {
                         Button {
-                            drillUsedHint = true
+                            guard !drillSolved,
+                                  let legal = DailyCoachPlanner.legalMove(uci: card.expectedUci, on: drillBoard) else { return }
+                            if drillHintLevel == 0 {
+                                drillHintLevel = 1
+                                let pName = drillBoard[legal.from]?.type.displayName ?? "piece"
+                                drillFeedback = "Hint: Look at your \(pName) on \(legal.from.algebraic)!"
+                            } else if drillHintLevel == 1 {
+                                drillHintLevel = 2
+                                drillFeedback = "Arrow revealed: play \(card.expectedSan) (\(legal.from.algebraic) → \(legal.to.algebraic))."
+                            }
+                            store.triggerHaptic(.move)
                         } label: {
-                            Label("Hint", systemImage: "lightbulb.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(BrillyPalette.goldAmber)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                            Label(
+                                drillHintLevel == 0 ? "Hint" : (drillHintLevel == 1 ? "Show Arrow" : "Arrow Shown"),
+                                systemImage: drillHintLevel == 0 ? "lightbulb.fill" : "arrow.up.right"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                         }
                         .buttonStyle(.plain)
-                        .disabled(drillSolved)
+                        .disabled(drillSolved || drillHintLevel >= 2)
+                        .opacity((drillSolved || drillHintLevel >= 2) ? 0.50 : 1.0)
 
                         Button {
                             drillIdx = (safeIdx + 1) % drillCardIds.count
@@ -667,13 +715,28 @@ private struct CourseDetailSheet: View {
     private func loadDrillCard() {
         guard drillIdx < drillCardIds.count,
               let card = store.fsrsCards.first(where: { $0.cardId == drillCardIds[drillIdx] }) else { return }
-        drillBoard = (try? ChessBoard(fen: card.fen)) ?? ChessBoard()
-        drillLastMove = nil
+        let board = (try? ChessBoard(fen: card.fen)) ?? ChessBoard()
+        let moveNum = board.fullmoveNumber
+        let seq: [String] = {
+            if !card.moveSequence.isEmpty { return card.moveSequence }
+            if let moves = currentLine?.moves, card.ply > 0, card.ply <= moves.count {
+                return Array(moves.prefix(card.ply))
+            }
+            return []
+        }()
+        let oppPrev = DailyCoachPlanner.precedingMove(for: seq)
+        drillBoard = board
+        drillLastMove = oppPrev.map { ($0.from, $0.to) }
         drillShownAt = Date()
-        drillUsedHint = false
+        drillHintLevel = 0
         drillHadMistake = false
         drillSolved = false
-        drillFeedback = "Move \(card.ply / 2 + 1) — play the repertoire move!"
+        drillSolvedBadge = nil
+        if let oppPrev {
+            drillFeedback = "After \(oppPrev.san) (Move \(moveNum)) — play your \(board.turn.displayName) repertoire reply!"
+        } else {
+            drillFeedback = "Move \(moveNum) — play your \(board.turn.displayName) repertoire move!"
+        }
     }
 
     private func boardAfter(moves: [String]) -> ChessBoard {

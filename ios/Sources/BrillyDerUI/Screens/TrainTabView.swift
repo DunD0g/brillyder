@@ -322,12 +322,19 @@ private struct DailySessionSheet: View {
 
     private struct DrillStep: Identifiable {
         let id: String
-        let stageTitle: String
+        let stageNumber: Int
+        let stageLabel: String
+        let contextTitle: String
+        let moveNumber: Int
         let fen: String
         let orientation: PieceColor
         let expectedUci: String
         let expectedSan: String
         let prompt: String
+        let coachingPlan: String?
+        let previousBadSan: String?
+        let opponentLastMove: (from: Square, to: Square, san: String)?
+        let wrongMoveTraps: [WrongMoveTrap]
         let cardId: String?
     }
 
@@ -335,83 +342,132 @@ private struct DailySessionSheet: View {
     @State private var initialized: Bool = false
     @State private var stepIndex: Int = 0
     @State private var board: ChessBoard = ChessBoard()
-    @State private var statusMessage: String = "Find the strongest repertoire or tactical move."
+    @State private var statusMessage: String = "Find the strongest move."
     @State private var isSolved: Bool = false
     @State private var hadMistakeOnCurrent: Bool = false
-    @State private var usedHint: Bool = false
+    @State private var hintLevel: Int = 0 // 0 = none, 1 = highlight piece, 2 = show legal arrow
     @State private var shownAt: Date = Date()
     @State private var cleanSolveCount: Int = 0
     @State private var lastMove: (from: Square, to: Square)? = nil
+    @State private var solvedBadge: MoveBadgeOverlay? = nil
 
     private func buildInitialSteps() -> [DrillStep] {
-        let courseNames = Dictionary(store.allCourses.map { ($0.id, $0.name) }, uniquingKeysWith: { _, latest in latest })
+        let coursesById = Dictionary(store.allCourses.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        let gamesById = Dictionary(store.analyzedGames.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var out: [DrillStep] = []
 
+        func prevGameMove(gameId: String, beforePly ply: Int) -> (from: Square, to: Square, san: String)? {
+            guard ply >= 2,
+                  let game = gamesById[gameId],
+                  let prev = game.plies.first(where: { $0.ply == ply - 1 }),
+                  let f = Square(algebraic: prev.from),
+                  let t = Square(algebraic: prev.to) else { return nil }
+            return (f, t, prev.san)
+        }
+
         for c in plan.stage1OpeningCards {
-            let fenBoard = try? ChessBoard(fen: c.fen)
-            let sideToMove = fenBoard?.turn ?? c.side.pieceColor
-            let courseName = courseNames[c.courseId] ?? "Opening"
+            guard let fenBoard = try? ChessBoard(fen: c.fen),
+                  DailyCoachPlanner.legalMove(uci: c.expectedUci, on: fenBoard) != nil else { continue }
+            let sideToMove = fenBoard.turn
+            let moveNum = fenBoard.fullmoveNumber
+            let course = coursesById[c.courseId]
+            let line = course?.lines.first { $0.id == c.lineId }
+            let courseName = course?.name ?? "Opening"
+            let lineTitle = line?.title
+            let contextTitle = lineTitle.map { "\(courseName) · \($0)" } ?? courseName
+            let ann = line?.annotations.first { $0.ply == c.ply }
+
+            let seq: [String] = {
+                if !c.moveSequence.isEmpty { return c.moveSequence }
+                if let lineMoves = line?.moves, c.ply > 0, c.ply <= lineMoves.count {
+                    return Array(lineMoves.prefix(c.ply))
+                }
+                return []
+            }()
+            let oppPrev = DailyCoachPlanner.precedingMove(for: seq)
+            let promptText: String = {
+                if let opp = oppPrev {
+                    return "After \(opp.san), play your Move \(moveNum) repertoire reply as \(sideToMove.displayName)."
+                }
+                return "Move \(moveNum) — play your \(courseName) opening move as \(sideToMove.displayName)."
+            }()
+
             out.append(DrillStep(
                 id: "s1_\(c.cardId)",
-                stageTitle: "Stage 1 · \(courseName) (\(sideToMove.displayName))",
+                stageNumber: 1,
+                stageLabel: "Openings",
+                contextTitle: contextTitle,
+                moveNumber: moveNum,
                 fen: c.fen,
                 orientation: sideToMove,
                 expectedUci: c.expectedUci,
                 expectedSan: c.expectedSan,
-                prompt: "\(sideToMove.displayName) to move (Move \(c.ply / 2 + 1)) — recall your \(courseName) move.",
+                prompt: promptText,
+                coachingPlan: ann?.plan,
+                previousBadSan: nil,
+                opponentLastMove: oppPrev,
+                wrongMoveTraps: ann?.wrongMoveTraps ?? [],
                 cardId: c.cardId
             ))
         }
-        for p in plan.stage2Blunders {
-            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
-            out.append(DrillStep(
-                id: "s2_\(p.id)",
-                stageTitle: "Stage 2 · Blunder Rewind (\(sideToMove.displayName))",
-                fen: p.fen,
-                orientation: sideToMove,
-                expectedUci: p.bestMoveUci,
-                expectedSan: p.bestMoveSan,
-                prompt: "You played \(p.playedSan) vs \(p.opponentName). Find the better move!",
-                cardId: nil
-            ))
+
+        func appendPuzzleSteps(_ puzzles: [MistakePuzzle], stageNumber: Int, stageLabel: String, prefix: String) {
+            for p in puzzles {
+                guard let fenBoard = try? ChessBoard(fen: p.fen),
+                      DailyCoachPlanner.legalMove(uci: p.bestMoveUci, on: fenBoard) != nil else { continue }
+                let sideToMove = fenBoard.turn
+                let moveNum = fenBoard.fullmoveNumber
+                let oppPrev = prevGameMove(gameId: p.gameId, beforePly: p.ply)
+                let pvLine = p.pvSan.isEmpty ? nil : "Best line: \(p.pvSan.prefix(4).joined(separator: " "))"
+                let promptText: String = {
+                    if stageNumber == 2 {
+                        return "You played \(p.playedSan) vs \(p.opponentName). Find the stronger move!"
+                    }
+                    return p.headline.isEmpty ? "Find the sharpest \(sideToMove.displayName) continuation." : p.headline
+                }()
+                out.append(DrillStep(
+                    id: "\(prefix)_\(p.id)",
+                    stageNumber: stageNumber,
+                    stageLabel: stageLabel,
+                    contextTitle: "\(p.openingName) vs \(p.opponentName)",
+                    moveNumber: moveNum,
+                    fen: p.fen,
+                    orientation: sideToMove,
+                    expectedUci: p.bestMoveUci,
+                    expectedSan: p.bestMoveSan,
+                    prompt: promptText,
+                    coachingPlan: pvLine,
+                    previousBadSan: p.playedSan,
+                    opponentLastMove: oppPrev,
+                    wrongMoveTraps: [],
+                    cardId: nil
+                ))
+            }
         }
-        for p in plan.stage3SpeedDrills {
-            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
-            out.append(DrillStep(
-                id: "s3_\(p.id)",
-                stageTitle: "Stage 3 · Pattern Sprint (\(sideToMove.displayName))",
-                fen: p.fen,
-                orientation: sideToMove,
-                expectedUci: p.bestMoveUci,
-                expectedSan: p.bestMoveSan,
-                prompt: p.headline,
-                cardId: nil
-            ))
-        }
-        for p in plan.stage4Drills {
-            let sideToMove = (try? ChessBoard(fen: p.fen))?.turn ?? p.playerColor
-            out.append(DrillStep(
-                id: "s4_\(p.id)",
-                stageTitle: "Stage 4 · \(plan.stage4FocusLabel) (\(sideToMove.displayName))",
-                fen: p.fen,
-                orientation: sideToMove,
-                expectedUci: p.bestMoveUci,
-                expectedSan: p.bestMoveSan,
-                prompt: p.headline,
-                cardId: nil
-            ))
-        }
+
+        appendPuzzleSteps(plan.stage2Blunders, stageNumber: 2, stageLabel: "Rewind", prefix: "s2")
+        appendPuzzleSteps(plan.stage3SpeedDrills, stageNumber: 3, stageLabel: "Speed", prefix: "s3")
+        appendPuzzleSteps(plan.stage4Drills, stageNumber: 4, stageLabel: plan.stage4FocusLabel, prefix: "s4")
+
         if out.isEmpty {
             for fb in DailyCoachPlanner.fallbackGravityFlashes {
-                let sideToMove = (try? ChessBoard(fen: fb.fen))?.turn ?? fb.orientation
+                guard let fenBoard = try? ChessBoard(fen: fb.fen),
+                      DailyCoachPlanner.legalMove(uci: fb.expectedUci, on: fenBoard) != nil else { continue }
                 out.append(DrillStep(
                     id: fb.id,
-                    stageTitle: "Tactical Warmup (\(sideToMove.displayName))",
+                    stageNumber: 1,
+                    stageLabel: "Warmup",
+                    contextTitle: fb.subtitle,
+                    moveNumber: fenBoard.fullmoveNumber,
                     fen: fb.fen,
-                    orientation: sideToMove,
+                    orientation: fenBoard.turn,
                     expectedUci: fb.expectedUci,
                     expectedSan: fb.expectedSan,
                     prompt: fb.prompt,
+                    coachingPlan: nil,
+                    previousBadSan: nil,
+                    opponentLastMove: nil,
+                    wrongMoveTraps: [],
                     cardId: nil
                 ))
             }
@@ -426,14 +482,14 @@ private struct DailySessionSheet: View {
 
                 if initialized && stepIndex >= frozenSteps.count {
                     VStack(spacing: 18) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 56))
-                            .foregroundStyle(BrillyPalette.brillyTeal)
+                        BrillyAlienUFOView(mood: .brilliant, size: 84, showBeam: true)
                         Text(store.copy(cosmic: "Orbit Complete!", classic: "Daily Session Complete!"))
                             .font(.title2.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                        Text("Solved \(cleanSolveCount) / \(frozenSteps.count) positions on first try.")
+                        Text("Solved \(cleanSolveCount) / \(frozenSteps.count) positions cleanly on first try.")
+                            .font(.subheadline)
                             .foregroundStyle(BrillyPalette.inkSecondary)
+                            .multilineTextAlignment(.center)
                         Button("Finish & Log Streak") {
                             store.markDailySessionCompleted()
                             dismiss()
@@ -450,14 +506,27 @@ private struct DailySessionSheet: View {
                     .padding()
                 } else if stepIndex < frozenSteps.count {
                     let current = frozenSteps[stepIndex]
+                    let activeHighlights: [SquareHighlight] = (hintLevel >= 1 && !isSolved)
+                        ? validatedHintHighlight(for: current.expectedUci, on: board)
+                        : []
+                    let activeArrows: [BoardArrow] = (hintLevel >= 2 && !isSolved)
+                        ? validatedHintArrow(for: current.expectedUci, on: board)
+                        : []
+
                     ScrollView {
-                        VStack(spacing: 14) {
-                            HStack {
-                                Text(current.stageTitle)
+                        VStack(spacing: 12) {
+                            // Compact Stage Header + Progress Bar
+                            HStack(spacing: 8) {
+                                Text("Stage \(current.stageNumber) · \(current.stageLabel)")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal.opacity(0.14)))
                                     .lineLimit(1)
-                                Spacer()
+
+                                Spacer(minLength: 4)
+
                                 Text("\(stepIndex + 1) / \(frozenSteps.count)")
                                     .font(.caption.monospacedDigit().weight(.bold))
                                     .foregroundStyle(BrillyPalette.inkSecondary)
@@ -465,8 +534,38 @@ private struct DailySessionSheet: View {
 
                             TractorBeamProgressBar(
                                 progress: Double(stepIndex + (isSolved ? 1 : 0)) / Double(max(1, frozenSteps.count)),
-                                height: 9
+                                height: 8
                             )
+
+                            // Authoritative Opening / Game Context Bar (Line + Exact FEN Move Number + Side)
+                            HStack(spacing: 8) {
+                                Text(current.contextTitle)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(current.orientation == .white ? Color.white : Color(hex: 0x1E293B))
+                                        .frame(width: 8, height: 8)
+                                        .overlay(Circle().strokeBorder(Color.white.opacity(0.5), lineWidth: 0.8))
+                                    Text("Move \(current.moveNumber)\(current.orientation == .black ? "..." : "")")
+                                        .font(.caption2.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.white.opacity(0.08)))
+
+                                if let badSan = current.previousBadSan {
+                                    Text("Played \(badSan)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.14)))
+                                }
+                            }
 
                             InteractiveChessBoardView(
                                 board: board,
@@ -475,37 +574,55 @@ private struct DailySessionSheet: View {
                                 surfaceStyle: store.surfaceStyle,
                                 interactive: !isSolved,
                                 lastMove: lastMove,
-                                arrows: (usedHint && !isSolved) ? hintArrows(for: current.expectedUci) : []
+                                arrows: activeArrows,
+                                highlights: activeHighlights,
+                                moveBadge: solvedBadge
                             ) { move in
                                 handleMove(move, for: current)
                             }
 
+                            // Clean Coach Guidance Card
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(current.prompt)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
                                 Text(statusMessage)
-                                    .font(.caption)
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(isSolved ? BrillyPalette.brillyTeal : (hadMistakeOnCurrent ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary))
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                if isSolved, let planText = current.coachingPlan, !planText.isEmpty {
+                                    Text(planText)
+                                        .font(.caption)
+                                        .foregroundStyle(Color(hex: 0xCBD5E1))
+                                        .padding(.top, 2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(14)
-                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: isSolved ? BrillyPalette.brillyTeal : nil)
 
+                            // Progressive 2-Step Hint + Next/Skip Controls
                             HStack(spacing: 10) {
                                 Button {
-                                    usedHint = true
-                                    statusMessage = "Hint: Look closely at \(current.expectedSan.prefix(2))…"
+                                    triggerHint(for: current)
                                 } label: {
-                                    Label("Hint", systemImage: "lightbulb.fill")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(BrillyPalette.goldAmber)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 11)
-                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                    Label(
+                                        hintLevel == 0 ? "Hint" : (hintLevel == 1 ? "Show Arrow" : "Arrow Shown"),
+                                        systemImage: hintLevel == 0 ? "lightbulb.fill" : "arrow.up.right"
+                                    )
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(isSolved)
+                                .disabled(isSolved || hintLevel >= 2)
+                                .opacity((isSolved || hintLevel >= 2) ? 0.50 : 1.0)
 
                                 Button {
                                     advanceStep()
@@ -522,11 +639,16 @@ private struct DailySessionSheet: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
                 }
             }
             .navigationTitle("Daily Coach")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -546,32 +668,57 @@ private struct DailySessionSheet: View {
         guard stepIndex < frozenSteps.count else { return }
         let cur = frozenSteps[stepIndex]
         board = (try? ChessBoard(fen: cur.fen)) ?? ChessBoard()
-        lastMove = nil
+        if let opp = cur.opponentLastMove {
+            lastMove = (opp.from, opp.to)
+            statusMessage = "Opponent just played \(opp.san). Play \(cur.orientation.displayName)'s reply."
+        } else {
+            lastMove = nil
+            statusMessage = "Play \(cur.orientation.displayName)'s move on the board."
+        }
         isSolved = false
         hadMistakeOnCurrent = false
-        usedHint = false
+        hintLevel = 0
+        solvedBadge = nil
         shownAt = Date()
-        statusMessage = "Play \(cur.orientation.displayName)'s move on the board."
+    }
+
+    private func triggerHint(for step: DrillStep) {
+        guard !isSolved else { return }
+        guard let legal = DailyCoachPlanner.legalMove(uci: step.expectedUci, on: board) else { return }
+        if hintLevel == 0 {
+            hintLevel = 1
+            let pieceName = board[legal.from]?.type.displayName ?? "piece"
+            statusMessage = "Hint: Look at your \(pieceName) on \(legal.from.algebraic)!"
+            store.triggerHaptic(.move)
+        } else if hintLevel == 1 {
+            hintLevel = 2
+            statusMessage = "Arrow revealed: play \(step.expectedSan) (\(legal.from.algebraic) → \(legal.to.algebraic))."
+            store.triggerHaptic(.move)
+        }
     }
 
     private func handleMove(_ move: ChessMove, for step: DrillStep) {
+        guard !isSolved else { return }
         let elapsedMs = Int(Date().timeIntervalSince(shownAt) * 1000.0)
+        let usedAnyHint = hintLevel > 0
         if move.uci == step.expectedUci {
             if let _ = try? board.apply(move) {
                 lastMove = (move.from, move.to)
             }
             isSolved = true
+            hintLevel = 0
+            solvedBadge = MoveBadgeOverlay(square: move.to, classification: .best)
             if !hadMistakeOnCurrent {
                 cleanSolveCount += 1
                 if let cardId = step.cardId {
                     let res = store.recordOpeningAttempt(
                         cardId: cardId,
-                        attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: usedHint)
+                        attempt: OpeningAttemptInput(correct: true, responseMs: elapsedMs, hintUsed: usedAnyHint)
                     )
                     statusMessage = "Spot on (\(step.expectedSan)) · FSRS rated \(res?.rating.label ?? "Good")!"
                 } else {
                     store.triggerHaptic(.success)
-                    statusMessage = "Spot on! \(step.expectedSan) is the engine's top move."
+                    statusMessage = "Spot on! \(step.expectedSan) is the top move."
                 }
             } else {
                 // Already recorded FSRS lapse on first miss — don't double-grade!
@@ -579,12 +726,17 @@ private struct DailySessionSheet: View {
                 statusMessage = "Got it (\(step.expectedSan))! Scheduled soon for spaced reinforcement."
             }
         } else {
+            // Check SAN of attempted move so we can give clear feedback & surface any known wrongMoveTrap!
+            var temp = board
+            let playedSan = (try? temp.apply(move).san) ?? move.uci
+            let trapMatch = step.wrongMoveTraps.first { $0.playedSan == playedSan }
+
             if !hadMistakeOnCurrent {
                 hadMistakeOnCurrent = true
                 if let cardId = step.cardId {
                     _ = store.recordOpeningAttempt(
                         cardId: cardId,
-                        attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: usedHint)
+                        attempt: OpeningAttemptInput(correct: false, responseMs: elapsedMs, hintUsed: usedAnyHint)
                     )
                 } else {
                     store.triggerHaptic(.error)
@@ -592,18 +744,29 @@ private struct DailySessionSheet: View {
             } else {
                 store.triggerHaptic(.error)
             }
-            statusMessage = "Not quite — try again, or tap Hint for a nudge."
+            if let trap = trapMatch {
+                statusMessage = "Trap (\(playedSan)): \(trap.reason)"
+            } else {
+                statusMessage = "Played \(playedSan) — not the target move here. Try again or tap Hint."
+            }
         }
     }
 
     private func advanceStep() {
-        stepIndex += 1
-        loadCurrentStep()
+        withAnimation(.snappy(duration: 0.22)) {
+            stepIndex += 1
+            loadCurrentStep()
+        }
     }
 
-    private func hintArrows(for uci: String) -> [BoardArrow] {
-        guard let m = ChessMove(uci: uci) else { return [] }
-        return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
+    private func validatedHintHighlight(for uci: String, on currentBoard: ChessBoard) -> [SquareHighlight] {
+        guard let legal = DailyCoachPlanner.legalMove(uci: uci, on: currentBoard) else { return [] }
+        return [SquareHighlight(square: legal.from.algebraic, color: .plan)]
+    }
+
+    private func validatedHintArrow(for uci: String, on currentBoard: ChessBoard) -> [BoardArrow] {
+        guard let legal = DailyCoachPlanner.legalMove(uci: uci, on: currentBoard) else { return [] }
+        return [BoardArrow(from: legal.from.algebraic, to: legal.to.algebraic, color: .best)]
     }
 }
 
@@ -715,6 +878,9 @@ private struct GravityCheckSheet: View {
                 }
             }
             .navigationTitle(store.copy(cosmic: "Gravity Check", classic: "60s Warmup"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

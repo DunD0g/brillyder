@@ -390,3 +390,20 @@
 ### Verified
 - Visually inspected rendered `ImageRenderer` previews ([preview_brand_shouts.png] and [preview_brillyder_card.png]) verifying the top-left split-crown logo, `Brilly / Der` wordmark, `PURE BRILLY!!` / `OH DERRR!!` Alien UFO banners, and updated `BRILLY / DER` Share Card.
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 28 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.3`, build `8`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.
+
+---
+
+## v2.6.4 (iOS Daily Coach & Opening Drill Overhaul — Exact Move Numbers, Zero Phantom Arrows & Context)
+**Status:** Completed & Verified
+
+### Built
+- **Authoritative Move Numbers & Strict Legal-Move Arrow Validation (`DailyCoachPlanner.swift`, `ChessTypes.swift`, `TrainTabView.swift`, `OpeningsTabView.swift`):**
+  - Replaced stale `ply / 2 + 1` move numbering with `ChessBoard(fen:).fullmoveNumber` across `DailySessionSheet`, `GravityCheckSheet`, `DailyCoachPlanner.buildGravityCheckFlashes`, and `OpeningsTabView` drills so Move 7–10 positions never misreport as Move 2/3.
+  - Added `DailyCoachPlanner.legalMove(uci:on:)` validation before filtering cards in `buildPlan` / `buildGravityCheckFlashes` and before drawing ANY hint highlight or vector arrow, eliminating phantom arrows from empty or stale squares (`b8 → c6`).
+  - Added `DailyCoachPlanner.precedingMove(for:)` and source-game previous-ply lookup so every Daily Coach & Opening Drill card highlights the opponent's last move (`After 7. O-O`) instead of cold-dropping onto an unlabeled static board.
+- **Polished Daily Coach UX & 2-Step Progressive Hints (`TrainTabView.swift`, `OpeningsTabView.swift`):**
+  - Switched `DailySessionSheet` and `GravityCheckSheet` to compact `.inline` navigation headers, added a crisp context bar (`Course · Line Title`, exact `Move N` + side dot, and `Played <blunder>` pill on Rewind drills), and surfaced real `MoveAnnotation.plan` coaching insights on solve and `WrongMoveTrap` explanations on trap misses.
+  - Upgraded Hints to a clean 2-step flow (**Tap 1:** highlights the origin piece square + piece name nudge; **Tap 2:** draws the validated legal arrow), resetting cleanly on solve with a `★` solved badge on the board.
+
+### Verified
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 29 tests passed** (added `dailyCoachLegalityAndContext` regression test), Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.4`, build `9`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.

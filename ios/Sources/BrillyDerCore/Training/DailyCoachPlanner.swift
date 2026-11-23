@@ -111,12 +111,16 @@ public enum DailyCoachPlanner {
         now: Date = Date()
     ) -> DailyWorkoutPlan {
         let q = quotas(for: duration)
+        let isPlayable: (FsrsOpeningCard) -> Bool = { card in
+            guard let board = try? ChessBoard(fen: card.fen) else { return false }
+            return legalMove(uci: card.expectedUci, on: board) != nil
+        }
         let dueCards = fsrsCards
-            .filter { FSRS6Scheduler.isCardDue($0, now: now) }
+            .filter { FSRS6Scheduler.isCardDue($0, now: now) && isPlayable($0) }
             .sorted { $0.dueAt < $1.dueAt }
 
         let unlockedSorted = fsrsCards
-            .filter(\.unlocked)
+            .filter { $0.unlocked && isPlayable($0) }
             .sorted { $0.dueAt < $1.dueAt }
 
         let stage1: [FsrsOpeningCard]
@@ -185,24 +189,65 @@ public enum DailyCoachPlanner {
             items.append(fb)
         }
 
-        // Add 1 unlocked due opening memory flash if available (never pull locked unlearned cards)
-        let unlockedDue = fsrsCards.filter { FSRS6Scheduler.isCardDue($0, now: now) }.sorted { $0.dueAt < $1.dueAt }.first
-            ?? fsrsCards.filter(\.unlocked).sorted { $0.dueAt < $1.dueAt }.first
+        // Add 1 unlocked due opening memory flash if available (never pull locked unlearned cards or illegal UCI cards)
+        let isValidCard: (FsrsOpeningCard) -> Bool = { card in
+            guard let board = try? ChessBoard(fen: card.fen) else { return false }
+            return legalMove(uci: card.expectedUci, on: board) != nil
+        }
+        let unlockedDue = fsrsCards
+            .filter { FSRS6Scheduler.isCardDue($0, now: now) && isValidCard($0) }
+            .sorted { $0.dueAt < $1.dueAt }
+            .first
+            ?? fsrsCards.filter { $0.unlocked && isValidCard($0) }.sorted { $0.dueAt < $1.dueAt }.first
+
         if let due = unlockedDue {
+            let dueBoard = try? ChessBoard(fen: due.fen)
+            let orient = dueBoard?.turn ?? due.side.pieceColor
+            let moveNum = dueBoard?.fullmoveNumber ?? (due.ply / 2 + 1)
             items.append(GravityFlashItem(
                 id: "grav_open_\(due.cardId)",
                 kind: "opening",
                 fen: due.fen,
-                orientation: due.side.pieceColor,
+                orientation: orient,
                 expectedUci: due.expectedUci,
                 expectedSan: due.expectedSan,
-                prompt: "Opening recall — play your repertoire move!",
-                subtitle: "Move \(due.ply / 2 + 1) · \(due.side.rawValue.capitalized)",
+                prompt: "\(orient.displayName) to move (Move \(moveNum)) — play your repertoire move!",
+                subtitle: "Move \(moveNum) · \(orient.displayName)",
                 timeLimitSec: 15,
                 cardId: due.cardId
             ))
         }
 
         return items
+    }
+
+    /// Resolves a UCI move string ONLY if it is strictly legal on `board` (prevents phantom arrows from empty/wrong squares).
+    public static func legalMove(uci: String, on board: ChessBoard) -> ChessMove? {
+        guard let candidate = ChessMove(uci: uci) else { return nil }
+        return board.legalMoves().first {
+            $0.from == candidate.from && $0.to == candidate.to && $0.promotion == candidate.promotion
+        }
+    }
+
+    /// Replays a SAN move prefix from the initial position and returns the final opponent move `(from, to, san)`
+    /// so opening drills can highlight what the opponent just played rather than cold-dropping into a static board.
+    public static func precedingMove(for moveSequence: [String]) -> (from: Square, to: Square, san: String)? {
+        guard !moveSequence.isEmpty else { return nil }
+        var board = ChessBoard()
+        var lastApplied: AppliedMove? = nil
+        for san in moveSequence {
+            guard let applied = try? board.apply(san: san) else { return nil }
+            lastApplied = applied
+        }
+        guard let last = lastApplied else { return nil }
+        return (from: last.move.from, to: last.move.to, san: last.san)
+    }
+
+    /// Returns the authoritative 1-based chess move number directly from a position FEN, falling back to `ply / 2 + 1`.
+    public static func authoritativeMoveNumber(fen: String, fallbackPly: Int) -> Int {
+        if let board = try? ChessBoard(fen: fen) {
+            return board.fullmoveNumber
+        }
+        return max(1, fallbackPly / 2 + 1)
     }
 }

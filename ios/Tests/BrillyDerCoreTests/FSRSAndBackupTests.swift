@@ -70,4 +70,39 @@ struct FSRSAndBackupTests {
         #expect(merged.lichessUsername == "MagnusTest")
         #expect(merged.chessComUsername == "HikaruTest")
     }
+
+    @Test("DailyCoachPlanner validates legal UCI moves, rejects phantom arrows, computes authoritative FEN move numbers, and replays opponent last move")
+    func dailyCoachLegalityAndContext() throws {
+        // Position after 7. O-O in King's Indian (Black to move on Move 7, b8 is empty so b8c6 is ILLEGAL)
+        let moves = ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O", "Be2", "e5", "O-O"]
+        var b = ChessBoard()
+        for m in moves { _ = try b.apply(san: m) }
+        let fen = b.fen
+
+        // Authoritative move number must be 7 even if fallbackPly is stale (e.g. 4)
+        #expect(DailyCoachPlanner.authoritativeMoveNumber(fen: fen, fallbackPly: 4) == 7)
+
+        // Preceding opponent move must be White's castling O-O (e1 -> g1)
+        let prev = try #require(DailyCoachPlanner.precedingMove(for: moves))
+        #expect(prev.san == "O-O")
+        #expect(prev.from.algebraic == "e1")
+        #expect(prev.to.algebraic == "g1")
+
+        // Legal check accepts b8c6 when knight is on b8, rejects phantom arrows from empty square (e.g. a1a5)
+        #expect(DailyCoachPlanner.legalMove(uci: "b8c6", on: b) != nil)
+        #expect(DailyCoachPlanner.legalMove(uci: "a1a5", on: b) == nil)
+
+        // buildPlan must filter out cards whose expectedUci is illegal on their FEN
+        let corruptCard = FSRS6Scheduler.createCard(
+            courseId: "c1", lineId: "l1", side: .black, fen: fen, ply: 13,
+            moveSequence: moves, expectedSan: "Ra5", expectedUci: "a1a5", unlocked: true
+        )
+        let validCard = FSRS6Scheduler.createCard(
+            courseId: "c1", lineId: "l1", side: .black, fen: fen, ply: 13,
+            moveSequence: moves, expectedSan: "Nc6", expectedUci: "b8c6", unlocked: true
+        )
+        let plan = DailyCoachPlanner.buildPlan(duration: .fifteen, fsrsCards: [corruptCard, validCard], mistakeDeck: [])
+        #expect(plan.stage1OpeningCards.count == 1)
+        #expect(plan.stage1OpeningCards[0].cardId == validCard.cardId)
+    }
 }

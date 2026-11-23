@@ -36,6 +36,17 @@ public enum PieceType: String, Codable, Hashable, Sendable, CaseIterable {
         }
     }
 
+    public var displayName: String {
+        switch self {
+        case .pawn: return "pawn"
+        case .knight: return "knight"
+        case .bishop: return "bishop"
+        case .rook: return "rook"
+        case .queen: return "queen"
+        case .king: return "king"
+        }
+    }
+
     public var materialValue: Int {
         switch self {
         case .pawn: return 1
