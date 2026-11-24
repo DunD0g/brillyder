@@ -132,39 +132,33 @@ public struct BrillyProPaywallSheet: View {
         .padding(.top, 8)
     }
 
-    // MARK: - Free vs Pro Highlights
+    // MARK: - Free vs Pro Highlights (Structured Improvement & Habits Lead)
 
     private var benefitsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             benefitRow(
-                "infinity",
-                tint: BrillyPalette.brillyTeal,
-                title: "Unlimited Game & Batch Analysis",
-                subtitle: "Remove the 2/day Free limit · batch-analyze your full Lichess & Chess.com archive offline"
-            )
-            benefitRow(
                 "clock.badge.checkmark.fill",
-                tint: BrillyPalette.warpPurpleText,
-                title: "15m & 25m Orbit Coach + Woodpecker Cycles",
-                subtitle: "Extended FSRS opening sessions, Advantage Conversion & tactical speed cycles"
+                tint: BrillyPalette.brillyTeal,
+                title: "15m & 25m Daily Orbit Coach + Woodpecker Cycles",
+                subtitle: "Structured blunder-fixing loop, Advantage Conversion & tactical speed cycles"
             )
             benefitRow(
                 "book.closed.fill",
+                tint: BrillyPalette.warpPurpleText,
+                title: "All 8 FSRS Opening Courses + Unlimited Custom PGN Imports",
+                subtitle: "Spaced-repetition drills graded on recall speed across your own repertoires"
+            )
+            benefitRow(
+                "infinity",
                 tint: BrillyPalette.goldAmber,
-                title: "All 8 Starter Openings + Custom PGN Imports",
-                subtitle: "Unlock every built-in repertoire course & build unlimited custom PGN lines"
+                title: "Unlimited Offline Game & Batch Analysis",
+                subtitle: "Remove the 2/day Free cap & batch-scan your full Lichess & Chess.com archive"
             )
             benefitRow(
                 "crown.fill",
                 tint: BrillyPalette.blunderRose,
-                title: "Endgame & Vision Labs + All 4 Retina Piece Sets",
-                subtitle: "12 theoretical Syzygy endgames, Board Vision, Puzzle Rush, Chessnut, Spatial & Kiwen"
-            )
-            benefitRow(
-                "face.smiling.fill",
-                tint: BrillyPalette.brillyTeal,
-                title: "Pro Emoji Packs & Custom Share Card Captions",
-                subtitle: "Unlock 🔥/💀, 👍/🤡 & 👑/🫠 reaction packs plus custom wording on your 3x Share Cards"
+                title: "Endgame & Vision Labs, 4 Retina Piece Sets & Pro Share Studio",
+                subtitle: "12 Syzygy endgames, Board Vision, Puzzle Rush, Pro Emoji Packs 🔥/💀, 👍/🤡, 👑/🫠 & Custom Share Card Captions"
             )
         }
         .padding(16)
@@ -213,8 +207,10 @@ public struct BrillyProPaywallSheet: View {
             } else {
                 if let annual = storeKit.product(for: .annual) {
                     let equiv = storeKit.annualMonthlyEquivalentText()
+                    let trialLower = storeKit.annualTrialDurationLabel
+                    let trialUpper = storeKit.annualTrialDurationTitle.uppercased()
                     let detail = storeKit.isEligibleForAnnualTrial
-                        ? "\(equiv.map { "\($0)/mo · " } ?? "")7-day free trial, then \(annual.displayPrice)/year"
+                        ? "\(equiv.map { "\($0)/mo · " } ?? "")\(trialLower) free trial, then \(annual.displayPrice)/year"
                         : "\(equiv.map { "\($0)/mo · " } ?? "")Billed annually at \(annual.displayPrice)/year"
                     tierCard(
                         tier: .annual,
@@ -222,7 +218,7 @@ public struct BrillyProPaywallSheet: View {
                         price: annual.displayPrice,
                         cadence: "/ year",
                         detail: detail,
-                        badge: storeKit.isEligibleForAnnualTrial ? "BEST VALUE · 7-DAY FREE TRIAL" : "BEST VALUE",
+                        badge: storeKit.isEligibleForAnnualTrial ? "BEST VALUE · \(trialUpper) FREE TRIAL" : "BEST VALUE",
                         accent: BrillyPalette.brillyTeal
                     )
                 }
@@ -389,7 +385,7 @@ public struct BrillyProPaywallSheet: View {
     private var legalFooterSection: some View {
         VStack(spacing: 8) {
             Text(
-                "Payment will be charged to your Apple Account at confirmation of purchase (or at the end of the 7-day free trial for eligible Annual plans). Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel anytime in App Store Account Settings."
+                "Payment will be charged to your Apple Account at confirmation of purchase (or at the end of the \(storeKit.annualTrialDurationLabel) free trial for eligible Annual plans). Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel anytime in App Store Account Settings."
             )
             .font(.caption2)
             .foregroundStyle(BrillyPalette.inkSecondary)
@@ -431,7 +427,7 @@ public struct BrillyProPaywallSheet: View {
         switch selectedTier {
         case .annual:
             if storeKit.isEligibleForAnnualTrial {
-                return "Start 7-Day Free Trial · \(product.displayPrice)/yr"
+                return "Start \(storeKit.annualTrialDurationTitle) Free Trial · \(product.displayPrice)/yr"
             }
             return "Subscribe Annual · \(product.displayPrice)/yr"
         case .monthly:

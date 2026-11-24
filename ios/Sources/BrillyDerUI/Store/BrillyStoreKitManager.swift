@@ -112,6 +112,35 @@ public final class BrillyStoreKitManager {
         return monthlyPrice.formatted(annual.priceFormatStyle)
     }
 
+    /// Reads the live Annual introductory offer duration from App Store Connect (e.g., `"7-day"`, `"3-day"`, `"14-day"`),
+    /// falling back to `"7-day"` only if no introductory offer period is present.
+    public var annualTrialDurationLabel: String {
+        guard let period = productsByID[.annual]?.subscription?.introductoryOffer?.period else {
+            return "7-day"
+        }
+        switch period.unit {
+        case .day:
+            return "\(period.value)-day"
+        case .week:
+            return "\(period.value * 7)-day"
+        case .month:
+            return "\(period.value)-month"
+        case .year:
+            return "\(period.value)-year"
+        @unknown default:
+            return "7-day"
+        }
+    }
+
+    /// Title-cased trial duration label (e.g., `"7-Day"`, `"3-Day"`).
+    public var annualTrialDurationTitle: String {
+        let raw = annualTrialDurationLabel
+        guard let dashIdx = raw.firstIndex(of: "-") else { return raw.capitalized }
+        let nextIdx = raw.index(after: dashIdx)
+        guard nextIdx < raw.endIndex else { return raw }
+        return String(raw[..<nextIdx]) + raw[nextIdx...].capitalized
+    }
+
     // MARK: - Purchasing
 
     public func purchase(_ productID: BrillyProProductID) async -> PurchaseOutcome {
