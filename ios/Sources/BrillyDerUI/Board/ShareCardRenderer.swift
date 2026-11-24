@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import BrillyDerCore
 #if canImport(UIKit)
 import UIKit
+import Photos
 #elseif canImport(AppKit)
 import AppKit
 #endif
@@ -952,6 +953,7 @@ public struct BrillyShareCardSheet: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                        .padding(.horizontal, 16)
 
                         // Primary Share & Save to Photos Actions
                         HStack(spacing: 10) {
@@ -1018,49 +1020,31 @@ public struct BrillyShareCardSheet: View {
     #if canImport(UIKit)
     @MainActor
     private func saveCardToPhotos() {
-        guard let image = shareItem.renderUIImage(scale: 3.0) else {
+        let pngData = shareItem.renderPNGData(scale: 3.0)
+        guard !pngData.isEmpty else {
             saveFailed = true
             saveNotice = "Could not render card image."
             return
         }
-        PhotoLibrarySaver.save(image) { error in
-            if let error {
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
                 saveFailed = true
-                saveNotice = "Photos save failed: \(error.localizedDescription)"
-            } else {
+                saveNotice = "Photos access denied — enable Add Photos in Settings > BrillyDer, or tap Share Card."
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    let req = PHAssetCreationRequest.forAsset()
+                    req.addResource(with: .photo, data: pngData, options: nil)
+                }
                 saveFailed = false
                 saveNotice = "Saved high-res card to Photos!"
+            } catch {
+                saveFailed = true
+                saveNotice = "Could not save photo — try Share Card instead."
             }
         }
     }
     #endif
 }
-
-#if canImport(UIKit)
-@MainActor
-private final class PhotoLibrarySaver: NSObject {
-    private static var activeSavers: [ObjectIdentifier: PhotoLibrarySaver] = [:]
-    private let completion: (Error?) -> Void
-
-    private init(completion: @escaping (Error?) -> Void) {
-        self.completion = completion
-    }
-
-    static func save(_ image: UIImage, completion: @escaping (Error?) -> Void) {
-        let saver = PhotoLibrarySaver(completion: completion)
-        activeSavers[ObjectIdentifier(saver)] = saver
-        UIImageWriteToSavedPhotosAlbum(image, saver, #selector(handleCompletion(_:didFinishSavingWithError:contextInfo:)), nil)
-    }
-
-    @objc private func handleCompletion(
-        _ image: UIImage,
-        didFinishSavingWithError error: Error?,
-        contextInfo: UnsafeRawPointer?
-    ) {
-        let key = ObjectIdentifier(self)
-        let cb = completion
-        Self.activeSavers.removeValue(forKey: key)
-        cb(error)
-    }
-}
-#endif

@@ -69,6 +69,7 @@ public enum DeviationDetector {
 
         var activeLines: Set<String> = []
         var lastMatched: (courseId: String, courseName: String, lineId: String, ply: AnalyzedPly)? = nil
+        var matchedUserMove = false
 
         for ply in analyzedGame.plies.prefix(maxBookPly) {
             let beforeKey = (try? ChessBoard(fen: ply.beforeFen).positionKey) ?? ""
@@ -81,10 +82,12 @@ public enum DeviationDetector {
                 let hitKeys = Set(matchingHits.map { "\($0.courseId)::\($0.lineId)" })
                 activeLines = activeLines.isEmpty ? hitKeys : (activeLines.intersection(hitKeys).isEmpty ? hitKeys : activeLines.intersection(hitKeys))
                 lastMatched = (preferred.courseId, preferred.courseName, preferred.lineId, ply)
+                if ply.color == userColor { matchedUserMove = true }
                 continue
             }
 
-            // Found first deviation after at least 1 matched ply
+            // Do not falsely flag Black playing a different defense on move 1 (e.g. 1. e4 e5 vs Caro-Kann course)
+            if ply.ply <= 2 && !matchedUserMove { return nil }
             guard lastMatched != nil else { return nil }
             let bestExp = expectations.first { activeLines.contains("\($0.courseId)::\($0.lineId)") } ?? expectations[0]
             let cardMatch = fsrsCards.first { card in

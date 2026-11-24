@@ -17,21 +17,30 @@ public struct ParsedPGNGame: Sendable {
 
 public enum PGNParser {
     public static func parse(_ pgn: String) throws -> ParsedPGNGame {
-        let normalized = pgn.replacingOccurrences(of: "\r\n", with: "\n")
+        var cleaned = pgn
+        if cleaned.hasPrefix("\u{FEFF}") {
+            cleaned.removeFirst()
+        }
+        let normalized = cleaned.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
         var headers: [String: String] = [:]
         var bodyLines: [String] = []
+        var sawMovetext = false
 
         for line in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("[") && trimmed.hasSuffix("]"), let (key, val) = parseHeaderLine(trimmed) {
+                // Stop at second game boundary inside multi-game PGN blobs
+                if sawMovetext { break }
                 headers[key] = val
             } else {
+                if !trimmed.isEmpty { sawMovetext = true }
                 bodyLines.append(String(line))
             }
         }
 
-        let startFen = headers["FEN"] ?? ChessBoard.initialFEN
+        let rawFen = headers["FEN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let startFen = rawFen.isEmpty ? ChessBoard.initialFEN : rawFen
         var board = try ChessBoard(fen: startFen)
         let movetext = bodyLines.joined(separator: "\n")
         let tokens = tokenizeMovetext(movetext)
@@ -39,10 +48,11 @@ public enum PGNParser {
         var parsedMoves: [ParsedPGNMove] = []
         var parsedResult = headers["Result"] ?? "*"
 
-        for token in tokens {
+        tokenLoop: for token in tokens {
             switch token {
             case .result(let res):
                 parsedResult = res
+                break tokenLoop
             case .comment(let text):
                 if !parsedMoves.isEmpty {
                     let prev = parsedMoves.removeLast()
@@ -88,7 +98,12 @@ public enum PGNParser {
     }
 
     public static func parseClockSeconds(_ clockText: String) -> Double? {
-        let parts = clockText.split(separator: ":").compactMap { Double($0) }
+        let rawParts = clockText.split(separator: ":", omittingEmptySubsequences: false)
+        var parts: [Double] = []
+        for raw in rawParts {
+            guard let val = Double(raw), val.isFinite, val >= 0 else { return nil }
+            parts.append(val)
+        }
         switch parts.count {
         case 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
         case 2: return parts[0] * 60 + parts[1]
@@ -100,8 +115,10 @@ public enum PGNParser {
     public static func parseTimeControl(_ raw: String?) -> (initialSeconds: Double, incrementSeconds: Double)? {
         guard let raw else { return nil }
         let parts = raw.split(separator: "+")
-        guard let initial = parts.first.flatMap({ Double($0) }) else { return nil }
-        let inc = parts.count > 1 ? (Double(parts[1]) ?? 0) : 0
+        guard let initial = parts.first.flatMap({ Double($0) }),
+              initial.isFinite, initial >= 0, initial < 1e8 else { return nil }
+        let incRaw = parts.count > 1 ? (Double(parts[1]) ?? 0) : 0
+        let inc = (incRaw.isFinite && incRaw >= 0 && incRaw < 1e6) ? incRaw : 0
         return (initial, inc)
     }
 

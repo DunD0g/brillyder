@@ -134,22 +134,22 @@ public enum BrillyShareQuips {
         switch (mood, effectiveStyle) {
         case (.brilliant, .brillyDer):
             return [
-                "OH THAT'S BRILLY!! Beam me up, Magnus — not from this planet!",
+                "OH THAT'S BRILLY!! Beam me up — that sacrifice isn't from this planet!",
                 "Pure BRILLY energy — Area 51 wants their tactics back!",
                 "Certified Galaxy-Brain BRILLY!! Humans aren't supposed to see that!",
-                "Stockfish just filed a UFO sighting for that BRILLY move!",
-                "NASA renamed a constellation after that BRILLY sacrifice.",
+                "The engine just filed a UFO sighting for that BRILLY move!",
+                "Mission Control renamed a constellation after that BRILLY sacrifice.",
                 "The aliens graded it: \"10/10 BRILLY — finally, a worthy opponent.\"",
                 "Somewhere, a grandmaster just spilled their coffee.",
             ]
         case (.brilliant, .cosmicAlien):
             return [
-                "Beam me up, Magnus — that sacrifice isn't from this planet!",
+                "Beam me up — that sacrifice isn't from this planet!",
                 "Area 51 called. They want their tactics back.",
                 "Humans aren't supposed to calculate that!",
                 "Certified Galaxy-Brain Sacrifice!",
-                "Stockfish just filed a UFO sighting report.",
-                "NASA renamed a constellation after that move.",
+                "The engine just filed a UFO sighting report.",
+                "Mission Control renamed a constellation after that move.",
                 "The aliens graded it: \"Finally, a worthy opponent.\"",
                 "Somewhere, a grandmaster just spilled their coffee.",
             ]

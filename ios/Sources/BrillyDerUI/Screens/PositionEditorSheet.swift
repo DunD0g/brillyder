@@ -161,15 +161,16 @@ public struct PositionEditorSheet: View {
                                 .frame(width: 160)
                             }
 
-                            HStack(spacing: 6) {
-                                Text("Castling")
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Castling Rights")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkSecondary)
-                                Spacer()
-                                castlePill("W O-O", isOn: $castleWK)
-                                castlePill("W O-O-O", isOn: $castleWQ)
-                                castlePill("B O-O", isOn: $castleBK)
-                                castlePill("B O-O-O", isOn: $castleBQ)
+                                HStack(spacing: 6) {
+                                    castlePill("W O-O", isOn: $castleWK)
+                                    castlePill("W O-O-O", isOn: $castleWQ)
+                                    castlePill("B O-O", isOn: $castleBK)
+                                    castlePill("B O-O-O", isOn: $castleBQ)
+                                }
                             }
 
                             HStack(spacing: 8) {
@@ -237,6 +238,9 @@ public struct PositionEditorSheet: View {
                 .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Board / FEN Editor")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -264,6 +268,8 @@ public struct PositionEditorSheet: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(color.displayName) \(t.displayName)")
+                .accessibilityAddTraits(sel ? .isSelected : [])
             }
         }
     }
@@ -274,10 +280,12 @@ public struct PositionEditorSheet: View {
             store.triggerHaptic(.move)
         }
         .font(.caption2.weight(.bold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .foregroundStyle(isOn.wrappedValue ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, minHeight: 36)
         .background(Capsule().fill(isOn.wrappedValue ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+        .accessibilityAddTraits(isOn.wrappedValue ? .isSelected : [])
         .buttonStyle(.plain)
     }
 

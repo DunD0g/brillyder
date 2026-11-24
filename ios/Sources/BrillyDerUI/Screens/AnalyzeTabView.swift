@@ -47,7 +47,10 @@ public struct AnalyzeTabView: View {
                 emptyState
             }
         }
-        .navigationTitle("Analyze")
+        .navigationTitle("")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .onAppear {
             applyPendingNavigation(resetIfNewGame: false)
             refreshCachedDeviation()
@@ -473,6 +476,84 @@ public struct AnalyzeTabView: View {
 
         ScrollView {
             VStack(spacing: 10) {
+                // 0. Compact Analyze Header + Moved Jump/Flip/Menu Controls (frees up bottom AUTO bar!)
+                HStack(spacing: 8) {
+                    Text("Analyze")
+                        .font(.title2.weight(.black))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 4)
+
+                    HStack(spacing: 6) {
+                        headerIconBtn("backward.end.fill", label: "First move") {
+                            goToPly(0, maxPly: ag.plies.count)
+                        }
+                        headerIconBtn("forward.end.fill", label: "Last move") {
+                            goToPly(ag.plies.count, maxPly: ag.plies.count)
+                        }
+                        headerIconBtn("arrow.up.arrow.down", label: "Flip board") {
+                            orientation = orientation.opposite
+                        }
+
+                        Menu {
+                            if let ap = activePly {
+                                let isSaved = store.isBookmarked(gameId: ag.game.id, ply: ap.ply)
+                                Button {
+                                    store.toggleBookmark(ply: ap, game: ag.game)
+                                    store.triggerHaptic(.move)
+                                } label: {
+                                    Label(isSaved ? "Remove Bookmark" : "Bookmark Position", systemImage: isSaved ? "bookmark.slash" : "bookmark.fill")
+                                }
+                            }
+                            Button {
+                                activeShareCard = sharePayload()
+                            } label: {
+                                Label("Share Move Card", systemImage: "square.and.arrow.up")
+                            }
+                            Divider()
+                            Button {
+                                copyText(displayFen, label: "FEN copied")
+                            } label: {
+                                Label("Copy FEN", systemImage: "doc.on.doc")
+                            }
+                            Button {
+                                copyText(ag.game.pgn, label: "PGN copied")
+                            } label: {
+                                Label("Copy PGN", systemImage: "text.alignleft")
+                            }
+                            Divider()
+                            Button {
+                                if botActive {
+                                    cancelLiveTasks()
+                                    botActive = false
+                                    botStatusNotice = nil
+                                } else {
+                                    sandboxBoard = board
+                                    botActive = true
+                                    retryMode = false
+                                    retrySolvedBoard = nil
+                                    retrySolvedLastMove = nil
+                                    botStatusNotice = nil
+                                    evaluateSandbox(fen: sandboxBoard.fen)
+                                    if sandboxBoard.outcome == .ongoing && sandboxBoard.turn != orientation {
+                                        triggerBotReply()
+                                    }
+                                }
+                            } label: {
+                                Label(botActive ? "Stop Play Bot" : "Play Bot from Here", systemImage: "cpu")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(width: 38, height: 36)
+                                .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: true)
+                        }
+                        .accessibilityLabel("More game actions")
+                    }
+                }
+
                 // 1. Accuracy Summary Strip
                 HStack(spacing: 10) {
                     playerSummaryPill(name: ag.game.white.name, acc: ag.whiteSummary.accuracy, elo: ag.whiteSummary.estimatedElo, isWhite: true)
@@ -519,10 +600,9 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
-                // 4. Transport Scrubber Bar (with Web-matching AUTO / PAUSE + 1x/2x speed!)
-                BrillyGlassCluster(style: store.surfaceStyle, spacing: 6) {
-                    HStack(spacing: 6) {
-                        transportBtn("backward.end.fill", label: "First move") { goToPly(0, maxPly: ag.plies.count) }
+                // 4. Spacious Un-Squished Transport Bar (< | AUTO/PAUSE | > | 1x)
+                BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
+                    HStack(spacing: 8) {
                         transportBtn("chevron.left", label: "Previous move") { goToPly(clampedPly - 1, maxPly: ag.plies.count) }
 
                         Button {
@@ -538,46 +618,47 @@ public struct AnalyzeTabView: View {
                             }
                             store.triggerHaptic(.move)
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 6) {
                                 Image(systemName: isAutoPlaying ? "pause.fill" : "play.fill")
                                     .font(.caption.weight(.black))
                                 Text(isAutoPlaying ? "PAUSE" : "AUTO")
-                                    .font(.system(size: 11, weight: .black, design: .rounded))
-                                    .tracking(0.4)
+                                    .font(.system(size: 13, weight: .black, design: .rounded))
+                                    .tracking(0.6)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
                             }
                             .foregroundStyle(isAutoPlaying ? BrillyPalette.voidBg : BrillyPalette.brillyTeal)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
+                            .padding(.horizontal, 18)
+                            .frame(minWidth: 112, minHeight: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .fill(isAutoPlaying ? BrillyPalette.brillyTeal : BrillyPalette.brillyTeal.opacity(0.16))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .strokeBorder(BrillyPalette.brillyTeal.opacity(0.48), lineWidth: 1)
+                                            .strokeBorder(BrillyPalette.brillyTeal.opacity(0.50), lineWidth: 1.2)
                                     )
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrillyPressScaleStyle())
+                        .layoutPriority(1)
                         .accessibilityLabel(isAutoPlaying ? "Pause auto-play" : "Start auto-play")
 
                         transportBtn("chevron.right", label: "Next move") { goToPly(clampedPly + 1, maxPly: ag.plies.count) }
-                        transportBtn("forward.end.fill", label: "Last move") { goToPly(ag.plies.count, maxPly: ag.plies.count) }
 
                         Button {
                             autoPlaySpeed = (autoPlaySpeed == 1) ? 2 : 1
                             store.triggerHaptic(.move)
                         } label: {
                             Text("\(autoPlaySpeed)x")
-                                .font(.caption.monospacedDigit().weight(.black))
+                                .font(.subheadline.monospacedDigit().weight(.black))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .foregroundStyle(autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
-                                .frame(minWidth: 34)
-                                .padding(.vertical, 10)
+                                .frame(minWidth: 48, minHeight: 44)
                                 .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : nil, interactive: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrillyPressScaleStyle())
                         .accessibilityLabel("Auto-play speed \(autoPlaySpeed)x")
-
-                        transportBtn("arrow.up.arrow.down", label: "Flip board") { orientation = orientation.opposite }
                     }
                 }
 
@@ -590,19 +671,22 @@ public struct AnalyzeTabView: View {
 
                 if let ap = activePly {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
+                        HStack(spacing: 8) {
                             Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
+                                .lineLimit(1)
                             Text(store.classificationLabel(ap.classification))
                                 .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .foregroundStyle(BrillyPalette.badgeForeground(for: ap.classification))
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(BrillyPalette.color(for: ap.classification)))
-                            Spacer()
+                            Spacer(minLength: 4)
                             if ap.classification == .blunder || ap.classification == .mistake {
-                                Button(retryMode ? "Exit Retry" : "Retry Mistake") {
+                                Button(retryMode ? "Exit Retry" : "Retry") {
                                     retryMode.toggle()
                                     botActive = false
                                     retrySolvedBoard = nil
@@ -610,11 +694,13 @@ public struct AnalyzeTabView: View {
                                     retryFeedback = retryMode ? "Find the better move instead of \(ap.san)." : nil
                                 }
                                 .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
                                 .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrillyPressScaleStyle())
                             }
                         }
 
@@ -636,7 +722,8 @@ public struct AnalyzeTabView: View {
                                         Text(line.evalDisplay)
                                             .font(.caption2.monospacedDigit().weight(.bold))
                                             .foregroundStyle(BrillyPalette.inkPrimary)
-                                            .frame(width: 44, alignment: .leading)
+                                            .frame(minWidth: 44, alignment: .leading)
+                                            .fixedSize(horizontal: true, vertical: false)
                                         Text(line.pvSan.joined(separator: " "))
                                             .font(.caption2.monospaced())
                                             .foregroundStyle(BrillyPalette.inkSecondary)
@@ -798,43 +885,57 @@ public struct AnalyzeTabView: View {
                     .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: dev.kind == .userDeviation ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                 }
 
-                // 10. Horizontal Move Strip
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(ag.plies) { ply in
-                            let selected = ply.ply == clampedPly
-                            Button {
-                                goToPly(ply.ply, maxPly: ag.plies.count)
-                            } label: {
-                                HStack(spacing: 4) {
-                                    if ply.color == .white {
-                                        Text("\(ply.moveNumber).")
-                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                // 10. Horizontal Move Strip (auto-scrolls smoothly to active ply during AUTO-play!)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(ag.plies) { ply in
+                                let selected = ply.ply == clampedPly
+                                Button {
+                                    goToPly(ply.ply, maxPly: ag.plies.count)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        if ply.color == .white {
+                                            Text("\(ply.moveNumber).")
+                                                .foregroundStyle(selected ? BrillyPalette.voidBg.opacity(0.78) : BrillyPalette.inkSecondary)
+                                        }
+                                        Text(ply.san)
+                                            .fontWeight(selected ? .bold : .medium)
+                                            .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        if ply.classification == .brilliant || ply.classification == .blunder || ply.classification == .mistake {
+                                            Circle()
+                                                .fill(BrillyPalette.color(for: ply.classification))
+                                                .frame(width: 7, height: 7)
+                                                .overlay(
+                                                    Circle().strokeBorder(selected ? BrillyPalette.voidBg : Color.clear, lineWidth: 1)
+                                                )
+                                        }
                                     }
-                                    Text(ply.san)
-                                        .fontWeight(selected ? .bold : .medium)
-                                        .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                    if ply.classification == .brilliant || ply.classification == .blunder || ply.classification == .mistake {
-                                        Circle()
-                                            .fill(BrillyPalette.color(for: ply.classification))
-                                            .frame(width: 6, height: 6)
-                                    }
+                                    .font(.caption.monospaced())
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 8)
+                                    .background(Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                                 }
-                                .font(.caption.monospaced())
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .buttonStyle(.plain)
+                                .id(ply.ply)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .onChange(of: clampedPly) { _, newTarget in
+                        if newTarget > 0 {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                proxy.scrollTo(newTarget, anchor: .center)
+                            }
                         }
                     }
-                    .padding(.vertical, 2)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 120)
+            .padding(.top, 4)
+            .padding(.bottom, 36)
         }
+        .brillySoftScrollEdge()
         .task(id: displayFen) {
             if SyzygyClient.isEligible(fen: displayFen) {
                 syzygyResult = await SyzygyClient.shared.probe(fen: displayFen)
@@ -858,14 +959,18 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.inkPrimary)
                 }
                 if !res.moves.isEmpty {
-                    HStack(spacing: 8) {
-                        ForEach(res.moves.prefix(3)) { m in
-                            Text("\(m.san) (\(m.category))")
-                                .font(.caption2.monospaced().weight(.semibold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.white.opacity(0.08)))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(res.moves.prefix(3)) { m in
+                                Text("\(m.san) (\(m.category))")
+                                    .font(.caption2.monospaced().weight(.semibold))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                            }
                         }
                     }
                 }
@@ -956,6 +1061,8 @@ public struct AnalyzeTabView: View {
                     .lineLimit(1)
                 Text("\(String(format: "%.1f", acc))% · ~\(elo)")
                     .font(.caption2.monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .foregroundStyle(BrillyPalette.brillyTeal)
             }
             Spacer(minLength: 0)
@@ -963,6 +1070,21 @@ public struct AnalyzeTabView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .brillySurface(store.surfaceStyle, cornerRadius: 14)
+    }
+
+    private func headerIconBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            store.triggerHaptic(.move)
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .frame(width: 38, height: 36)
+                .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: true)
+        }
+        .buttonStyle(BrillyPressScaleStyle())
+        .accessibilityLabel(label)
     }
 
     private func transportBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
@@ -973,11 +1095,10 @@ public struct AnalyzeTabView: View {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(BrillyPalette.inkPrimary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .brillySurface(store.surfaceStyle, cornerRadius: 14, interactive: true)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BrillyPressScaleStyle())
         .accessibilityLabel(label)
     }
 }

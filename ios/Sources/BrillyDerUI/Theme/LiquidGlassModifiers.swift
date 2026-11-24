@@ -189,6 +189,40 @@ public extension View {
     func brillyGlassPill(_ style: SurfaceStyle, tint: Color = BrillyPalette.brillyTeal) -> some View {
         modifier(BrillyCapsuleButtonModifier(style: style, tint: tint))
     }
+
+    @ViewBuilder
+    func brillySoftScrollEdge() -> some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectStyle(.soft, for: .bottom)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func brillyTabBarChrome(_ style: SurfaceStyle) -> some View {
+        #if os(iOS)
+        if style == .liquidGlass {
+            if #available(iOS 26.0, *) {
+                self.toolbarBackgroundVisibility(.automatic, for: .tabBar)
+            } else {
+                self
+                    .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                    .toolbarBackground(.visible, for: .tabBar)
+            }
+        } else {
+            self
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.94), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+        }
+        #else
+        self
+        #endif
+    }
 }
 
 /// Crisp native tactile scale-down press style (`scaleEffect(0.98)`) for navigation pills and primary controls.

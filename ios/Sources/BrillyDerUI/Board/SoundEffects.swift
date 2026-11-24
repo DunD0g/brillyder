@@ -68,7 +68,7 @@ public final class BrillySoundEngine {
         if !player.isPlaying {
             player.play()
         }
-        player.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
+        player.scheduleBuffer(buffer, at: nil, options: [.interrupts], completionHandler: nil)
         #endif
     }
 

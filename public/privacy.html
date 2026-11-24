@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BrillyDer — Privacy Policy</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #070B14; color: #E2E8F0; line-height: 1.65;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
+    h1 { font-size: 2rem; margin: 0 0 8px; }
+    .brilly { color: #2DD4BF; } .der { color: #FB7185; }
+    h2 { color: #2DD4BF; font-size: 1.15rem; margin-top: 28px; }
+    .card {
+      background: #0F172A; border: 1px solid rgba(45, 212, 191, 0.22);
+      border-radius: 16px; padding: 18px 20px; margin: 18px 0;
+    }
+    a { color: #2DD4BF; }
+    .meta { color: #94A3B8; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><span class="brilly">Brilly</span>/<span class="der">Der</span> Privacy Policy</h1>
+    <p class="meta">Effective Date: November 24, 2026 · Applies to BrillyDer iOS &amp; BrillyDer Web PWA</p>
+
+    <div class="card">
+      <strong>Short Version:</strong> BrillyDer is 100% local-first. We do not run developer servers, we do not require accounts, we do not track you across apps or websites, and we do not collect, sell, or share any personal data.
+    </div>
+
+    <h2>1. Data Stored Locally on Your Device</h2>
+    <p>All analyzed games, spaced-repetition (FSRS) opening schedules, mistake decks, bookmarks, board preferences, and custom PGN courses are stored exclusively on your device (in the app's private local container on iOS or IndexedDB in your browser). You can export or delete your local data at any time inside Settings.</p>
+
+    <h2>2. Optional Third-Party Chess API Requests</h2>
+    <p>BrillyDer only contacts external services when you explicitly use optional online lookup features:</p>
+    <ul>
+      <li><strong>Lichess (<code>lichess.org</code>)</strong> and <strong>Chess.com (<code>api.chess.com</code>)</strong>: When you tap Sync or Scout with a public chess username, your device connects directly over HTTPS to fetch publicly available game PGNs.</li>
+      <li><strong>Lichess Syzygy Tablebase (<code>tablebase.lichess.ovh</code>)</strong>: When analyzing or drilling endgames with 7 or fewer pieces on the board, your device may query the public tablebase API with the board position (FEN) for exact win/draw/loss lookup.</li>
+    </ul>
+    <p>No developer proxy sits between your device and these public chess APIs.</p>
+
+    <h2>3. Device Permissions</h2>
+    <ul>
+      <li><strong>Photo Library (Add Photos Only):</strong> Requested solely if you tap <em>Save Photo</em> to export a move highlight Share Card to your Camera Roll. BrillyDer never reads your existing photo library.</li>
+    </ul>
+
+    <h2>4. Analytics, Advertising &amp; Tracking</h2>
+    <p>BrillyDer contains zero third-party analytics SDKs, zero advertising SDKs, and performs zero cross-app tracking (<code>NSPrivacyTracking = false</code>).</p>
+
+    <h2>5. Contact &amp; Support</h2>
+    <p>For privacy questions or support requests, visit our <a href="./support.html">Support Page</a> or open an issue on <a href="https://github.com/DunD0g/brillyder">GitHub</a>.</p>
+  </main>
+</body>
+</html>

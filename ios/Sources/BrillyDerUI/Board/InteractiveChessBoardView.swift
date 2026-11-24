@@ -30,6 +30,7 @@ public struct InteractiveChessBoardView: View {
     let moveBadge: MoveBadgeOverlay?
     let onMove: ((ChessMove) -> Void)?
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedSquare: Square? = nil
     @GestureState private var dragState = BoardDragState()
     @State private var pendingPromotion: (from: Square, to: Square, color: PieceColor)? = nil
@@ -210,6 +211,10 @@ public struct InteractiveChessBoardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .aspectRatio(1, contentMode: .fit)
+        #if os(iOS)
+        .frame(maxWidth: horizontalSizeClass == .regular ? 520 : .infinity)
+        .frame(maxWidth: .infinity)
+        #endif
         .onChange(of: board.fen) { _, _ in
             selectedSquare = nil
             pendingPromotion = nil
@@ -275,6 +280,7 @@ public struct InteractiveChessBoardView: View {
                     .foregroundStyle(theme.coordColor(isLightSquare: isLight))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(2)
+                    .accessibilityHidden(true)
             }
             if showCoords && row == 7 {
                 Text(String(sq.fileChar))
@@ -282,6 +288,7 @@ public struct InteractiveChessBoardView: View {
                     .foregroundStyle(theme.coordColor(isLightSquare: isLight))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(2)
+                    .accessibilityHidden(true)
             }
 
             if isLegalDest {

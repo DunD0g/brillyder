@@ -34,6 +34,8 @@ public struct CockpitSettingsSheet: View {
     @State private var previewCelebration: CelebrationEvent? = nil
     @State private var showingDailyOpeningsPicker = false
     @State private var showingLocalProSheet = false
+    @State private var showingPrivacySheet = false
+    @State private var showingLicensesSheet = false
 
     public var body: some View {
         @Bindable var bindableStore = store
@@ -385,31 +387,26 @@ public struct CockpitSettingsSheet: View {
                                 .buttonStyle(.plain)
                             }
 
-                            #if canImport(UIKit) && os(iOS)
-                            Button {
-                                if let text = UIPasteboard.general.string,
-                                   let data = text.data(using: .utf8) {
-                                    do {
-                                        let summary = try store.importBackupData(data)
-                                        backupError = false
-                                        backupNotice = summary.humanSummary
-                                    } catch {
-                                        backupError = true
-                                        backupNotice = error.localizedDescription
-                                    }
-                                } else {
+                            #if os(iOS)
+                            PasteButton(payloadType: String.self) { pasted in
+                                guard let text = pasted.first,
+                                      let data = text.data(using: .utf8) else {
                                     backupError = true
                                     backupNotice = "Clipboard does not contain a BrillyDer JSON backup."
+                                    return
                                 }
-                            } label: {
-                                Label("Import Backup From Clipboard", systemImage: "doc.on.clipboard")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(BrillyPalette.brillyTeal)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 9)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                                do {
+                                    let summary = try store.importBackupData(data)
+                                    backupError = false
+                                    backupNotice = summary.humanSummary
+                                } catch {
+                                    backupError = true
+                                    backupNotice = error.localizedDescription
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .buttonBorderShape(.roundedRectangle(radius: 12))
+                            .tint(BrillyPalette.brillyTeal)
+                            .frame(maxWidth: .infinity)
                             #endif
 
                             if let notice = backupNotice {
@@ -453,16 +450,19 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
-                        // MARK: - Brilly/Der Pro Status (Founder Pro Unlocked by Default!)
+                        #if DEBUG
+                        // MARK: - Developer StoreKit 2 Paywall Preview (DEBUG only — never exposed in App Store Release!)
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("BRILLY/DER PRO")
+                                Text("BRILLY/DER PRO (DEBUG PREVIEW)")
                                     .font(.caption.weight(.bold))
                                     .tracking(1.0)
-                                    .foregroundStyle(BrillyPalette.warpPurple)
+                                    .foregroundStyle(BrillyPalette.warpPurpleText)
                                 Spacer()
-                                Label(store.hasProAccess ? "Founder Pro Active" : "Free Preview", systemImage: store.hasProAccess ? "checkmark.seal.fill" : "eye.fill")
+                                Label(store.hasProAccess ? "Founder Pro" : "Free Preview", systemImage: store.hasProAccess ? "checkmark.seal.fill" : "eye.fill")
                                     .font(.caption2.weight(.bold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                                     .foregroundStyle(store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
@@ -470,10 +470,6 @@ public struct CockpitSettingsSheet: View {
                                         Capsule().fill((store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber).opacity(0.16))
                                     )
                             }
-
-                            Text("Your build includes full Founder Pro access to 25m Orbit Coach, Endgame Labs, Unlimited Sync & Share Cards.")
-                                .font(.caption)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
 
                             Button {
                                 showingLocalProSheet = true
@@ -492,7 +488,7 @@ public struct CockpitSettingsSheet: View {
                                     Text("Simulate Free Tier Locks")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(BrillyPalette.inkPrimary)
-                                    Text("Off by default — leave off to keep full Pro unlocked.")
+                                    Text("Debug only — off by default.")
                                         .font(.caption2)
                                         .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
@@ -501,6 +497,55 @@ public struct CockpitSettingsSheet: View {
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple)
+                        #endif
+
+                        // MARK: - About, Privacy Policy & Open-Source Licenses (App Store Guidelines 5.1.1 & 5.2.1)
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("ABOUT & PRIVACY")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(1.0)
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                Spacer()
+                                Text(appVersionString)
+                                    .font(.caption2.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+
+                            Text("BrillyDer Complete · BrillyNative Swift Engine · 100% On-Device & Local-First")
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+
+                            HStack(spacing: 10) {
+                                Button {
+                                    showingPrivacySheet = true
+                                } label: {
+                                    Label("Privacy Policy", systemImage: "hand.raised.fill")
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .frame(maxWidth: .infinity, minHeight: 40)
+                                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+
+                                Button {
+                                    showingLicensesSheet = true
+                                } label: {
+                                    Label("Licenses & Credits", systemImage: "doc.text.fill")
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .frame(maxWidth: .infinity, minHeight: 40)
+                                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+                            }
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20)
                     }
                     .padding(16)
                     .padding(.bottom, 24)
@@ -510,11 +555,22 @@ public struct CockpitSettingsSheet: View {
                 DailyOpeningsPickerSheet()
                     .environment(store)
             }
+            #if DEBUG
             .sheet(isPresented: $showingLocalProSheet) {
                 BrillyProPaywallSheet()
                     .environment(store)
             }
+            #endif
+            .sheet(isPresented: $showingPrivacySheet) {
+                BrillyPrivacySheet(surfaceStyle: store.surfaceStyle)
+            }
+            .sheet(isPresented: $showingLicensesSheet) {
+                BrillyLicensesSheet(surfaceStyle: store.surfaceStyle)
+            }
             .navigationTitle(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -555,5 +611,172 @@ public struct CockpitSettingsSheet: View {
                 }
             }
         }
+    }
+
+    private var appVersionString: String {
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.8.0"
+        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "11"
+        return "v\(ver) (\(bld))"
+    }
+}
+
+// MARK: - In-App Privacy Policy Sheet (App Store Guideline 5.1.1)
+
+private struct BrillyPrivacySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let surfaceStyle: SurfaceStyle
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: surfaceStyle)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        policyCard(
+                            title: "100% Local-First & Private",
+                            body: "BrillyDer stores all analyzed games, FSRS opening progress, mistake decks, bookmarks, and preferences strictly on your device. We operate zero developer servers, require no account sign-in, and collect zero personal or behavioral tracking data."
+                        )
+                        policyCard(
+                            title: "Optional Public Chess API Lookups",
+                            body: "When you choose to sync games, scout an opponent, or probe <=7-piece endgames, your device connects directly over HTTPS to public third-party chess APIs: lichess.org, api.chess.com, and tablebase.lichess.ovh. No developer proxy is involved."
+                        )
+                        policyCard(
+                            title: "Photo Library Permission",
+                            body: "Add-Only Photo Library access is requested solely if you tap Save Photo on a Share Card. BrillyDer never reads or accesses your existing photos."
+                        )
+
+                        if let url = URL(string: "https://dund0g.github.io/brillyder/privacy.html") {
+                            Link(destination: url) {
+                                Label("Open Full Online Privacy Policy", systemImage: "safari.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Privacy Policy")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func policyCard(title: String, body: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(BrillyPalette.brillyTeal)
+            Text(body)
+                .font(.caption)
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .brillySurface(surfaceStyle, cornerRadius: 16)
+    }
+}
+
+// MARK: - In-App Third-Party Licenses & Open-Source Credits Sheet (BSD-3, Apache-2.0, MIT, CC BY 4.0)
+
+private struct BrillyLicensesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let surfaceStyle: SurfaceStyle
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: surfaceStyle)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("BrillyDer's native iOS app embeds zero GPL dependencies. All bundled chess piece artwork is permissively licensed:")
+                            .font(.caption)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+
+                        licenseCard(
+                            name: "Classic Piece Set (cburnett)",
+                            license: "BSD-3-Clause",
+                            author: "Colin M.L. Burnett (Wikimedia Commons)",
+                            notice: "Redistribution and use in source and binary forms, with or without modification, are permitted under the 3-Clause BSD License provided copyright notice and disclaimer are retained. Provided \"AS IS\" without warranty."
+                        )
+                        licenseCard(
+                            name: "Chessnut Piece Set",
+                            license: "Apache License 2.0",
+                            author: "Alexis Luengas (Chessnut)",
+                            notice: "Licensed under the Apache License, Version 2.0 (apache.org/licenses/LICENSE-2.0). Distributed on an \"AS IS\" basis without warranties or conditions of any kind."
+                        )
+                        licenseCard(
+                            name: "Spatial Piece Set",
+                            license: "MIT License",
+                            author: "Maurizio Monge",
+                            notice: "Permission is hereby granted, free of charge, under the MIT License to use, copy, modify, and distribute the artwork, subject to the above copyright notice. Provided \"AS IS\"."
+                        )
+                        licenseCard(
+                            name: "Minimal Piece Set (kiwen-suwi)",
+                            license: "CC BY 4.0",
+                            author: "neverRare (Creative Commons Attribution 4.0 International)",
+                            notice: "Artwork licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0/). Converted to high-resolution PNG sprites for native rendering."
+                        )
+                        licenseCard(
+                            name: "Chess Engine, Spaced Repetition & Tablebase Credits",
+                            license: "Permissive / Public API",
+                            author: "BrillyNative Swift Engine · FSRS · PeSTO · Lichess Syzygy",
+                            notice: "On-device analysis uses BrillyNative (pure Swift, MIT) inspired by PeSTO tapered piece-square evaluation tables; opening scheduling implements FSRS-6; optional <=7-piece lookups query Lichess's public Syzygy Tablebase API."
+                        )
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Licenses & Credits")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func licenseCard(name: String, license: String, author: String, notice: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(name)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                Spacer(minLength: 6)
+                Text(license)
+                    .font(.caption2.weight(.bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(BrillyPalette.brillyTeal.opacity(0.16)))
+            }
+            Text(author)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BrillyPalette.inkSecondary)
+            Text(notice)
+                .font(.caption2)
+                .foregroundStyle(Color(hex: 0xCBD5E1))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .brillySurface(surfaceStyle, cornerRadius: 16)
     }
 }

@@ -21,10 +21,7 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.train.title, systemImage: BrillyTab.train.systemImage)
                 }
                 .tag(BrillyTab.train)
-                #if os(iOS)
-                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
-                #endif
+                .brillyTabBarChrome(store.surfaceStyle)
 
                 NavigationStack {
                     GamesTabView()
@@ -34,10 +31,7 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.games.title, systemImage: BrillyTab.games.systemImage)
                 }
                 .tag(BrillyTab.games)
-                #if os(iOS)
-                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
-                #endif
+                .brillyTabBarChrome(store.surfaceStyle)
 
                 NavigationStack {
                     AnalyzeTabView()
@@ -47,10 +41,7 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.analyze.title, systemImage: BrillyTab.analyze.systemImage)
                 }
                 .tag(BrillyTab.analyze)
-                #if os(iOS)
-                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
-                #endif
+                .brillyTabBarChrome(store.surfaceStyle)
 
                 NavigationStack {
                     OpeningsTabView()
@@ -60,10 +51,7 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.openings.title, systemImage: BrillyTab.openings.systemImage)
                 }
                 .tag(BrillyTab.openings)
-                #if os(iOS)
-                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
-                #endif
+                .brillyTabBarChrome(store.surfaceStyle)
 
                 NavigationStack {
                     InsightsTabView()
@@ -73,29 +61,11 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.insights.title, systemImage: BrillyTab.insights.systemImage)
                 }
                 .tag(BrillyTab.insights)
-                #if os(iOS)
-                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
-                .toolbarBackground(.visible, for: .tabBar)
-                #endif
+                .brillyTabBarChrome(store.surfaceStyle)
             }
             .tint(BrillyPalette.brillyTeal)
         }
-        // Subtle frosted bottom gradient scrim so scrolling cards cleanly fade behind the floating tab pill
-        .overlay(alignment: .bottom) {
-            LinearGradient(
-                colors: [
-                    Color(hex: 0x0E121A).opacity(0.0),
-                    Color(hex: 0x0E121A).opacity(0.72),
-                    Color(hex: 0x0E121A).opacity(0.94),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 92)
-            .ignoresSafeArea(edges: .bottom)
-            .allowsHitTesting(false)
-        }
-        // Safe-area-aware floating HUD banners (overlay never perturbs TabView safe-area insets)
+        // Safe-area-aware floating HUD banners positioned cleanly below the navigation toolbar
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 if let celebration = store.activeCelebration {
@@ -105,13 +75,13 @@ public struct BrillyDerRootView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.top, 52)
                 }
 
                 if store.isBatchAnalyzing && store.selectedTab != .games {
                     globalBatchPill
                         .padding(.horizontal, 16)
-                        .padding(.top, store.activeCelebration == nil ? 8 : 0)
+                        .padding(.top, store.activeCelebration == nil ? 52 : 0)
                 }
             }
         }
@@ -130,12 +100,14 @@ public struct BrillyDerRootView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        #if DEBUG
         .sheet(isPresented: $bindableStore.showingProPaywall) {
             BrillyProPaywallSheet(highlightedFeature: store.proPaywallFeature)
                 .environment(store)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        #endif
     }
 
     private var globalBatchPill: some View {
@@ -214,11 +186,17 @@ public struct BrillyDerRootView: View {
                     store.selectedTrainMode = .daily
                     store.selectedTab = .train
                 } label: {
-                    Label("\(store.dailyStreakDays)d", systemImage: "flame.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.goldAmber)
+                    HStack(spacing: 3) {
+                        Image(systemName: "flame.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                        Text("\(store.dailyStreakDays)d")
+                            .font(.caption.monospacedDigit().weight(.black))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                    }
                 }
-                .accessibilityLabel("Daily training streak: \(store.dailyStreakDays) days")
+                .accessibilityLabel("Daily training streak")
+                .accessibilityValue("\(store.dailyStreakDays) days")
             }
         }
 
@@ -234,6 +212,7 @@ public struct BrillyDerRootView: View {
                 }
             }
             .accessibilityLabel(store.copy(cosmic: "Brilly Vault", classic: "Trophy Vault"))
+            .accessibilityValue("\(store.vaultCollection.headlineBrilliantCount) brilliant moves")
         }
 
         ToolbarItem(placement: .automatic) {

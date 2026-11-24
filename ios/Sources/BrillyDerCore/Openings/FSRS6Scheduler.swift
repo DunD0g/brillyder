@@ -138,9 +138,9 @@ public enum FSRS6Scheduler {
             elapsedDays = 0.0
         }
 
-        let newStability: Double
+        var newStability: Double
         let newDifficulty: Double
-        let nextIntervalDays: Double
+        var nextIntervalDays: Double
         var nextState: Int
         var nextSteps = s.learning_steps
         var nextLapses = s.lapses
@@ -188,28 +188,39 @@ public enum FSRS6Scheduler {
             }
         }
 
+        let maxIntervalDays = 36_500.0
+        if !newStability.isFinite { newStability = 1.0 }
+        newStability = ChessMath.clamp(newStability, min: 0.1, max: maxIntervalDays)
+        if !nextIntervalDays.isFinite { nextIntervalDays = 1.0 }
+        nextIntervalDays = ChessMath.clamp(nextIntervalDays, min: 5.0 / 1440.0, max: maxIntervalDays)
+
         let nextDueDate = now.addingTimeInterval(nextIntervalDays * 86_400.0)
-        let nextDueMs = Int64(nextDueDate.timeIntervalSince1970 * 1000.0)
+        let rawMs = nextDueDate.timeIntervalSince1970 * 1000.0
+        let nextDueMs: Int64 = rawMs.isFinite
+            ? Int64(ChessMath.clamp(rawMs, min: -9_000_000_000_000_000.0, max: 9_000_000_000_000_000.0))
+            : Int64(now.timeIntervalSince1970 * 1000.0)
 
         s.stability = (newStability * 1000.0).rounded() / 1000.0
         s.difficulty = (newDifficulty * 1000.0).rounded() / 1000.0
         s.scheduled_days = nextIntervalDays
         s.learning_steps = nextSteps
-        s.reps += 1
-        s.lapses = nextLapses
+        s.reps = max(0, s.reps) + 1
+        s.lapses = max(0, nextLapses)
         s.state = nextState
         s.last_review = isoString(from: now)
         s.due = isoString(from: nextDueDate)
 
-        let nextAttempts = updated.attempts + 1
+        let prevAttempts = max(0, updated.attempts)
+        let nextAttempts = prevAttempts + 1
         let clampedMs = Double(max(200, min(60_000, attempt.responseMs)))
         updated.fsrsState = s
         updated.dueAt = nextDueMs
         updated.attempts = nextAttempts
-        updated.firstTryHits += (attempt.correct && !attempt.hintUsed) ? 1 : 0
-        updated.avgResponseMs = updated.attempts == 1
+        updated.firstTryHits = max(0, updated.firstTryHits) + ((attempt.correct && !attempt.hintUsed) ? 1 : 0)
+        let safePrevAvg = updated.avgResponseMs.isFinite ? updated.avgResponseMs : clampedMs
+        updated.avgResponseMs = nextAttempts == 1
             ? clampedMs
-            : ((updated.avgResponseMs * Double(nextAttempts - 1) + clampedMs) / Double(nextAttempts))
+            : ((safePrevAvg * Double(prevAttempts) + clampedMs) / Double(nextAttempts))
         updated.unlocked = true
 
         return OpeningReviewResult(

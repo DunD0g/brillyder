@@ -20,8 +20,8 @@ public struct TrainTabView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             BrillyWordmarkView(fontSize: 33, uppercase: false, showSlash: true)
                             Text(store.copy(
-                                cosmic: "Cosmic Stockfish probe & opening coach",
-                                classic: "On-device Stockfish chess coach"
+                                cosmic: "Cosmic chess engine & opening coach",
+                                classic: "On-device chess engine & coach"
                             ))
                             .font(.caption.weight(.medium))
                             .foregroundStyle(BrillyPalette.inkSecondary)
@@ -38,6 +38,7 @@ public struct TrainTabView: View {
                                 .font(.caption2.weight(.black))
                                 .foregroundStyle(BrillyPalette.blunderRose)
                         }
+                        .accessibilityHidden(true)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .background(
@@ -96,8 +97,9 @@ public struct TrainTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .padding(.bottom, 120)
+                .padding(.bottom, 36)
             }
+            .brillySoftScrollEdge()
         }
         .navigationTitle("")
         #if os(iOS)
@@ -749,6 +751,7 @@ private struct DailySessionSheet: View {
             isSolved = true
             hintLevel = 0
             solvedBadge = MoveBadgeOverlay(square: move.to, classification: .best)
+            store.recordTrainingActivity()
             if !hadMistakeOnCurrent {
                 cleanSolveCount += 1
                 if let cardId = step.cardId {
@@ -1020,6 +1023,9 @@ private struct GravityCheckSheet: View {
     private func finishSession() {
         timerTask?.cancel()
         advanceTask?.cancel()
+        if score > 0 {
+            store.recordTrainingActivity()
+        }
         finished = true
     }
 }

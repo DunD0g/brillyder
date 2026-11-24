@@ -75,6 +75,7 @@ public struct MoveClassificationInput: Sendable {
     public let missedMate: Bool
     public let missedShortMate: Bool
     public let walkedIntoMate: Bool
+    public let forceDrawRepetition: Bool
 
     public init(
         plyIndex: Int,
@@ -95,7 +96,8 @@ public struct MoveClassificationInput: Sendable {
         hasSecondLine: Bool,
         missedMate: Bool = false,
         missedShortMate: Bool = false,
-        walkedIntoMate: Bool = false
+        walkedIntoMate: Bool = false,
+        forceDrawRepetition: Bool = false
     ) {
         self.plyIndex = plyIndex
         self.sanPrefix = sanPrefix
@@ -116,6 +118,7 @@ public struct MoveClassificationInput: Sendable {
         self.missedMate = missedMate
         self.missedShortMate = missedShortMate
         self.walkedIntoMate = walkedIntoMate
+        self.forceDrawRepetition = forceDrawRepetition
     }
 }
 
@@ -234,7 +237,7 @@ public enum MoveClassifier {
     }
 
     public static func classify(_ input: MoveClassificationInput) -> MoveClassification {
-        let isTopMove = input.playedUci == input.bestMoveUci
+        let isTopMove = input.playedUci == input.bestMoveUci && !input.forceDrawRepetition
         let rawLoss = max(0.0, input.moverWinBefore - input.moverWinAfter)
         let winLoss = isTopMove ? 0.0 : rawLoss
 

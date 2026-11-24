@@ -1,7 +1,9 @@
+#if DEBUG
 import SwiftUI
 
-/// Non-intrusive Brilly/Der Pro upgrade modal displaying Monthly, Annual (Best Value + 7-day trial),
-/// and Lifetime tiers. Owner/Founder access remains fully unlocked by default (`store.hasProAccess`).
+/// Non-intrusive Brilly/Der Pro upgrade modal (Debug preview until StoreKit 2 products are active)
+/// displaying Monthly, Annual (Best Value + 7-day trial), and Lifetime tiers.
+/// Owner/Founder access remains fully unlocked in Release (`store.hasProAccess == true`).
 public struct BrillyProPaywallSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -53,6 +55,8 @@ public struct BrillyProPaywallSheet: View {
                             if store.hasProAccess {
                                 Label("Founder Pro Active · Full Access Unlocked", systemImage: "checkmark.seal.fill")
                                     .font(.caption.weight(.bold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                                     .foregroundStyle(BrillyPalette.brillyTeal)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
@@ -77,7 +81,7 @@ public struct BrillyProPaywallSheet: View {
 
                         // Pro Highlights List
                         VStack(alignment: .leading, spacing: 10) {
-                            benefitRow("infinity", tint: BrillyPalette.brillyTeal, title: "Unlimited Game Sync & Batch Analysis", subtitle: "Deep Stockfish analysis across your full Lichess & Chess.com history")
+                            benefitRow("infinity", tint: BrillyPalette.brillyTeal, title: "Unlimited Game Sync & Batch Analysis", subtitle: "Deep on-device engine analysis across your full Lichess & Chess.com history")
                             benefitRow("clock.badge.checkmark.fill", tint: BrillyPalette.warpPurple, title: "25-Minute Orbit Coach & Woodpecker Cycles", subtitle: "Extended FSRS opening sessions, mistake rewinds & pattern sprints")
                             benefitRow("crown.fill", tint: BrillyPalette.goldAmber, title: "Endgame & Vision Labs + Syzygy Tablebase", subtitle: "12 theoretical drills, live 7-piece tablebase, Board Vision & Puzzle Rush")
                             benefitRow("sparkles", tint: BrillyPalette.blunderRose, title: "Custom PGN Repertoires & Retina Share Cards", subtitle: "Import any PGN/study + 3x Alien UFO move cards for Discord, Reddit & X")
@@ -141,7 +145,7 @@ public struct BrillyProPaywallSheet: View {
                         }
                         .buttonStyle(BrillyPressScaleStyle())
 
-                        Text("100% local-first · Zero servers · Full Founder Pro unlocked for your build.")
+                        Text("100% local-first · Zero servers · StoreKit 2 preview.")
                             .font(.caption2)
                             .foregroundStyle(BrillyPalette.inkSecondary)
                             .multilineTextAlignment(.center)
@@ -233,6 +237,8 @@ public struct BrillyProPaywallSheet: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(BrillyPalette.inkSecondary)
                     }
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
             }
             .padding(14)
@@ -251,3 +257,4 @@ public struct BrillyProPaywallSheet: View {
         .buttonStyle(BrillyPressScaleStyle())
     }
 }
+#endif

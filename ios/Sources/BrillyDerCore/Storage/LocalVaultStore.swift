@@ -552,11 +552,15 @@ public actor LocalVaultStore {
 
     private static func mergeCard(existing cur: FsrsOpeningCard, incoming: FsrsOpeningCard) -> FsrsOpeningCard {
         let unlocked = cur.unlocked || incoming.unlocked
-        let curRev = cur.fsrsState.last_review ?? ""
-        let incRev = incoming.fsrsState.last_review ?? ""
+        let curDate = cur.fsrsState.last_review.flatMap(FSRS6Scheduler.date(fromIso:))
+        let incDate = incoming.fsrsState.last_review.flatMap(FSRS6Scheduler.date(fromIso:))
         var winner: FsrsOpeningCard
-        if incRev != curRev {
-            winner = incRev > curRev ? incoming : cur
+        if let cd = curDate, let id = incDate, cd != id {
+            winner = id > cd ? incoming : cur
+        } else if incDate != nil && curDate == nil {
+            winner = incoming
+        } else if curDate != nil && incDate == nil {
+            winner = cur
         } else {
             winner = incoming.attempts >= cur.attempts ? incoming : cur
         }

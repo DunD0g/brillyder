@@ -50,6 +50,22 @@ fi
 echo "Generating BrillyDer.xcodeproj..."
 xcodegen generate
 
+verify_app_bundle() {
+  local app_path="$1"
+  echo "Verifying App Store bundle requirements in $app_path..."
+  /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$app_path/Info.plist" >/dev/null
+  /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$app_path/Info.plist" >/dev/null
+  /usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$app_path/Info.plist" >/dev/null
+  [[ -f "$app_path/PrivacyInfo.xcprivacy" ]] || { echo "Error: PrivacyInfo.xcprivacy missing in bundle"; exit 1; }
+  plutil -lint "$app_path/PrivacyInfo.xcprivacy" >/dev/null
+  find "$app_path" -name "starterCourses.json" | grep -q "starterCourses.json"
+  find "$app_path" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
+  if [[ -f "$IOS_DIR/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" ]]; then
+    sips -g hasAlpha "$IOS_DIR/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" | grep -q "hasAlpha: no"
+  fi
+  echo "Bundle verification passed!"
+}
+
 if [[ "$MODE" == "unsigned" ]]; then
   echo "Building unsigned Release .ipa for generic/platform=iOS..."
   xcodebuild build \
@@ -64,9 +80,7 @@ if [[ "$MODE" == "unsigned" ]]; then
     AD_HOC_CODE_SIGNING_ALLOWED=NO
 
   APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/BrillyDer.app"
-  /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP_PATH/Info.plist" >/dev/null
-  /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$APP_PATH/Info.plist" >/dev/null
-  find "$APP_PATH" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
+  verify_app_bundle "$APP_PATH"
 
   rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa
   mkdir -p build/Payload
@@ -87,6 +101,8 @@ else
     -destination 'generic/platform=iOS' \
     -archivePath build/BrillyDer.xcarchive \
     DEVELOPMENT_TEAM="$TEAM_ID"
+
+  verify_app_bundle "build/BrillyDer.xcarchive/Products/Applications/BrillyDer.app"
 
   TEMP_EXPORT_PLIST="$(mktemp -t brillyder-export.XXXXXX.plist)"
   trap 'rm -f "$TEMP_EXPORT_PLIST"' EXIT

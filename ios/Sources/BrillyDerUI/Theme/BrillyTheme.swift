@@ -174,6 +174,7 @@ public enum BrillyPalette {
     public static let hullBg = Color(hex: 0x0F172A)
     public static let brillyTeal = Color(hex: 0x2DD4BF)
     public static let warpPurple = Color(hex: 0xA855F7)
+    public static let warpPurpleText = Color(hex: 0xC084FC)
     public static let blunderRose = Color(hex: 0xFB7185)
     public static let goldAmber = Color(hex: 0xF59E0B)
     public static let inkPrimary = Color(hex: 0xF8FAFC)
@@ -192,12 +193,12 @@ public enum BrillyPalette {
         }
     }
 
-    /// WCAG AA+ contrast foreground ink for move classification pills and on-board badges.
+    /// WCAG AA+ contrast foreground ink (5.7:1–9.1:1) for move classification pills and on-board badges.
     public static func badgeForeground(for classification: MoveClassification) -> Color {
         switch classification {
-        case .inaccuracy, .excellent:
+        case .brilliant, .best, .excellent, .inaccuracy, .mistake, .book:
             return Color(hex: 0x070B14)
-        default:
+        case .great, .blunder:
             return .white
         }
     }

@@ -56,8 +56,9 @@ public struct OpeningsTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 120)
+                .padding(.bottom, 36)
             }
+            .brillySoftScrollEdge()
         }
         .navigationTitle("Openings")
         .sheet(item: $selectedCourse) { course in

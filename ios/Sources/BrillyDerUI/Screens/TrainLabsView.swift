@@ -422,16 +422,18 @@ private struct BoardVisionPanel: View {
                     }
                 }
                 .font(.headline)
-                .foregroundStyle(isRunning ? BrillyPalette.inkPrimary : BrillyPalette.voidBg)
+                .foregroundStyle(BrillyPalette.voidBg)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .background(Capsule().fill(isRunning ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
-                .buttonStyle(.plain)
+                .buttonStyle(BrillyPressScaleStyle())
 
                 Button(orientation == .white ? "White" : "Black") {
                     orientation = orientation.opposite
                 }
                 .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(BrillyPalette.inkPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -442,6 +444,8 @@ private struct BoardVisionPanel: View {
                     hideCoords.toggle()
                 }
                 .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(BrillyPalette.inkPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -570,6 +574,8 @@ private struct PuzzleRushPanel: View {
                                 .foregroundStyle(i < (3 - strikes) ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(max(0, 3 - strikes)) of 3 lives remaining")
                 }
                 Spacer()
                 Text("Score \(score)")
@@ -624,11 +630,11 @@ private struct PuzzleRushPanel: View {
                 if running { finishRun() } else { startRun() }
             }
             .font(.headline)
-            .foregroundStyle(running ? BrillyPalette.inkPrimary : BrillyPalette.voidBg)
+            .foregroundStyle(BrillyPalette.voidBg)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(Capsule().fill(running ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
-            .buttonStyle(.plain)
+            .buttonStyle(BrillyPressScaleStyle())
         }
         .task(id: running) {
             guard running && mode == .blitz else { return }

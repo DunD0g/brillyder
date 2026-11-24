@@ -23,8 +23,8 @@ public struct SyzygyProbeResult: Codable, Hashable, Sendable {
     public var humanLabel: String {
         switch category {
         case "win":
-            if let dtm { return "Forced Mate in \(abs(dtm))" }
-            if let dtz { return "Winning (DTZ \(abs(dtz)))" }
+            if let dtm { return "Forced Mate in \(dtm.magnitude)" }
+            if let dtz { return "Winning (DTZ \(dtz.magnitude))" }
             return "Tablebase Win"
         case "maybe-win": return "Likely Win"
         case "cursed-win": return "Cursed Win (50-move)"
@@ -32,8 +32,8 @@ public struct SyzygyProbeResult: Codable, Hashable, Sendable {
         case "blessed-loss": return "Blessed Loss (50-move)"
         case "maybe-loss": return "Likely Loss"
         case "loss":
-            if let dtm { return "Mated in \(abs(dtm))" }
-            if let dtz { return "Losing (DTZ \(abs(dtz)))" }
+            if let dtm { return "Mated in \(dtm.magnitude)" }
+            if let dtz { return "Losing (DTZ \(dtz.magnitude))" }
             return "Tablebase Loss"
         default: return category.capitalized
         }
@@ -92,12 +92,21 @@ public actor SyzygyClient {
         comps?.queryItems = [URLQueryItem(name: "fen", value: fen)]
         guard let url = comps?.url else { return nil }
 
-        var req = URLRequest(url: url, timeoutInterval: 8)
+        var req = URLRequest(url: url, timeoutInterval: 3.5)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.6", forHTTPHeaderField: "User-Agent")
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.8.0"
+        req.setValue("BrillyDer-iOS/\(ver)", forHTTPHeaderField: "User-Agent")
 
-        guard let (data, response) = try? await URLSession.shared.data(for: req),
-              let http = response as? HTTPURLResponse else {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch {
+            // Back off briefly on offline/timeout so interactive endgame drills never stall 3.5s on every move
+            backoffUntil = Date().addingTimeInterval(45)
+            return nil
+        }
+        guard let http = response as? HTTPURLResponse else {
             return nil
         }
 

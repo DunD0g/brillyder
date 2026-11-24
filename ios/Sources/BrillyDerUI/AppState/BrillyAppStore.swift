@@ -54,12 +54,17 @@ public final class BrillyAppStore {
     public var selectedTrainMode: TrainSubMode = .daily
     public var showingSettings: Bool = false
     public var showingVault: Bool = false
+    #if DEBUG
     public var showingProPaywall: Bool = false
     public var proPaywallFeature: String? = nil
-    /// Owner/Founder full Pro access (always unlocked by default; optional `previewFreeTier` lets you preview the paywall UX).
     public var isFounderPro: Bool = true
     public var previewFreeTier: Bool = false
     public var hasProAccess: Bool { isFounderPro && !previewFreeTier }
+    #else
+    public var showingProPaywall: Bool = false
+    public var proPaywallFeature: String? = nil
+    public var hasProAccess: Bool { true }
+    #endif
     public var pendingAnalyzePly: Int? = nil
     public var preferredEndgameCategory: EndgameCategory? = nil
     public var preferredMotifFilter: String? = nil
@@ -175,6 +180,7 @@ public final class BrillyAppStore {
     @ObservationIgnored private var batchTask: Task<Void, Never>? = nil
     @ObservationIgnored private var syncTask: Task<Void, Never>? = nil
     @ObservationIgnored private var scoutTask: Task<Void, Never>? = nil
+    @ObservationIgnored private var celebrationDismissTask: Task<Void, Never>? = nil
     @ObservationIgnored private var analysisGeneration: Int = 0
     @ObservationIgnored private var batchGeneration: Int = 0
     @ObservationIgnored private var syncGeneration: Int = 0
@@ -270,16 +276,20 @@ public final class BrillyAppStore {
 
     public func setDailyOpenings(_ ids: Set<String>) {
         hasConfiguredDailyOpenings = true
-        dailyOpeningCourseIds = ids
-        for cid in ids {
+        let validIds = Set(allCourses.map(\.id))
+        let filtered = ids.intersection(validIds)
+        dailyOpeningCourseIds = filtered
+        for cid in filtered {
             ensureFirstLineUnlocked(forCourseId: cid)
         }
         triggerHaptic(.move)
     }
 
     public func openProPaywall(feature: String? = nil) {
+        #if DEBUG
         proPaywallFeature = feature
         showingProPaywall = true
+        #endif
     }
 
     private func ensureFirstLineUnlocked(forCourseId courseId: String) {
@@ -450,12 +460,12 @@ public final class BrillyAppStore {
             activeCelebration = event
         }
         let id = event.id
-        Task {
+        celebrationDismissTask?.cancel()
+        celebrationDismissTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(kind == .brilliant ? 2900 : 2300))
-            if activeCelebration?.id == id {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    activeCelebration = nil
-                }
+            guard !Task.isCancelled, let self, self.activeCelebration?.id == id else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.activeCelebration = nil
             }
         }
     }
@@ -520,8 +530,9 @@ public final class BrillyAppStore {
 
         for (courseIdx, course) in allCourses.enumerated() {
             let isUserImported = course.source == "pgn" || course.source == "lichess-study"
+            let isSelectedForDaily = dailyOpeningCourseIds.contains(course.id)
             for (lineIdx, line) in course.lines.enumerated() {
-                let shouldUnlock = ((courseIdx == 0 || courseIdx == 1) && lineIdx == 0) || isUserImported
+                let shouldUnlock = ((courseIdx == 0 || courseIdx == 1 || isSelectedForDaily) && lineIdx == 0) || isUserImported
                 if let cards = try? CourseRepository.hydrateLineCards(
                     courseId: course.id,
                     side: course.side,
@@ -547,9 +558,10 @@ public final class BrillyAppStore {
         // Smart default: if user hasn't explicitly configured Daily FSRS openings yet,
         // ONLY include courses they have actually practiced/imported (or first starter course if brand new),
         // never random unpracticed openings!
+        let validCourseIds = Set(allCourses.map(\.id))
         if !hasConfiguredDailyOpenings {
             var seeded = Set<String>()
-            for card in hydrated where card.attempts > 0 {
+            for card in hydrated where card.attempts > 0 && validCourseIds.contains(card.courseId) {
                 seeded.insert(card.courseId)
             }
             for course in allCourses where course.source == "pgn" || course.source == "lichess-study" {
@@ -559,6 +571,12 @@ public final class BrillyAppStore {
                 seeded.insert(first.id)
             }
             self.dailyOpeningCourseIds = seeded
+        } else {
+            // Prune any orphaned IDs from deleted courses
+            let pruned = dailyOpeningCourseIds.intersection(validCourseIds)
+            if pruned != dailyOpeningCourseIds {
+                self.dailyOpeningCourseIds = pruned
+            }
         }
     }
 
@@ -581,10 +599,31 @@ public final class BrillyAppStore {
 
     public func flushToDiskNow() {
         guard isHydrated else { return }
+        saveDirty = false
         let snap = currentSnapshot()
-        Task.detached(priority: .utility) { [vault] in
-            try? await vault.save(snap)
+        let vaultStore = vault
+        #if canImport(UIKit) && os(iOS)
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "BrillyDerVaultFlush") {
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
         }
+        Task.detached(priority: .userInitiated) {
+            try? await vaultStore.save(snap)
+            await MainActor.run {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+        }
+        #else
+        Task.detached(priority: .userInitiated) {
+            try? await vaultStore.save(snap)
+        }
+        #endif
     }
 
     private func currentSnapshot() -> VaultSnapshot {
@@ -653,11 +692,13 @@ public final class BrillyAppStore {
             rehydrateFsrsCards(existing: fsrsCards)
         } else {
             fsrsCards.removeAll { $0.courseId == id }
+            dailyOpeningCourseIds.remove(id)
         }
         persistToDisk()
     }
 
     public func recordPuzzleRushScore(_ score: Int, survival: Bool) {
+        if score > 0 { recordTrainingActivity() }
         if survival {
             if score > puzzleRushSurvivalBest {
                 puzzleRushSurvivalBest = score
@@ -1013,6 +1054,9 @@ public final class BrillyAppStore {
         guard let idx = fsrsCards.firstIndex(where: { $0.cardId == cardId }) else { return nil }
         let result = FSRS6Scheduler.review(card: fsrsCards[idx], attempt: attempt)
         fsrsCards[idx] = result.card
+        if attempt.correct {
+            recordTrainingActivity()
+        }
         triggerHaptic(attempt.correct ? .success : .error)
         persistToDisk()
         return result
@@ -1041,6 +1085,7 @@ public final class BrillyAppStore {
     public func importCustomCourse(name: String, side: RepertoireSide, pgn: String) throws {
         let course = try RepertoireTreeService.importCourseFromPGN(name: name, side: side, pgn: pgn)
         customCourses.insert(course, at: 0)
+        dailyOpeningCourseIds.insert(course.id)
         rehydrateFsrsCards(existing: fsrsCards)
         triggerHaptic(.success)
         persistToDisk()
@@ -1057,7 +1102,10 @@ public final class BrillyAppStore {
     public func recordWoodpeckerStep(firstTry: Bool, solved: Bool) {
         guard var cycle = woodpeckerCycle else { return }
         if firstTry { cycle.firstTryCount += 1 }
-        if solved { cycle.solvedCount += 1 }
+        if solved {
+            cycle.solvedCount += 1
+            recordTrainingActivity()
+        }
         cycle.activeIndex += 1
 
         if cycle.activeIndex >= cycle.puzzleIds.count {
@@ -1089,17 +1137,20 @@ public final class BrillyAppStore {
 
     public func markEndgameMastered(_ id: String) {
         masteredEndgameIds.insert(id)
+        recordTrainingActivity()
         triggerHaptic(.success)
         persistToDisk()
     }
 
     public func markAdvantageConverted(_ id: String) {
         convertedAdvantageIds.insert(id)
+        recordTrainingActivity()
         triggerHaptic(.success)
         persistToDisk()
     }
 
     public func recordBoardVisionScore(_ score: Int) {
+        if score > 0 { recordTrainingActivity() }
         if score > boardVisionBestScore {
             boardVisionBestScore = score
             persistToDisk()
@@ -1118,26 +1169,39 @@ public final class BrillyAppStore {
         selectedTab = .train
     }
 
-    public func markDailySessionCompleted() {
-        let today = Self.dayString(for: Date())
-        let yesterday = Self.dayString(for: Date().addingTimeInterval(-86_400))
+    /// DST-safe daily training streak tracker: called automatically whenever the user completes
+    /// any meaningful training activity (opening drill, blunder rewind, Gravity Check, Woodpecker, Endgame, Vision, Rush).
+    public func recordTrainingActivity(now: Date = Date()) {
+        let today = Self.dayString(for: now)
+        let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now.addingTimeInterval(-86_400)
+        let yesterday = Self.dayString(for: yesterdayDate)
         if lastDailyCompletedDate != today {
             if lastDailyCompletedDate == yesterday {
-                dailyStreakDays += 1
+                dailyStreakDays = max(1, dailyStreakDays) + 1
             } else {
                 dailyStreakDays = 1
             }
             lastDailyCompletedDate = today
             persistToDisk()
+        } else if dailyStreakDays < 1 {
+            dailyStreakDays = 1
+            persistToDisk()
         }
+    }
+
+    public func markDailySessionCompleted() {
+        recordTrainingActivity()
         triggerHaptic(.success)
     }
 
-    private func validateDailyStreakLiveness() {
-        guard dailyStreakDays > 0, let last = lastDailyCompletedDate, !last.isEmpty else { return }
-        let today = Self.dayString(for: Date())
-        let yesterday = Self.dayString(for: Date().addingTimeInterval(-86_400))
-        if last != today && last != yesterday {
+    private func validateDailyStreakLiveness(now: Date = Date()) {
+        guard let last = lastDailyCompletedDate, !last.isEmpty else { return }
+        let today = Self.dayString(for: now)
+        let yesterdayDate = Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now.addingTimeInterval(-86_400)
+        let yesterday = Self.dayString(for: yesterdayDate)
+        if last == today && dailyStreakDays < 1 {
+            dailyStreakDays = 1
+        } else if last != today && last != yesterday {
             dailyStreakDays = 0
         }
     }

@@ -144,8 +144,8 @@ public struct ChessBoard: Hashable, Sendable {
             ep = sq
         }
 
-        let halfmove = parts.count >= 5 ? (Int(parts[4]) ?? 0) : 0
-        let fullmove = parts.count >= 6 ? max(1, Int(parts[5]) ?? 1) : 1
+        let halfmove = parts.count >= 5 ? max(0, min(10_000, Int(parts[4]) ?? 0)) : 0
+        let fullmove = parts.count >= 6 ? max(1, min(100_000, Int(parts[5]) ?? 1)) : 1
 
         self.squares = board
         self.turn = side
@@ -750,7 +750,10 @@ public struct ChessBoard: Hashable, Sendable {
 
         let pieceType: PieceType
         if let first = s.first, ["N", "B", "R", "Q", "K"].contains(String(first)) {
-            pieceType = PieceType(rawValue: first.lowercased())!
+            guard let pt = PieceType(rawValue: first.lowercased()) else {
+                throw ChessError.invalidSAN(rawSan)
+            }
+            pieceType = pt
             s.removeFirst()
         } else {
             pieceType = .pawn
@@ -766,10 +769,15 @@ public struct ChessBoard: Hashable, Sendable {
         var reqFile: Int?
         var reqRank: Int?
         for ch in disambig {
-            if ch >= "a" && ch <= "h" {
-                reqFile = Int(ch.asciiValue! - UInt8(ascii: "a"))
-            } else if ch >= "1" && ch <= "8" {
-                reqRank = Int(ch.asciiValue! - UInt8(ascii: "1"))
+            guard let ascii = ch.asciiValue else {
+                throw ChessError.invalidSAN(rawSan)
+            }
+            if ascii >= UInt8(ascii: "a") && ascii <= UInt8(ascii: "h") {
+                reqFile = Int(ascii - UInt8(ascii: "a"))
+            } else if ascii >= UInt8(ascii: "1") && ascii <= UInt8(ascii: "8") {
+                reqRank = Int(ascii - UInt8(ascii: "1"))
+            } else {
+                throw ChessError.invalidSAN(rawSan)
             }
         }
 
@@ -816,9 +824,14 @@ public struct ChessBoard: Hashable, Sendable {
         return .ongoing
     }
 
+    /// Fast short-circuiting check used by the search engine to detect horizon stalemates without allocating a full move list.
+    public func hasAnyLegalMove() -> Bool {
+        !legalMoves().isEmpty
+    }
+
     /// Standard Perft node count for exact FIDE legal move verification.
     public func perft(depth: Int) -> UInt64 {
-        if depth == 0 { return 1 }
+        if depth <= 0 { return 1 }
         let moves = legalMoves()
         if depth == 1 { return UInt64(moves.count) }
         var total: UInt64 = 0

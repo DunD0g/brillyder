@@ -141,23 +141,17 @@ public actor BrillyNativeEngine: ChessEngine {
                 if depthFullyCompleted {
                     completedDepth = d
                     bestLines = reindexed
-                    if let firstMate = reindexed.first?.score.mateWhite, abs(firstMate) <= d / 2 + 1 {
+                    if let firstMate = reindexed.first?.score.mateWhite,
+                       (requestedPV == 1 || d >= 3),
+                       abs(firstMate) <= d / 2 + 1 {
                         break
                     }
-                } else if !reindexed.isEmpty {
-                    // Preserve deeper completed PV1 merged with prior depth's remaining lines
-                    var merged: [MultiPvLine] = [reindexed[0]]
-                    let topUci = reindexed[0].bestMoveUci
-                    for prev in bestLines where prev.bestMoveUci != topUci && merged.count < requestedPV {
-                        merged.append(MultiPvLine(
-                            multipv: merged.count + 1,
-                            bestMoveUci: prev.bestMoveUci,
-                            pv: prev.pv,
-                            score: prev.score
-                        ))
-                    }
+                } else if bestLines.isEmpty && !reindexed.isEmpty {
+                    // Only accept partial depth if no prior completed MultiPV depth exists (guarantees strict lines[0] >= lines[1] ordering)
                     completedDepth = max(completedDepth, d)
-                    bestLines = merged
+                    bestLines = reindexed
+                    break
+                } else {
                     break
                 }
             } else {
@@ -304,6 +298,10 @@ public actor BrillyNativeEngine: ChessEngine {
         }
 
         if effectiveDepth <= 0 {
+            // Guard horizon stalemates (!inCheck with 0 legal moves) so K+Q vs K stalemates score 0 instead of standPat!
+            if !inCheck && !board.hasAnyLegalMove() {
+                return 0
+            }
             return quiescence(board: board, alpha: alpha, beta: beta, ply: ply)
         }
 

@@ -75,7 +75,8 @@ public enum GameAnalyzer {
             sanPrefix.append(applied.san)
 
             // Score terminal 3-fold repetition draws at 0.0 so throwing a winning game into a draw is flagged as a blunder
-            if repeatCount >= 3 && idx == totalPlies - 1 && game.resultString == "1/2-1/2" {
+            let isTerminalRepetitionDraw = repeatCount >= 3 && idx == totalPlies - 1 && game.resultString == "1/2-1/2"
+            if isTerminalRepetitionDraw {
                 let drawScore = ChessMath.buildEngineScore(cpWhite: 0)
                 evalAfter = EngineEval(
                     fen: evalAfter.fen,
@@ -90,9 +91,8 @@ public enum GameAnalyzer {
             let mover = applied.piece.color
             let winBefore = ChessMath.moverWinPercent(evalBefore.score, mover: mover)
             let winAfter = ChessMath.moverWinPercent(evalAfter.score, mover: mover)
-            let isTopMove = applied.move.uci == evalBefore.bestMoveUci
-            let winLoss = (isTopMove && !(repeatCount >= 3 && game.resultString == "1/2-1/2")) ? 0.0 : max(0.0, winBefore - winAfter)
-            let moveAcc = ChessMath.calculateMoveAccuracy(winLoss: winLoss)
+            let isTopMove = applied.move.uci == evalBefore.bestMoveUci && !isTerminalRepetitionDraw
+            let winLoss = isTopMove ? 0.0 : max(0.0, winBefore - winAfter)
 
             let hasSecond = evalBefore.lines.count >= 2
             let secondBestGap: Double
@@ -114,7 +114,7 @@ public enum GameAnalyzer {
                 return mover == .white ? m > 0 : m < 0
             }()
             let walkedIntoMate: Bool = {
-                guard let m = evalAfter.score.mateWhite else { return false }
+                guard let m = evalAfter.score.mateWhite, winBefore > 15.0 else { return false }
                 let oppMate = mover == .white ? m < 0 : m > 0
                 let alreadyMated = evalBefore.score.mateWhite.map { mover == .white ? $0 < 0 : $0 > 0 } ?? false
                 return oppMate && !alreadyMated
@@ -141,11 +141,14 @@ public enum GameAnalyzer {
                 hasSecondLine: hasSecond,
                 missedMate: missedMate,
                 missedShortMate: missedShortMate,
-                walkedIntoMate: walkedIntoMate
+                walkedIntoMate: walkedIntoMate,
+                forceDrawRepetition: isTerminalRepetitionDraw
             ))
+            let moveAcc = classification == .book ? 100.0 : ChessMath.calculateMoveAccuracy(winLoss: winLoss)
 
             let bestPvSan = ChessMath.uciLineToSAN(fen: applied.beforeFen, uciMoves: evalBefore.pv, maxMoves: 5)
-            let bestSan = bestPvSan.first ?? applied.san
+            let fallbackBestSan = ChessMath.uciLineToSAN(fen: applied.beforeFen, uciMoves: [evalBefore.bestMoveUci], maxMoves: 1).first
+            let bestSan = bestPvSan.first ?? fallbackBestSan ?? applied.san
             let topLines: [TopEngineLineSummary] = evalBefore.lines.prefix(3).map { line in
                 let pvSan = ChessMath.uciLineToSAN(fen: applied.beforeFen, uciMoves: line.pv, maxMoves: 4)
                 return TopEngineLineSummary(

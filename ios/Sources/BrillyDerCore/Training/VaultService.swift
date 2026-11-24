@@ -154,14 +154,26 @@ public enum VaultService {
                 ))
             }
 
-            var seenBrilliantPositions: Set<String> = []
+            var seenPositions: Set<String> = []
 
             for (idx, p) in ag.plies.enumerated() where p.color == userColor {
-                let posKey = (try? ChessBoard(fen: p.afterFen).positionKey) ?? p.afterFen
+                let moverWinBefore = ChessMath.moverWinPercent(p.evalBefore, mover: p.color)
                 let moverWinAfter = ChessMath.moverWinPercent(p.evalAfter, mover: p.color)
+                let isClutchCandidate = (p.isClutchSave == true) ||
+                    (p.isClutchSave == nil && p.classification == .great && p.secondBestGapWin >= 15 && moverWinBefore <= 62.0 && moverWinAfter >= 30.0)
+                let isTrapCandidate: Bool = {
+                    guard idx > 0 && p.ply <= 22 && p.winLoss <= 2.0 && moverWinAfter >= 50.0 &&
+                          (p.classification == .best || p.classification == .great || p.classification == .brilliant) else { return false }
+                    let prev = ag.plies[idx - 1]
+                    return prev.classification == .blunder && prev.color != p.color
+                }()
+                guard p.classification == .brilliant || isClutchCandidate || isTrapCandidate else { continue }
 
-                if p.classification == .brilliant && !seenBrilliantPositions.contains(posKey) {
-                    seenBrilliantPositions.insert(posKey)
+                // Compute ChessBoard positionKey ONLY on highlight candidate plies (avoids O(N*plies) FEN parses on every render!)
+                let posKey = (try? ChessBoard(fen: p.afterFen).positionKey) ?? p.afterFen
+                guard seenPositions.insert(posKey).inserted else { continue }
+
+                if p.classification == .brilliant {
                     brilliants.append(VaultHighlight(
                         id: "bril_\(ag.id)_\(p.ply)",
                         kind: .brilliant,
@@ -189,7 +201,7 @@ public enum VaultService {
                     ))
                 }
 
-                if p.isClutchSave == true || (p.classification == .great && p.secondBestGapWin >= 15) {
+                if isClutchCandidate {
                     clutches.append(VaultHighlight(
                         id: "clutch_\(ag.id)_\(p.ply)",
                         kind: .clutchSave,

@@ -45,10 +45,13 @@ public enum ChessComClient {
 
         var collected: [GameRecord] = []
         var seenIds = Set<String>()
+        var lastError: Error? = nil
         for archiveStr in archives {
             try Task.checkCancellation()
             if collected.count >= targetCount { break }
-            guard let url = URL(string: archiveStr) else { continue }
+            guard let url = URL(string: archiveStr),
+                  url.scheme?.lowercased() == "https",
+                  url.host?.lowercased() == "api.chess.com" else { continue }
             let monthPayload: ArchiveGamesResponse
             do {
                 monthPayload = try await fetchJSON(from: url, username: trimmed)
@@ -56,8 +59,10 @@ public enum ChessComClient {
                 throw CancellationError()
             } catch let syncErr as SyncError {
                 if case .rateLimited = syncErr { throw syncErr }
+                lastError = syncErr
                 continue
             } catch {
+                lastError = error
                 continue
             }
             let sortedMonth = (monthPayload.games ?? []).sorted { ($0.end_time ?? 0) > ($1.end_time ?? 0) }
@@ -70,6 +75,10 @@ public enum ChessComClient {
             }
         }
 
+        if collected.isEmpty, let lastError {
+            throw lastError
+        }
+
         collected.sort { $0.createdAt > $1.createdAt }
         return Array(collected.prefix(targetCount))
     }
@@ -77,7 +86,8 @@ public enum ChessComClient {
     private static func fetchJSON<T: Decodable>(from url: URL, username: String) async throws -> T {
         var req = URLRequest(url: url, timeoutInterval: 16)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.8.0"
+        req.setValue("BrillyDer-iOS/\(ver) (https://github.com/DunD0g/brillyder)", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -97,7 +107,11 @@ public enum ChessComClient {
                 throw SyncError.networkFailure("Chess.com API error (\(http.statusCode)).")
             }
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw SyncError.networkFailure("Unexpected response from Chess.com — check your connection.")
+        }
     }
 
     private static func normalizeGame(_ raw: RawGame, username: String) -> GameRecord? {
@@ -121,6 +135,9 @@ public enum ChessComClient {
         let id = raw.uuid ?? raw.url?.split(separator: "/").last.map(String.init) ?? UUID().uuidString
         let speed = raw.time_class ?? "rapid"
 
+        let endEpoch = raw.end_time ?? Int64(Date().timeIntervalSince1970)
+        let createdAtMs: Int64 = endEpoch > 10_000_000_000 ? endEpoch : endEpoch.multipliedReportingOverflow(by: 1000).partialValue
+
         return GameRecord(
             id: "cc_\(id)",
             source: .chesscom,
@@ -128,7 +145,7 @@ public enum ChessComClient {
             variant: "standard",
             speed: speed,
             perf: speed,
-            createdAt: (raw.end_time ?? Int64(Date().timeIntervalSince1970)) * 1000,
+            createdAt: createdAtMs,
             status: "normal",
             winner: winner,
             resultString: res,
@@ -161,17 +178,19 @@ public enum ChessComClient {
         return cleaned.isEmpty ? nil : cleaned
     }
 
-    private static func formatTimeControl(_ raw: String?, speed: String) -> String {
+    public static func formatTimeControl(_ raw: String?, speed: String) -> String {
         guard let raw, !raw.isEmpty else { return speed.capitalized }
         if raw.hasPrefix("1/") {
-            if let secs = Double(raw.dropFirst(2)), secs >= 86400 {
+            if let secs = Double(raw.dropFirst(2)), secs.isFinite, secs >= 86400, secs < 1e12 {
                 return "\(Int((secs / 86400.0).rounded()))d"
             }
             return "Daily"
         }
         let parts = raw.split(separator: "+")
-        guard let base = Double(parts[0]) else { return raw }
-        let inc = parts.count > 1 ? (Int(parts[1]) ?? 0) : 0
+        guard let first = parts.first,
+              let base = Double(first),
+              base.isFinite, base >= 0, base < 1e9 else { return raw }
+        let inc = parts.count > 1 ? max(0, min(3600, Int(parts[1]) ?? 0)) : 0
         if base < 60 { return "\(Int(base))s+\(inc)" }
         let mins = base / 60.0
         if mins.truncatingRemainder(dividingBy: 1) == 0 {

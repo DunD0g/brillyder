@@ -431,3 +431,28 @@
 ### Verified
 - `npm test && npm run build`: Web PWA tests & production Vite build passed cleanly.
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` parity clean, `swift test` **5 suites, 29 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.7.0`, build `10`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.
+
+---
+
+## v2.8.0 (Final 4-Agent App Store Readiness Swarm Audit, Analyze AUTO Bar Fix & Streak Repair)
+**Status:** Completed & Verified
+
+### Built
+- **Analyze Un-Squished `AUTO` Bar & Top Header Controls (`AnalyzeTabView.swift`):**
+  - Replaced the large `Analyze` system title with a compact inline header holding `|<` (First), `>|` (Last), `⇅` (Flip), and a native `⋯` Game Menu (Bookmark, Share Move Card, Copy FEN/PGN, Play Bot), leaving 4 spacious 44pt+ controls (`<`, single-line `▶ AUTO / ⏸ PAUSE`, `>`, `1x/2x`) below the board.
+  - Added `ScrollViewReader` auto-scrolling on the horizontal move strip + high-contrast dark ink on selected move numbers.
+- **App Store Review & Legal Compliance (`CockpitSettingsSheet.swift`, `BrillyAppStore.swift`, `BrillyProPaywallSheet.swift`, `TrainTabView.swift`, `BrillyAlienUFOView.swift`, `public/privacy.html`, `public/support.html`, `ios/scripts/build-ipa.sh`):**
+  - Gated non-StoreKit paywall preview & `"Simulate Free Tier Locks"` debug toggle strictly behind `#if DEBUG` (keeping full access unconditionally unlocked in Release — zero Guideline 3.1.1 / 2.1 / 2.2 risk).
+  - Replaced misleading iOS `"Stockfish"` references with accurate `BrillyNative` on-device engine copy.
+  - Added in-app **About, Privacy Policy & Third-Party Licenses** sheets (fulfilling Guideline 5.1.1(i) and BSD-3-Clause / Apache-2.0 / MIT / CC BY 4.0 binary attributions) + static `public/privacy.html` & `public/support.html` for App Store Connect + native `PasteButton` clipboard import.
+  - Hardened `ios/scripts/build-ipa.sh` with `verify_app_bundle()` checking `PrivacyInfo.xcprivacy` (`plutil -lint`), `ITSAppUsesNonExemptEncryption`, `UILaunchScreen`, `NSPhotoLibraryAddUsageDescription`, `starterCourses.json`, `cburnett_wK.png`, and `AppIcon-1024.png` opaque alpha check across both `--unsigned` and `--app-store` modes.
+- **Daily Streak System Repair (`BrillyAppStore.swift`, `BrillyDerRootView.swift`, `TrainTabView.swift`):**
+  - Fixed iOS hiding the toolbar streak count (switched `Label` to explicit `HStack` so `🔥 4d` renders cleanly), switched yesterday calculation to DST-safe `Calendar.current.date(byAdding: .day, value: -1, to:)`, and wired automatic `recordTrainingActivity()` across all training flows (Opening FSRS drills, Daily Coach, Gravity Check, Woodpecker, Endgame Lab, Advantage Conversion, Board Vision, and Puzzle Rush).
+- **UI, iPad Universal, WCAG Contrast & Stability Hardening (`BrillyDerRootView.swift`, `LiquidGlassModifiers.swift`, `InteractiveChessBoardView.swift`, `EvalBarView.swift`, `PositionEditorSheet.swift`, `TrainLabsView.swift`, `ShareCardRenderer.swift`, `SoundEffects.swift`, `BrillyDerCore`):**
+  - Removed root bottom blackout scrim and adopted native `.brillySoftScrollEdge()` + `.brillyTabBarChrome()` + clean `36pt` bottom padding; capped iPad chessboards at `520pt` on regular width; upgraded WCAG AA+ badge ink & `warpPurpleText`; added VoiceOver labels to `PositionEditorSheet` & `PuzzleRushPanel` hearts and stacked Castling pills cleanly for 375pt iPhone SE.
+  - Replaced Swift 6 `@MainActor @objc` `PhotoLibrarySaver` with async `Photos` (`PHPhotoLibrary.requestAuthorization(for: .addOnly)` + `PHAssetCreationRequest`) with clear permission-denied feedback.
+  - Eliminated P0 Core crash/logic bugs: Unicode `parseSAN` force-unwrap crash, `FSRS6Scheduler` `Int64` overflow (`36,500`-day cap + `max(0, attempts)`), `BrillyNativeEngine` horizon stalemate `standPat` bug & MultiPV timeout ordering, 3-fold repetition draw blunder classification, `ChessComClient` `"+"`/`inf` bounds + `https://api.chess.com` host validation, `PGNParser` BOM/multi-game/NaN safety, `SyzygyClient` offline 45s backoff & 3.5s timeout, `VaultService` lazy `posKey` + dedup, `DeviationDetector` Black move-1 guard, `LocalVaultStore` date-based FSRS merge, `BrillyAppStore` `dailyOpeningCourseIds` pruning + `beginBackgroundTask` flush, and `SoundEffects` `[.interrupts]`.
+
+### Verified
+- `npm test && npm run build`: **21 test files, 102 tests passed** + Vite production build clean (including `public/privacy.html` & `public/support.html`).
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` parity clean, `swift test` **6 suites, 35 tests passed** (added `AppStoreReadinessTests.swift`), Release `arm64` `** BUILD SUCCEEDED **` (`v2.8.0`, build `11`), all App Store bundle checks (`PrivacyInfo.xcprivacy`, `Info.plist`, opaque `AppIcon`, pieces & courses) passed.

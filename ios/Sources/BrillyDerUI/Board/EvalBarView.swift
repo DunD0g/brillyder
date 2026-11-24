@@ -3,6 +3,7 @@ import BrillyDerCore
 
 /// Sleek animated evaluation bar showing White vs Black advantage with numeric readout.
 public struct EvalBarView: View {
+    @ScaledMetric(relativeTo: .caption) private var barHeight: CGFloat = 24
     let score: EngineScore
     let orientation: PieceColor
 
@@ -29,6 +30,8 @@ public struct EvalBarView: View {
                 HStack {
                     Text(score.display)
                         .font(.caption.monospacedDigit().weight(.bold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .foregroundStyle(score.cpWhite >= 0 ? Color(hex: 0x0F172A) : Color(hex: 0xF8FAFC))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
@@ -42,7 +45,7 @@ public struct EvalBarView: View {
             .clipShape(Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
         }
-        .frame(height: 22)
+        .frame(height: max(22, barHeight))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Position evaluation \(score.display)")
     }
