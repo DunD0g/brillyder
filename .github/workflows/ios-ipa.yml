@@ -104,8 +104,6 @@ jobs:
             /usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$app_path/Info.plist"
             find "$app_path" -name "starterCourses.json" | grep -q "starterCourses.json"
             find "$app_path" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
-            find "$app_path" -name "brilly_buddy_thumbsup.png" | grep -q "brilly_buddy_thumbsup.png"
-            find "$app_path" -name "brilly_buddy_blunder.png" | grep -q "brilly_buddy_blunder.png"
 
             rm -rf build/Payload "build/${ipa_name}"
             mkdir -p build/Payload

@@ -53,7 +53,7 @@ public enum CalloutStyle: String, Codable, CaseIterable, Sendable, Identifiable 
 
     public var subtitle: String {
         switch self {
-        case .brillyDer: return "Cartoony thumbs-up buddy shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
+        case .brillyDer: return "Thumbs-up 👍 & facepalm 🤦 shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
         case .standard: return "Clean diamond & classic tournament chess callouts"
         case .cosmicAlien: return "Cosmic Alien UFO mascot & space-probe alerts"
         }

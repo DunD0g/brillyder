@@ -76,8 +76,6 @@ verify_app_bundle() {
   plutil -lint "$app_path/PrivacyInfo.xcprivacy" >/dev/null
   find "$app_path" -name "starterCourses.json" | grep -q "starterCourses.json"
   find "$app_path" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
-  find "$app_path" -name "brilly_buddy_thumbsup.png" | grep -q "brilly_buddy_thumbsup.png"
-  find "$app_path" -name "brilly_buddy_blunder.png" | grep -q "brilly_buddy_blunder.png"
   if [[ -f "$IOS_DIR/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" ]]; then
     sips -g hasAlpha "$IOS_DIR/App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" | grep -q "hasAlpha: no"
   fi
