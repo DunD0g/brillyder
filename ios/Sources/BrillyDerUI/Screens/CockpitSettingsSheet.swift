@@ -32,6 +32,8 @@ public struct CockpitSettingsSheet: View {
     @State private var backupNotice: String? = nil
     @State private var backupError: Bool = false
     @State private var previewCelebration: CelebrationEvent? = nil
+    @State private var showingDailyOpeningsPicker = false
+    @State private var showingLocalProSheet = false
 
     public var body: some View {
         @Bindable var bindableStore = store
@@ -418,10 +420,99 @@ public struct CockpitSettingsSheet: View {
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+
+                        // MARK: - Daily FSRS Openings Shortcut
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("DAILY FSRS REPERTOIRE")
+                                .font(.caption.weight(.bold))
+                                .tracking(1.0)
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+
+                            Button {
+                                showingDailyOpeningsPicker = true
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Choose Daily Openings")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Text("\(store.dailyOpeningCourseIds.count) of \(store.allCourses.count) openings active in Orbit Coach & Gravity Check")
+                                            .font(.caption)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                }
+                                .padding(12)
+                                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20)
+
+                        // MARK: - Brilly/Der Pro Status (Founder Pro Unlocked by Default!)
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("BRILLY/DER PRO")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(1.0)
+                                    .foregroundStyle(BrillyPalette.warpPurple)
+                                Spacer()
+                                Label(store.hasProAccess ? "Founder Pro Active" : "Free Preview", systemImage: store.hasProAccess ? "checkmark.seal.fill" : "eye.fill")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        Capsule().fill((store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber).opacity(0.16))
+                                    )
+                            }
+
+                            Text("Your build includes full Founder Pro access to 25m Orbit Coach, Endgame Labs, Unlimited Sync & Share Cards.")
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+
+                            Button {
+                                showingLocalProSheet = true
+                            } label: {
+                                Label("Preview Pro Upgrade Tiers", systemImage: "crown.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
+
+                            Toggle(isOn: $bindableStore.previewFreeTier) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("Simulate Free Tier Locks")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    Text("Off by default — leave off to keep full Pro unlocked.")
+                                        .font(.caption2)
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                }
+                            }
+                            .tint(BrillyPalette.warpPurple)
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple)
                     }
                     .padding(16)
                     .padding(.bottom, 24)
                 }
+            }
+            .sheet(isPresented: $showingDailyOpeningsPicker) {
+                DailyOpeningsPickerSheet()
+                    .environment(store)
+            }
+            .sheet(isPresented: $showingLocalProSheet) {
+                BrillyProPaywallSheet()
+                    .environment(store)
             }
             .navigationTitle(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
             .toolbar {

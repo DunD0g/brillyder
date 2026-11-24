@@ -269,13 +269,29 @@ export async function renderShareCardBlob(input: ShareCardInput): Promise<Blob> 
   );
   ctx.fillText(playersLine, 86, footY);
 
+  // Clean viral footer pill (`Analyzed with BrillyDer`) + metadata line
+  const pillLabel = 'Analyzed with BrillyDer';
+  ctx.font = '700 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  const pillTextW = ctx.measureText(pillLabel).width;
+  const footerPillW = pillTextW + 34;
+  const footerPillX = width - 86 - footerPillW;
+  const footerPillY = footY + 18;
+  drawRoundedRect(ctx, footerPillX, footerPillY, footerPillW, 38, 19);
+  ctx.fillStyle = 'rgba(45, 212, 191, 0.14)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(45, 212, 191, 0.42)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#2DD4BF';
+  ctx.fillText(pillLabel, footerPillX + 17, footerPillY + 26);
+
   ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748B';
   ctx.fillText(
     fitTextWithEllipsis(
       ctx,
-      input.footerMeta || 'Analyzed locally on-device with Stockfish WASM · BrillyDer',
-      innerMaxW
+      input.footerMeta || 'On-device Stockfish WASM · 100% Local',
+      Math.max(120, innerMaxW - footerPillW - 24)
     ),
     86,
     footY + 46

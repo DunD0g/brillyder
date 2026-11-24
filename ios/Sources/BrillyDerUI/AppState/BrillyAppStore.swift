@@ -54,6 +54,12 @@ public final class BrillyAppStore {
     public var selectedTrainMode: TrainSubMode = .daily
     public var showingSettings: Bool = false
     public var showingVault: Bool = false
+    public var showingProPaywall: Bool = false
+    public var proPaywallFeature: String? = nil
+    /// Owner/Founder full Pro access (always unlocked by default; optional `previewFreeTier` lets you preview the paywall UX).
+    public var isFounderPro: Bool = true
+    public var previewFreeTier: Bool = false
+    public var hasProAccess: Bool { isFounderPro && !previewFreeTier }
     public var pendingAnalyzePly: Int? = nil
     public var preferredEndgameCategory: EndgameCategory? = nil
     public var preferredMotifFilter: String? = nil
@@ -84,6 +90,16 @@ public final class BrillyAppStore {
     }
     public var celebrationsEnabled: Bool {
         didSet { UserDefaults.standard.set(celebrationsEnabled, forKey: "brilly_celebrations_enabled") }
+    }
+    public var dailyOpeningCourseIds: Set<String> {
+        didSet {
+            UserDefaults.standard.set(Array(dailyOpeningCourseIds).sorted(), forKey: "brilly_daily_opening_course_ids")
+        }
+    }
+    public var hasConfiguredDailyOpenings: Bool {
+        didSet {
+            UserDefaults.standard.set(hasConfiguredDailyOpenings, forKey: "brilly_daily_opening_configured")
+        }
     }
     public var activeCelebration: CelebrationEvent? = nil
 
@@ -218,16 +234,60 @@ public final class BrillyAppStore {
         return value
     }
 
+    /// FSRS cards filtered strictly to openings the user has enabled for Daily Coach & Gravity Check.
+    public var dailyEligibleFsrsCards: [FsrsOpeningCard] {
+        fsrsCards.filter { card in
+            dailyOpeningCourseIds.contains(card.courseId) || card.source == "game-deviation"
+        }
+    }
+
     public var dueOpeningCount: Int {
-        fsrsCards.filter { FSRS6Scheduler.isCardDue($0) }.count
+        dailyEligibleFsrsCards.filter { FSRS6Scheduler.isCardDue($0) }.count
     }
 
     public var dailyWorkoutPlan: DailyWorkoutPlan {
         DailyCoachPlanner.buildPlan(
             duration: dailyDuration,
-            fsrsCards: fsrsCards,
+            fsrsCards: dailyEligibleFsrsCards,
             mistakeDeck: mistakeDeck
         )
+    }
+
+    public func isCourseInDaily(_ courseId: String) -> Bool {
+        dailyOpeningCourseIds.contains(courseId)
+    }
+
+    public func toggleCourseInDaily(_ courseId: String) {
+        hasConfiguredDailyOpenings = true
+        if dailyOpeningCourseIds.contains(courseId) {
+            dailyOpeningCourseIds.remove(courseId)
+        } else {
+            dailyOpeningCourseIds.insert(courseId)
+            ensureFirstLineUnlocked(forCourseId: courseId)
+        }
+        triggerHaptic(.move)
+    }
+
+    public func setDailyOpenings(_ ids: Set<String>) {
+        hasConfiguredDailyOpenings = true
+        dailyOpeningCourseIds = ids
+        for cid in ids {
+            ensureFirstLineUnlocked(forCourseId: cid)
+        }
+        triggerHaptic(.move)
+    }
+
+    public func openProPaywall(feature: String? = nil) {
+        proPaywallFeature = feature
+        showingProPaywall = true
+    }
+
+    private func ensureFirstLineUnlocked(forCourseId courseId: String) {
+        let hasUnlocked = fsrsCards.contains { $0.courseId == courseId && $0.unlocked }
+        guard !hasUnlocked,
+              let course = allCourses.first(where: { $0.id == courseId }),
+              let firstLine = course.lines.first else { return }
+        unlockLine(courseId: courseId, lineId: firstLine.id)
     }
 
     public var insights: InsightsSnapshot {
@@ -290,6 +350,9 @@ public final class BrillyAppStore {
         self.hapticsEnabled = defaults.object(forKey: "brilly_haptics_enabled") as? Bool ?? true
         self.soundEnabled = defaults.object(forKey: "brilly_sound_enabled") as? Bool ?? true
         self.celebrationsEnabled = defaults.object(forKey: "brilly_celebrations_enabled") as? Bool ?? true
+        self.hasConfiguredDailyOpenings = defaults.bool(forKey: "brilly_daily_opening_configured")
+        let savedIds = defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? []
+        self.dailyOpeningCourseIds = Set(savedIds)
 
         self.starterCourses = (try? CourseRepository.loadStarterCourses()) ?? []
         self.recentGames = LichessClient.sampleGames()
@@ -480,6 +543,23 @@ public final class BrillyAppStore {
         }
 
         self.fsrsCards = hydrated
+
+        // Smart default: if user hasn't explicitly configured Daily FSRS openings yet,
+        // ONLY include courses they have actually practiced/imported (or first starter course if brand new),
+        // never random unpracticed openings!
+        if !hasConfiguredDailyOpenings {
+            var seeded = Set<String>()
+            for card in hydrated where card.attempts > 0 {
+                seeded.insert(card.courseId)
+            }
+            for course in allCourses where course.source == "pgn" || course.source == "lichess-study" {
+                seeded.insert(course.id)
+            }
+            if seeded.isEmpty, let first = allCourses.first {
+                seeded.insert(first.id)
+            }
+            self.dailyOpeningCourseIds = seeded
+        }
     }
 
     public func persistToDisk() {

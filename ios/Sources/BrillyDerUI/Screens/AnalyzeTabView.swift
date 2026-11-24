@@ -24,12 +24,14 @@ public struct AnalyzeTabView: View {
     @State private var botGeneration: Int = 0
     @State private var evalGeneration: Int = 0
 
-    // Cached Deviation, Syzygy Tablebase & Copy Toast
+    // Cached Deviation, Syzygy Tablebase, Auto-Play & Copy Toast
     @State private var cachedDeviation: OpeningDeviationReport? = nil
     @State private var syzygyResult: SyzygyProbeResult? = nil
     @State private var copiedNotice: String? = nil
     @State private var boostedDeviationCardId: String? = nil
     @State private var activeShareCard: BrillyShareCardPayload? = nil
+    @State private var isAutoPlaying: Bool = false
+    @State private var autoPlaySpeed: Int = 1 // 1 = 1x, 2 = 2x
 
     public var body: some View {
         ZStack {
@@ -87,9 +89,40 @@ public struct AnalyzeTabView: View {
         .sheet(item: $activeShareCard) { payload in
             BrillyShareCardSheet(payload: payload, surfaceStyle: store.surfaceStyle)
         }
+        .task(id: isAutoPlaying) {
+            guard isAutoPlaying else { return }
+            while !Task.isCancelled && isAutoPlaying {
+                guard let ag = store.activeAnalyzedGame, !retryMode, !botActive else {
+                    isAutoPlaying = false
+                    break
+                }
+                let baseMs: Int = (autoPlaySpeed == 2) ? 520 : 1020
+                let currentCls = (currentPlyIndex > 0 && currentPlyIndex <= ag.plies.count)
+                    ? ag.plies[currentPlyIndex - 1].classification
+                    : nil
+                let holdExtraMs: Int = (autoPlaySpeed == 1 && (currentCls == .brilliant || currentCls == .blunder)) ? 1300 : 0
+                try? await Task.sleep(for: .milliseconds(baseMs + holdExtraMs))
+                guard !Task.isCancelled && isAutoPlaying else { break }
+                guard let liveAg = store.activeAnalyzedGame, !retryMode, !botActive else {
+                    isAutoPlaying = false
+                    break
+                }
+                if currentPlyIndex < liveAg.plies.count {
+                    currentPlyIndex += 1
+                    let stepped = liveAg.plies[currentPlyIndex - 1]
+                    if stepped.classification != .brilliant && stepped.classification != .blunder {
+                        store.triggerHaptic(stepped.san.contains("x") ? .capture : .move)
+                    }
+                } else {
+                    isAutoPlaying = false
+                    break
+                }
+            }
+        }
     }
 
     private func cancelLiveTasks() {
+        isAutoPlaying = false
         botGeneration &+= 1
         evalGeneration &+= 1
         botTask?.cancel()
@@ -347,7 +380,7 @@ public struct AnalyzeTabView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 84)
+            .padding(.bottom, 120)
             .onAppear {
                 if let b = try? ChessBoard(fen: startFen) {
                     sandboxBoard = b
@@ -427,6 +460,8 @@ public struct AnalyzeTabView: View {
                 evalScore: score,
                 whiteName: ag.game.white.name,
                 blackName: ag.game.black.name,
+                whiteAccuracy: ag.whiteSummary.accuracy,
+                blackAccuracy: ag.blackSummary.accuracy,
                 activeSide: moverSide,
                 accuracyTag: accTag,
                 openingName: ag.openingLineDetected ?? ag.game.openingName,
@@ -484,20 +519,65 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
-                // 4. Transport Scrubber Bar
-                BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
-                    HStack(spacing: 8) {
+                // 4. Transport Scrubber Bar (with Web-matching AUTO / PAUSE + 1x/2x speed!)
+                BrillyGlassCluster(style: store.surfaceStyle, spacing: 6) {
+                    HStack(spacing: 6) {
                         transportBtn("backward.end.fill", label: "First move") { goToPly(0, maxPly: ag.plies.count) }
                         transportBtn("chevron.left", label: "Previous move") { goToPly(clampedPly - 1, maxPly: ag.plies.count) }
+
+                        Button {
+                            if !isAutoPlaying {
+                                retryMode = false
+                                botActive = false
+                                if clampedPly >= ag.plies.count {
+                                    currentPlyIndex = 0
+                                }
+                                isAutoPlaying = true
+                            } else {
+                                isAutoPlaying = false
+                            }
+                            store.triggerHaptic(.move)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: isAutoPlaying ? "pause.fill" : "play.fill")
+                                    .font(.caption.weight(.black))
+                                Text(isAutoPlaying ? "PAUSE" : "AUTO")
+                                    .font(.system(size: 11, weight: .black, design: .rounded))
+                                    .tracking(0.4)
+                            }
+                            .foregroundStyle(isAutoPlaying ? BrillyPalette.voidBg : BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(isAutoPlaying ? BrillyPalette.brillyTeal : BrillyPalette.brillyTeal.opacity(0.16))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .strokeBorder(BrillyPalette.brillyTeal.opacity(0.48), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isAutoPlaying ? "Pause auto-play" : "Start auto-play")
+
                         transportBtn("chevron.right", label: "Next move") { goToPly(clampedPly + 1, maxPly: ag.plies.count) }
                         transportBtn("forward.end.fill", label: "Last move") { goToPly(ag.plies.count, maxPly: ag.plies.count) }
-                        transportBtn("arrow.up.arrow.down", label: "Flip board") { orientation = orientation.opposite }
-                        if let ap = activePly {
-                            let isSaved = store.isBookmarked(gameId: ag.game.id, ply: ap.ply)
-                            transportBtn(isSaved ? "bookmark.fill" : "bookmark", label: isSaved ? "Remove bookmark" : "Bookmark position") {
-                                store.toggleBookmark(ply: ap, game: ag.game)
-                            }
+
+                        Button {
+                            autoPlaySpeed = (autoPlaySpeed == 1) ? 2 : 1
+                            store.triggerHaptic(.move)
+                        } label: {
+                            Text("\(autoPlaySpeed)x")
+                                .font(.caption.monospacedDigit().weight(.black))
+                                .foregroundStyle(autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                                .frame(minWidth: 34)
+                                .padding(.vertical, 10)
+                                .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : nil, interactive: true)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Auto-play speed \(autoPlaySpeed)x")
+
+                        transportBtn("arrow.up.arrow.down", label: "Flip board") { orientation = orientation.opposite }
                     }
                 }
 
@@ -599,6 +679,23 @@ public struct AnalyzeTabView: View {
                             .background(Capsule().fill(botActive ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                     }
                     .buttonStyle(.plain)
+
+                    if let ap = activePly {
+                        let isSaved = store.isBookmarked(gameId: ag.game.id, ply: ap.ply)
+                        Button {
+                            store.toggleBookmark(ply: ap, game: ag.game)
+                            store.triggerHaptic(.move)
+                        } label: {
+                            Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(isSaved ? BrillyPalette.goldAmber : BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(isSaved ? BrillyPalette.goldAmber.opacity(0.18) : Color.white.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isSaved ? "Remove bookmark" : "Bookmark position")
+                    }
 
                     Button { copyText(displayFen, label: "FEN copied") } label: {
                         Text("FEN")
@@ -736,7 +833,7 @@ public struct AnalyzeTabView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 84)
+            .padding(.bottom, 120)
         }
         .task(id: displayFen) {
             if SyzygyClient.isEligible(fen: displayFen) {

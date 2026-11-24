@@ -33,6 +33,8 @@ public struct VaultHighlight: Hashable, Sendable, Identifiable {
     public let evalScore: EngineScore?
     public let whiteName: String
     public let blackName: String
+    public let whiteAccuracy: Double?
+    public let blackAccuracy: Double?
     public let userAccuracy: Double?
     public let userEstimatedElo: Int?
     public let openingName: String?
@@ -56,6 +58,8 @@ public struct VaultHighlight: Hashable, Sendable, Identifiable {
         evalScore: EngineScore? = nil,
         whiteName: String = "White",
         blackName: String = "Black",
+        whiteAccuracy: Double? = nil,
+        blackAccuracy: Double? = nil,
         userAccuracy: Double? = nil,
         userEstimatedElo: Int? = nil,
         openingName: String? = nil,
@@ -78,6 +82,8 @@ public struct VaultHighlight: Hashable, Sendable, Identifiable {
         self.evalScore = evalScore
         self.whiteName = whiteName
         self.blackName = blackName
+        self.whiteAccuracy = whiteAccuracy
+        self.blackAccuracy = blackAccuracy
         self.userAccuracy = userAccuracy
         self.userEstimatedElo = userEstimatedElo
         self.openingName = openingName
@@ -136,6 +142,8 @@ public enum VaultService {
                     evalScore: lastUserPly?.evalAfter,
                     whiteName: ag.game.white.name,
                     blackName: ag.game.black.name,
+                    whiteAccuracy: ag.whiteSummary.accuracy,
+                    blackAccuracy: ag.blackSummary.accuracy,
                     userAccuracy: summary.accuracy,
                     userEstimatedElo: summary.estimatedElo,
                     openingName: openingLabel,
@@ -169,6 +177,8 @@ public enum VaultService {
                         evalScore: p.evalAfter,
                         whiteName: ag.game.white.name,
                         blackName: ag.game.black.name,
+                        whiteAccuracy: ag.whiteSummary.accuracy,
+                        blackAccuracy: ag.blackSummary.accuracy,
                         userAccuracy: summary.accuracy,
                         userEstimatedElo: summary.estimatedElo,
                         openingName: openingLabel,
@@ -195,6 +205,8 @@ public enum VaultService {
                         evalScore: p.evalAfter,
                         whiteName: ag.game.white.name,
                         blackName: ag.game.black.name,
+                        whiteAccuracy: ag.whiteSummary.accuracy,
+                        blackAccuracy: ag.blackSummary.accuracy,
                         userAccuracy: summary.accuracy,
                         userEstimatedElo: summary.estimatedElo,
                         openingName: openingLabel,
@@ -225,6 +237,8 @@ public enum VaultService {
                             evalScore: p.evalAfter,
                             whiteName: ag.game.white.name,
                             blackName: ag.game.black.name,
+                            whiteAccuracy: ag.whiteSummary.accuracy,
+                            blackAccuracy: ag.blackSummary.accuracy,
                             userAccuracy: summary.accuracy,
                             userEstimatedElo: summary.estimatedElo,
                             openingName: openingLabel,

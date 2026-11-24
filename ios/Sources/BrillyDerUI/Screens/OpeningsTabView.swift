@@ -37,6 +37,17 @@ public struct OpeningsTabView: View {
                         .buttonStyle(.plain)
                     }
 
+                    HStack(spacing: 6) {
+                        Image(systemName: "hand.tap.fill")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                        Text("Tap Daily or press & hold any opening to include it in Daily FSRS.")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 4)
+
                     LazyVStack(spacing: 12) {
                         ForEach(courses) { course in
                             courseCard(course)
@@ -45,7 +56,7 @@ public struct OpeningsTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 84)
+                .padding(.bottom, 120)
             }
         }
         .navigationTitle("Openings")
@@ -66,56 +77,126 @@ public struct OpeningsTabView: View {
         let avgRecall = reviewed.isEmpty
             ? 0
             : reviewed.map { FSRS6Scheduler.recallProbability(for: $0) }.reduce(0, +) / reviewed.count
+        let inDaily = store.isCourseInDaily(course.id)
 
-        return Button {
-            selectedCourse = course
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(store.copy(cosmic: course.codename.uppercased(), classic: course.difficulty.uppercased()))
-                            .font(.caption2.weight(.bold))
-                            .tracking(0.8)
-                            .foregroundStyle(BrillyPalette.brillyTeal)
-                        Text(course.name)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                    }
-                    Spacer()
-                    if dueCount > 0 {
-                        Text("\(dueCount) due")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
-                    } else {
-                        Text("\(course.lines.count) lines")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(BrillyPalette.inkSecondary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(Color.white.opacity(0.08)))
-                    }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.copy(cosmic: course.codename.uppercased(), classic: course.difficulty.uppercased()))
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.8)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    Text(course.name)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
                 }
+                Spacer(minLength: 6)
 
-                Text(course.tagline)
-                    .font(.caption)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-                    .lineLimit(2)
+                // Direct one-tap Daily FSRS inclusion toggle pill
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        store.toggleCourseInDaily(course.id)
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: inDaily ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.caption2.weight(.bold))
+                        Text(inDaily ? "Daily" : "Add Daily")
+                            .font(.caption2.weight(.bold))
+                    }
+                    .foregroundStyle(inDaily ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(inDaily ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(inDaily ? "Included in Daily FSRS. Tap to remove." : "Not in Daily FSRS. Tap to include.")
 
+                if inDaily && dueCount > 0 {
+                    Text("\(dueCount) due")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(BrillyPalette.brillyTeal.opacity(0.16)))
+                }
+            }
+
+            Text(course.tagline)
+                .font(.caption)
+                .foregroundStyle(BrillyPalette.inkSecondary)
+                .lineLimit(2)
+
+            // Inviting empty state when unstarted (0% recall) vs active recall bar
+            if reviewed.isEmpty {
+                HStack(spacing: 10) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [BrillyPalette.brillyTeal.opacity(0.55), BrillyPalette.warpPurple.opacity(0.45)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: max(18, geo.size.width * 0.14))
+                        }
+                    }
+                    .frame(height: 6)
+
+                    HStack(spacing: 4) {
+                        Text("Start Drill")
+                            .font(.caption2.weight(.bold))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                            .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.35), lineWidth: 1))
+                    )
+                }
+            } else {
                 HStack(spacing: 10) {
                     ProgressView(value: Double(avgRecall), total: 100.0)
                         .tint(BrillyPalette.brillyTeal)
                     Text("\(avgRecall)% recall")
                         .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
                 }
             }
-            .padding(16)
-            .brillySurface(store.surfaceStyle, cornerRadius: 20, interactive: true)
         }
-        .buttonStyle(.plain)
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: inDaily ? BrillyPalette.brillyTeal : nil, interactive: true)
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onTapGesture {
+            selectedCourse = course
+        }
+        .contextMenu {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    store.toggleCourseInDaily(course.id)
+                }
+            } label: {
+                Label(
+                    inDaily ? "Remove from Daily FSRS" : "Include in Daily FSRS",
+                    systemImage: inDaily ? "minus.circle" : "checkmark.circle.fill"
+                )
+            }
+            Button {
+                selectedCourse = course
+            } label: {
+                Label("Open Course & Drills", systemImage: "book.fill")
+            }
+        }
     }
 }
 

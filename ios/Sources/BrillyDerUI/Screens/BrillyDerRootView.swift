@@ -21,6 +21,10 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.train.title, systemImage: BrillyTab.train.systemImage)
                 }
                 .tag(BrillyTab.train)
+                #if os(iOS)
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                #endif
 
                 NavigationStack {
                     GamesTabView()
@@ -30,6 +34,10 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.games.title, systemImage: BrillyTab.games.systemImage)
                 }
                 .tag(BrillyTab.games)
+                #if os(iOS)
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                #endif
 
                 NavigationStack {
                     AnalyzeTabView()
@@ -39,6 +47,10 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.analyze.title, systemImage: BrillyTab.analyze.systemImage)
                 }
                 .tag(BrillyTab.analyze)
+                #if os(iOS)
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                #endif
 
                 NavigationStack {
                     OpeningsTabView()
@@ -48,6 +60,10 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.openings.title, systemImage: BrillyTab.openings.systemImage)
                 }
                 .tag(BrillyTab.openings)
+                #if os(iOS)
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                #endif
 
                 NavigationStack {
                     InsightsTabView()
@@ -57,8 +73,27 @@ public struct BrillyDerRootView: View {
                     Label(BrillyTab.insights.title, systemImage: BrillyTab.insights.systemImage)
                 }
                 .tag(BrillyTab.insights)
+                #if os(iOS)
+                .toolbarBackground(Color(hex: 0x0E121A).opacity(0.92), for: .tabBar)
+                .toolbarBackground(.visible, for: .tabBar)
+                #endif
             }
             .tint(BrillyPalette.brillyTeal)
+        }
+        // Subtle frosted bottom gradient scrim so scrolling cards cleanly fade behind the floating tab pill
+        .overlay(alignment: .bottom) {
+            LinearGradient(
+                colors: [
+                    Color(hex: 0x0E121A).opacity(0.0),
+                    Color(hex: 0x0E121A).opacity(0.72),
+                    Color(hex: 0x0E121A).opacity(0.94),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 92)
+            .ignoresSafeArea(edges: .bottom)
+            .allowsHitTesting(false)
         }
         // Safe-area-aware floating HUD banners (overlay never perturbs TabView safe-area insets)
         .overlay(alignment: .top) {
@@ -92,6 +127,12 @@ public struct BrillyDerRootView: View {
             BrillyVaultSheet()
                 .environment(store)
                 .environment(\.brillyPieceSet, store.pieceSet)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $bindableStore.showingProPaywall) {
+            BrillyProPaywallSheet(highlightedFeature: store.proPaywallFeature)
+                .environment(store)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }

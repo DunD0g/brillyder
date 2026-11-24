@@ -25,6 +25,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let evalScore: EngineScore?
     public let whiteName: String
     public let blackName: String
+    public let whiteAccuracy: Double?
+    public let blackAccuracy: Double?
     public let activeSide: PieceColor
     public let accuracyTag: String?
     public let openingName: String?
@@ -50,6 +52,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         evalScore: EngineScore? = nil,
         whiteName: String = "White",
         blackName: String = "Black",
+        whiteAccuracy: Double? = nil,
+        blackAccuracy: Double? = nil,
         activeSide: PieceColor = .white,
         accuracyTag: String? = nil,
         openingName: String? = nil,
@@ -73,6 +77,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.evalScore = evalScore
         self.whiteName = whiteName
         self.blackName = blackName
+        self.whiteAccuracy = whiteAccuracy
+        self.blackAccuracy = blackAccuracy
         self.activeSide = activeSide
         self.accuracyTag = accuracyTag
         self.openingName = openingName
@@ -113,6 +119,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             evalScore: evalScore,
             whiteName: whiteName,
             blackName: blackName,
+            whiteAccuracy: whiteAccuracy,
+            blackAccuracy: blackAccuracy,
             activeSide: activeSide,
             accuracyTag: accuracyTag,
             openingName: openingName,
@@ -663,13 +671,23 @@ public struct BrillyShareCardView: View {
 
     private var footerMatchupBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Player Matchup Strip
-            HStack(spacing: 8) {
-                playerTag(name: payload.whiteName, isWhite: true, highlighted: payload.activeSide == .white)
+            // Player Matchup Strip with Accuracy Comparison
+            HStack(spacing: 6) {
+                playerTag(
+                    name: payload.whiteName,
+                    accuracy: payload.whiteAccuracy,
+                    isWhite: true,
+                    highlighted: payload.activeSide == .white
+                )
                 Text("vs")
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(BrillyPalette.inkSecondary)
-                playerTag(name: payload.blackName, isWhite: false, highlighted: payload.activeSide == .black)
+                playerTag(
+                    name: payload.blackName,
+                    accuracy: payload.blackAccuracy,
+                    isWhite: false,
+                    highlighted: payload.activeSide == .black
+                )
                 Spacer(minLength: 0)
             }
 
@@ -683,7 +701,7 @@ public struct BrillyShareCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Bottom Colophon
+            // Viral Social Colophon Strip (`Analyzed with Brilly/Der` footer pill!)
             HStack(spacing: 6) {
                 if let opening = payload.openingName, !opening.isEmpty {
                     Text(opening)
@@ -692,10 +710,20 @@ public struct BrillyShareCardView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                Text("On-Device Stockfish · BrillyDer")
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.82))
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    BrillyLogoMark(size: 13, circular: true)
+                    Text("Analyzed with")
+                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    BrillyWordmarkView(fontSize: 10, uppercase: false, showSlash: true, tracking: 0)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.06))
+                        .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.28), lineWidth: 0.8))
+                )
             }
             .padding(.top, 2)
         }
@@ -711,7 +739,7 @@ public struct BrillyShareCardView: View {
         )
     }
 
-    private func playerTag(name: String, isWhite: Bool, highlighted: Bool) -> some View {
+    private func playerTag(name: String, accuracy: Double?, isWhite: Bool, highlighted: Bool) -> some View {
         HStack(spacing: 5) {
             Circle()
                 .fill(isWhite ? Color(hex: 0xF8FAFC) : Color(hex: 0x1E293B))
@@ -723,9 +751,14 @@ public struct BrillyShareCardView: View {
                     )
                 )
             Text(name)
-                .font(.system(size: 12, weight: highlighted ? .heavy : .semibold, design: .rounded))
+                .font(.system(size: 11.5, weight: highlighted ? .heavy : .semibold, design: .rounded))
                 .foregroundStyle(highlighted ? .white : BrillyPalette.inkSecondary)
                 .lineLimit(1)
+            if let acc = accuracy {
+                Text("\(String(format: "%.1f", acc))%")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(highlighted ? accentColor : BrillyPalette.inkSecondary.opacity(0.85))
+            }
         }
         .padding(.horizontal, highlighted ? 8 : 4)
         .padding(.vertical, 3)

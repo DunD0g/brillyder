@@ -407,3 +407,27 @@
 
 ### Verified
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` diff clean, `swift test` **5 suites, 29 tests passed** (added `dailyCoachLegalityAndContext` regression test), Release `arm64` `** BUILD SUCCEEDED **` (`v2.6.4`, build `9`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.
+
+---
+
+## v2.7.0 (Auto-Play Restore, Daily FSRS Opening Selector, Anti-Bleed Nav Polish & Founder Pro Suite)
+**Status:** Completed & Verified
+
+### Built
+- **Restored Analyze Auto-Play & Speed Toggle (`AnalyzeTabView.swift`):**
+  - Added glowing `▶ AUTO` / `⏸ PAUSE` and `1x` / `2x` speed toggle buttons right inside the Analyze transport bar (with automatic rewind from end, pause on manual step/retry/bot/game switch, and celebratory pause on `!!`/`??` moves at `1x`).
+- **Daily FSRS Opening Selector — Two Effortless Ways (`BrillyAppStore.swift`, `OpeningsTabView.swift`, `TrainTabView.swift`, `CockpitSettingsSheet.swift`):**
+  - Added persisted `dailyOpeningCourseIds` filtering across `dueOpeningCount`, `dailyWorkoutPlan`, and `GravityCheckSheet` (smart default includes only practiced/imported openings rather than random unpracticed openings).
+  - **Way 1 (Openings Tab):** Press & hold (`contextMenu`) OR tap the direct `Daily ✓` / `Add Daily` pill on any opening card to include/exclude it from Daily FSRS.
+  - **Way 2 (Train Tab & Settings):** Tap `1. Openings · Edit` (or the `due` pill) on the Daily Flight Plan card — or Settings → **Choose Daily Openings** — to open `DailyOpeningsPickerSheet` with White/Black toggles and `Practiced Only` / `All` / `Clear` presets.
+- **Anti-Bleed Bottom Tab Chrome, Safe-Area Padding & Clean Empty States (iOS + Web):**
+  - Added frosted solid dark tab-bar chrome (`#0E121A` at 92% opacity + subtle bottom fade scrim on iOS `BrillyDerRootView.swift`; `.brilly-bottom-nav` `rgba(14,18,26,0.92)` + `blur(20px)` on Web `src/index.css` / `src/App.tsx`) and bumped bottom scroll clearance across all 5 tabs (`padding(.bottom, 120)` on iOS; `pb-[calc(7rem+env(safe-area-inset-bottom))]` on Web).
+  - Replaced `0 Bookmarks` on the Train summary row with a dynamic `🔥 Daily Streak` tile when bookmarks are empty (switching to `Bookmarks` once `>= 1` saved).
+  - Replaced `0% recall` on unstarted openings in `OpeningsTabView` with an inviting teal-tinted progress bar and `Start Drill →` pill.
+- **Viral Share Card Footer, Tap-Scale Polish & Brilly/Der Pro Modal (Founder Pro Unlocked):**
+  - Added both players' accuracy comparison (`Lukedunwell 94.9% vs Opponent 88.5%`) and a crisp `Analyzed with Brilly/Der` viral footer pill to `ShareCardRenderer.swift` & `src/utils/shareCard.ts`.
+  - Added `BrillyPressScaleStyle` (`scaleEffect(0.975)`), Web `active:scale-[0.98]` + `user-select: none`, and `BrillyProPaywallSheet.swift` + `src/components/BrillyProModal.tsx` featuring Monthly (`£3.99/mo`), Annual (`£24.99/yr`, **Best Value · 7-Day Free Trial**), and Lifetime (`£39.99 one-time`) — with **Founder Pro Active (`hasProAccess = true`) unlocked by default** for the owner plus an optional `Simulate Free Tier Locks` preview toggle in Settings.
+
+### Verified
+- `npm test && npm run build`: Web PWA tests & production Vite build passed cleanly.
+- `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` parity clean, `swift test` **5 suites, 29 tests passed**, Release `arm64` `** BUILD SUCCEEDED **` (`v2.7.0`, build `10`), packaged `ios/build/BrillyDer-iOS-unsigned.ipa`.

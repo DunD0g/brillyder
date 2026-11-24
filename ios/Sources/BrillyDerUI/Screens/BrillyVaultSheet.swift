@@ -198,6 +198,8 @@ public struct BrillyVaultSheet: View {
                                 evalScore: item.evalScore,
                                 whiteName: item.whiteName,
                                 blackName: item.blackName,
+                                whiteAccuracy: item.whiteAccuracy,
+                                blackAccuracy: item.blackAccuracy,
                                 activeSide: item.color,
                                 accuracyTag: accTag,
                                 openingName: item.openingName,

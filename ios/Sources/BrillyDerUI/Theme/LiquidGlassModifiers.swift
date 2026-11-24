@@ -190,3 +190,15 @@ public extension View {
         modifier(BrillyCapsuleButtonModifier(style: style, tint: tint))
     }
 }
+
+/// Crisp native tactile scale-down press style (`scaleEffect(0.98)`) for navigation pills and primary controls.
+public struct BrillyPressScaleStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1.0)
+            .opacity(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: configuration.isPressed)
+    }
+}

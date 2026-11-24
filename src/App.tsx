@@ -1223,7 +1223,7 @@ export const App: React.FC = () => {
           </div>
         </header>
 
-      <main className="mx-auto w-full max-w-lg px-3 pt-3 sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6 lg:pt-4">
+      <main className="mx-auto w-full max-w-lg px-3 pt-3 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-4 md:max-w-3xl lg:max-w-7xl lg:px-6 lg:pt-4 lg:pb-8">
         {swUpdateReady && (
           <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-teal-400/40 bg-gradient-to-r from-teal-500/15 via-hull/90 to-purple-500/15 px-3 py-2 text-xs text-teal-100 shadow-lg">
             <span className="flex items-center gap-2 font-semibold">
@@ -1527,7 +1527,7 @@ export const App: React.FC = () => {
       </main>
 
         {(tab !== 'analyze' || !selectedGame) && (
-          <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-void/[0.95] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
+          <nav className="brilly-bottom-nav fixed bottom-0 left-0 right-0 z-40 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
             <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
               {NAV_ITEMS.map(({ id, label, Icon }) => (
                 <button
@@ -1535,7 +1535,7 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => handleSelectNavTab(id)}
                   aria-current={tab === id ? 'page' : undefined}
-                  className={`relative flex flex-col items-center rounded-xl py-1.5 text-[9px] font-bold transition ${
+                  className={`relative flex select-none flex-col items-center rounded-xl py-1.5 text-[9px] font-bold transition active:scale-[0.98] ${
                     tab === id ? 'bg-teal-400/12 text-brilly' : 'text-slate-400 active:bg-slate-800/50'
                   }`}
                 >

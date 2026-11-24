@@ -197,7 +197,7 @@ public struct GamesTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 84)
+                .padding(.bottom, 120)
             }
             .scrollDismissesKeyboard(.interactively)
         }

@@ -5,6 +5,7 @@ public struct TrainTabView: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var showingDailySession = false
     @State private var showingGravityCheck = false
+    @State private var showingDailyOpeningsPicker = false
 
     public var body: some View {
         let plan = store.dailyWorkoutPlan
@@ -61,6 +62,10 @@ public struct TrainTabView: View {
                             ForEach(TrainSubMode.allCases) { mode in
                                 let sel = store.selectedTrainMode == mode
                                 Button(mode.rawValue) {
+                                    if mode == .labs && !store.hasProAccess {
+                                        store.openProPaywall(feature: "Endgame & Vision Labs")
+                                        return
+                                    }
                                     withAnimation(.snappy) {
                                         store.selectedTrainMode = mode
                                     }
@@ -91,7 +96,7 @@ public struct TrainTabView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
-                .padding(.bottom, 84)
+                .padding(.bottom, 120)
             }
         }
         .navigationTitle("")
@@ -104,6 +109,10 @@ public struct TrainTabView: View {
         }
         .sheet(isPresented: $showingGravityCheck) {
             GravityCheckSheet()
+                .environment(store)
+        }
+        .sheet(isPresented: $showingDailyOpeningsPicker) {
+            DailyOpeningsPickerSheet()
                 .environment(store)
         }
     }
@@ -127,44 +136,68 @@ public struct TrainTabView: View {
                     .foregroundStyle(BrillyPalette.inkPrimary)
                 }
                 Spacer()
-                Label("\(store.dueOpeningCount) due", systemImage: "brain.head.profile")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(BrillyPalette.brillyTeal)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                Button {
+                    showingDailyOpeningsPicker = true
+                } label: {
+                    Label("\(store.dueOpeningCount) due", systemImage: "brain.head.profile")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                }
+                .buttonStyle(.plain)
             }
 
             // Duration Picker (10m | 15m | 25m)
             HStack(spacing: 8) {
                 ForEach(DailyDurationMinutes.allCases) { dur in
                     let selected = store.dailyDuration == dur
+                    let lockedPro = (dur == .twentyFive && !store.hasProAccess)
                     Button {
+                        if lockedPro {
+                            store.openProPaywall(feature: "25-Minute Orbit Coach")
+                            return
+                        }
                         withAnimation(.snappy) {
                             store.dailyDuration = dur
                         }
                     } label: {
-                        Text(dur.label)
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
-                            )
+                        HStack(spacing: 4) {
+                            Text(dur.label)
+                            if lockedPro {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption2)
+                            }
+                        }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
+                        )
                     }
                     .buttonStyle(.plain)
                 }
             }
 
-            // 4-Stage Summary Grid
+            // 4-Stage Summary Grid (Tap 1. Openings to choose which openings are active in Daily FSRS!)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                stageChip(
-                    title: "1. Openings",
-                    value: "\(plan.stage1OpeningCards.count) FSRS",
-                    icon: "book.fill",
-                    tint: BrillyPalette.brillyTeal
-                )
+                Button {
+                    showingDailyOpeningsPicker = true
+                } label: {
+                    stageChip(
+                        title: "1. Openings · Edit",
+                        value: store.dailyOpeningCourseIds.isEmpty
+                            ? "Pick Openings"
+                            : "\(plan.stage1OpeningCards.count) FSRS (\(store.dailyOpeningCourseIds.count))",
+                        icon: "book.fill",
+                        tint: BrillyPalette.brillyTeal
+                    )
+                }
+                .buttonStyle(.plain)
+
                 stageChip(
                     title: "2. Blunders",
                     value: "\(plan.stage2Blunders.count) Rewind",
@@ -248,7 +281,7 @@ public struct TrainTabView: View {
         .padding(16)
         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
 
-        // MARK: - 3. Quick Status Row
+        // MARK: - 3. Quick Status Row (Replaces `0 Bookmarks` with Dynamic Daily Streak!)
         HStack(spacing: 12) {
             statCard(
                 label: "Analyzed Games",
@@ -260,11 +293,19 @@ public struct TrainTabView: View {
                 value: "\(store.mistakeDeck.count)",
                 tint: BrillyPalette.blunderRose
             )
-            statCard(
-                label: "Bookmarks",
-                value: "\(store.bookmarks.count)",
-                tint: BrillyPalette.goldAmber
-            )
+            if store.bookmarks.isEmpty {
+                statCard(
+                    label: "Daily Streak",
+                    value: store.dailyStreakDays > 0 ? "🔥 \(store.dailyStreakDays)d" : "🔥 Start",
+                    tint: BrillyPalette.goldAmber
+                )
+            } else {
+                statCard(
+                    label: "Bookmarks",
+                    value: "\(store.bookmarks.count)",
+                    tint: BrillyPalette.goldAmber
+                )
+            }
         }
     }
 
@@ -889,7 +930,7 @@ private struct GravityCheckSheet: View {
             .onAppear {
                 if !initialized {
                     items = DailyCoachPlanner.buildGravityCheckFlashes(
-                        fsrsCards: store.fsrsCards,
+                        fsrsCards: store.dailyEligibleFsrsCards,
                         mistakeDeck: store.mistakeDeck
                     )
                     initialized = true
@@ -980,5 +1021,128 @@ private struct GravityCheckSheet: View {
         timerTask?.cancel()
         advanceTask?.cancel()
         finished = true
+    }
+}
+
+// MARK: - Daily FSRS Opening Selector Sheet
+
+public struct DailyOpeningsPickerSheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    public init() {}
+
+    public var body: some View {
+        let whiteCourses = store.allCourses.filter { $0.side == .white }
+        let blackCourses = store.allCourses.filter { $0.side == .black }
+
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Choose which openings appear in your Daily Orbit Coach & 60s Gravity Check so you only drill lines you actually play.")
+                                .font(.caption)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+
+                            HStack(spacing: 8) {
+                                quickPresetButton("Practiced Only") {
+                                    let practiced = Set(store.fsrsCards.filter { $0.attempts > 0 }.map(\.courseId))
+                                    let imported = Set(store.allCourses.filter { $0.source == "pgn" || $0.source == "lichess-study" }.map(\.id))
+                                    store.setDailyOpenings(practiced.union(imported))
+                                }
+                                quickPresetButton("All Openings") {
+                                    store.setDailyOpenings(Set(store.allCourses.map(\.id)))
+                                }
+                                quickPresetButton("Clear") {
+                                    store.setDailyOpenings([])
+                                }
+                            }
+                        }
+                        .padding(14)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.brillyTeal)
+
+                        courseSection(title: "WHITE REPERTOIRE", courses: whiteCourses)
+                        courseSection(title: "BLACK REPERTOIRE", courses: blackCourses)
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Daily FSRS Openings")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func courseSection(title: String, courses: [OpeningCourse]) -> some View {
+        if !courses.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                    .padding(.horizontal, 4)
+
+                ForEach(courses) { course in
+                    let isOn = store.isCourseInDaily(course.id)
+                    let cards = store.fsrsCards.filter { $0.courseId == course.id }
+                    let due = cards.filter { FSRS6Scheduler.isCardDue($0) }.count
+                    let practiced = cards.filter { $0.attempts > 0 }.count
+
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            store.toggleCourseInDaily(course.id)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(isOn ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(course.name)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                Text(practiced > 0
+                                    ? "\(practiced) practiced · \(due) due"
+                                    : "\(course.lines.count) lines · not practiced yet"
+                                )
+                                .font(.caption2)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                            Spacer()
+                            Text(isOn ? "Active" : "Off")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(isOn ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(isOn ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                        }
+                        .padding(12)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: isOn ? BrillyPalette.brillyTeal : nil)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func quickPresetButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(BrillyPalette.inkPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+            .buttonStyle(.plain)
     }
 }
