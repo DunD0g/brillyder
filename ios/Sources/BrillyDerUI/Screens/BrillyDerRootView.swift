@@ -1,8 +1,10 @@
 import SwiftUI
+import StoreKit
 import BrillyDerCore
 
 public struct BrillyDerRootView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.requestReview) private var requestReview
 
     public init() {}
 
@@ -115,6 +117,34 @@ public struct BrillyDerRootView: View {
                 .environment(store)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        .onChange(of: store.pendingReviewRequestVersion) { _, _ in
+            attemptPendingReviewPrompt()
+        }
+        .onChange(of: store.showingSettings) { _, _ in
+            attemptPendingReviewPrompt()
+        }
+        .onChange(of: store.showingVault) { _, _ in
+            attemptPendingReviewPrompt()
+        }
+        .onChange(of: store.showingProPaywall) { _, _ in
+            attemptPendingReviewPrompt()
+        }
+        .onChange(of: store.showingWelcomeGuide) { _, _ in
+            attemptPendingReviewPrompt()
+        }
+    }
+
+    private func attemptPendingReviewPrompt() {
+        guard let version = store.pendingReviewRequestVersion,
+              !store.showingSettings,
+              !store.showingVault,
+              !store.showingProPaywall,
+              !store.showingWelcomeGuide else { return }
+        store.markReviewPrompted(version: version)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            requestReview()
         }
     }
 

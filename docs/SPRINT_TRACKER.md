@@ -511,3 +511,17 @@
 
 ### Verified
 - `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded + passed `verify_app_bundle()`.
+
+---
+
+## v2.11.3 (Final Pre-App-Store Polish: Official Support Email, Native `requestReview`, Paywall Copy & Solo-Dev Credit)
+**Status:** Completed & Verified
+
+### Built
+- **Official Support Email (`brillyder@gmail.com`):** Added clickable `mailto:brillyder@gmail.com` links across `public/support.html`, `public/privacy.html`, `public/terms.html`, `CockpitSettingsSheet` (About section), and `BrillyPrivacySheet`.
+- **Native StoreKit In-App Review Prompt (`BrillyAppStore.swift`, `BrillyDerRootView.swift`, `ShareCardRenderer.swift`, `CockpitSettingsSheet.swift`):** Added respectful once-per-version `requestReview()` prompting on `BrillyDer` (skipped on `BrillyDerAdmin` and deferred until no sheet is active) after positive milestones (2nd completed Daily Coach session, 3-day streak, saving a `!!` Brilliant bookmark, or exporting a Share Card), plus a **"Rate BrillyDer"** button in Settings → About.
+- **Paywall Benefits & Solo-Dev Credit (`BrillyProPaywallSheet.swift`, `CockpitSettingsSheet.swift`):** Added **Pro Emoji Packs (`🔥/💀`, `👍/🤡`, `👑/🫠`) & Custom Share Card Captions** to the Pro paywall benefits card and added `"Crafted independently by Luke Dunwell"` in Settings → About.
+
+### Verified
+- `npm test && npm run build`: **21 test files, 102 tests passed** + Vite production build clean (including updated `public/support.html`, `privacy.html`, `terms.html`).
+- `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds (`v2.11.3`, build `15`) succeeded + passed `verify_app_bundle()`.

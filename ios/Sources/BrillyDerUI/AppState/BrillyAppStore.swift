@@ -179,6 +179,7 @@ public final class BrillyAppStore {
         }
     }
     public var showingWelcomeGuide: Bool = false
+    public var pendingReviewRequestVersion: String? = nil
     public var activeCelebration: CelebrationEvent? = nil
 
     // MARK: - Sync & Scout State
@@ -1290,14 +1291,54 @@ public final class BrillyAppStore {
             }
             lastDailyCompletedDate = today
             persistToDisk()
+            if dailyStreakDays >= 3 {
+                notePositiveMilestoneForReview(.streakMilestone)
+            }
         } else if dailyStreakDays < 1 {
             dailyStreakDays = 1
             persistToDisk()
         }
     }
 
+    public enum ReviewMilestone: Sendable {
+        case dailySessionCompleted
+        case streakMilestone
+        case shareCardExported
+        case brilliantSaved
+    }
+
+    /// Respectful App Store rating prompt gate:
+    /// - Never prompts on the personal `BrillyDerAdmin` target
+    /// - At most once per app marketing version (`CFBundleShortVersionString`)
+    /// - Deferred cleanly via `pendingReviewRequestVersion` until no sheet is interrupting the user
+    public func notePositiveMilestoneForReview(_ milestone: ReviewMilestone) {
+        guard edition == .appStore else { return }
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.11.3"
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: "brilly_last_review_prompt_version") != currentVersion else { return }
+
+        switch milestone {
+        case .dailySessionCompleted:
+            let count = defaults.integer(forKey: "brilly_completed_daily_sessions") + 1
+            defaults.set(count, forKey: "brilly_completed_daily_sessions")
+            guard count >= 2 else { return }
+        case .streakMilestone:
+            guard dailyStreakDays >= 3 else { return }
+        case .shareCardExported, .brilliantSaved:
+            break
+        }
+
+        pendingReviewRequestVersion = currentVersion
+    }
+
+    public func markReviewPrompted(version: String) {
+        UserDefaults.standard.set(version, forKey: "brilly_last_review_prompt_version")
+        pendingReviewRequestVersion = nil
+    }
+
     public func markDailySessionCompleted() {
         recordTrainingActivity()
+        notePositiveMilestoneForReview(.dailySessionCompleted)
         triggerHaptic(.success)
     }
 
@@ -1352,6 +1393,9 @@ public final class BrillyAppStore {
                 createdAt: Int64(Date().timeIntervalSince1970 * 1000.0)
             )
             bookmarks.insert(bm, at: 0)
+            if ply.classification == .brilliant {
+                notePositiveMilestoneForReview(.brilliantSaved)
+            }
             triggerHaptic(.success)
         }
         persistToDisk()

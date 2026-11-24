@@ -160,6 +160,12 @@ public struct BrillyProPaywallSheet: View {
                 title: "Endgame & Vision Labs + All 4 Retina Piece Sets",
                 subtitle: "12 theoretical Syzygy endgames, Board Vision, Puzzle Rush, Chessnut, Spatial & Kiwen"
             )
+            benefitRow(
+                "face.smiling.fill",
+                tint: BrillyPalette.brillyTeal,
+                title: "Pro Emoji Packs & Custom Share Card Captions",
+                subtitle: "Unlock 🔥/💀, 👍/🤡 & 👑/🫠 reaction packs plus custom wording on your 3x Share Cards"
+            )
         }
         .padding(16)
         .brillySurface(store.surfaceStyle, cornerRadius: 20)

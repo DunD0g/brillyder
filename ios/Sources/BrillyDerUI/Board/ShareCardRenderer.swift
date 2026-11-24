@@ -1136,6 +1136,7 @@ public struct BrillyShareCardSheet: View {
                 }
                 saveFailed = false
                 saveNotice = "Saved high-res card to Photos!"
+                store.notePositiveMilestoneForReview(.shareCardExported)
             } catch {
                 saveFailed = true
                 saveNotice = "Could not save photo — try Share Card instead."

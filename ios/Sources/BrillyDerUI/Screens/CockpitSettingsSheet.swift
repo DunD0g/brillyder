@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 import UniformTypeIdentifiers
 import BrillyDerCore
 #if canImport(UIKit)
@@ -25,6 +26,7 @@ private struct BrillyBackupDocument: FileDocument {
 public struct CockpitSettingsSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestReview) private var requestReview
 
     @State private var showingExporter = false
     @State private var showingImporter = false
@@ -693,6 +695,10 @@ public struct CockpitSettingsSheet: View {
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.inkSecondary)
 
+                            Text("Crafted independently by Luke Dunwell")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
+
                             Button {
                                 dismiss()
                                 Task { @MainActor in
@@ -707,6 +713,35 @@ public struct CockpitSettingsSheet: View {
                                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.brillyTeal.opacity(0.12)))
                             }
                             .buttonStyle(BrillyPressScaleStyle())
+
+                            HStack(spacing: 8) {
+                                if let mailURL = URL(string: "mailto:brillyder@gmail.com?subject=BrillyDer%20iOS%20Support") {
+                                    Link(destination: mailURL) {
+                                        Label("Contact Support", systemImage: "envelope.fill")
+                                            .font(.caption.weight(.bold))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.85)
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                    }
+                                    .buttonStyle(BrillyPressScaleStyle())
+                                }
+
+                                Button {
+                                    store.triggerHaptic(.move)
+                                    requestReview()
+                                } label: {
+                                    Label("Rate BrillyDer", systemImage: "star.fill")
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
+                                        .foregroundStyle(BrillyPalette.goldAmber)
+                                        .frame(maxWidth: .infinity, minHeight: 40)
+                                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.goldAmber.opacity(0.14)))
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+                            }
 
                             HStack(spacing: 8) {
                                 Button {
@@ -820,8 +855,8 @@ public struct CockpitSettingsSheet: View {
     }
 
     private var appVersionString: String {
-        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.11.0"
-        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "14"
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.11.3"
+        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "15"
         return "v\(ver) (\(bld))"
     }
 }
@@ -864,6 +899,17 @@ public struct BrillyPrivacySheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                                     .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            }
+                        }
+
+                        if let mailURL = URL(string: "mailto:brillyder@gmail.com?subject=BrillyDer%20Privacy%20%26%20Support") {
+                            Link(destination: mailURL) {
+                                Label("Contact Support (brillyder@gmail.com)", systemImage: "envelope.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(Color.white.opacity(0.10)))
                             }
                         }
                     }
