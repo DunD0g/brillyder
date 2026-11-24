@@ -175,7 +175,7 @@ public struct BrillyWelcomeGuideSheet: View {
                     icon: "square.and.arrow.up",
                     tint: BrillyPalette.goldAmber,
                     title: "Brilly Vault & Move Highlight Cards",
-                    detail: "Tap the top-right diamond anytime to revisit your best moves and export 3x social highlight cards."
+                    detail: "Tap the top-right !! counter anytime to revisit your best moves and export 3x social highlight cards."
                 )
             }
         }

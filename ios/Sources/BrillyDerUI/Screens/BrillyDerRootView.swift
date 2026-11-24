@@ -267,8 +267,10 @@ public struct BrillyDerRootView: View {
             Button {
                 store.showingVault = true
             } label: {
-                HStack(spacing: 5) {
-                    BrillyGemIcon(size: 16, color: BrillyPalette.brillyTeal)
+                HStack(spacing: 4) {
+                    Text("!!")
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
                     Text("\(store.vaultCollection.headlineBrilliantCount)")
                         .font(.caption.monospacedDigit().weight(.black))
                         .foregroundStyle(BrillyPalette.inkPrimary)
