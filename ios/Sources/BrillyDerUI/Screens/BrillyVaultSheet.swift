@@ -189,6 +189,7 @@ public struct BrillyVaultSheet: View {
                                 pieceSet: store.effectivePieceSet,
                                 vibe: store.vibeMode,
                                 calloutStyle: store.effectiveCalloutStyle,
+                                emojiPack: store.effectiveEmojiPack,
                                 moveNotation: notation,
                                 classification: effectiveClass,
                                 badgeLabelOverride: badgeOverride,

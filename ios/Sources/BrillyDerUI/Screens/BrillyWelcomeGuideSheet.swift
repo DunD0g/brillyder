@@ -146,7 +146,7 @@ public struct BrillyWelcomeGuideSheet: View {
             VStack(spacing: 10) {
                 HStack(spacing: 12) {
                     BrillyLogoMark(size: 52, circular: true)
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 58)
+                    BrillyGhibliBuddyView(mood: .brilliant, size: 58, emojiPack: store.emojiPack)
                 }
 
                 BrillyWordmarkView(fontSize: 32, uppercase: false, showSlash: true)
@@ -200,10 +200,50 @@ public struct BrillyWelcomeGuideSheet: View {
                 mascotOptionRow(
                     style: .brillyDer,
                     badge: "DEFAULT",
-                    title: "Brilly/Der (Mind-Blown & Facepalm)",
-                    subtitle: "Playful 🤯 & 🤦 badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
+                    title: "Brilly/Der (\(store.emojiPack.pairLabel))",
+                    subtitle: "Playful emoji badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
                 ) {
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 46)
+                    BrillyGhibliBuddyView(mood: .brilliant, size: 46, emojiPack: store.emojiPack)
+                }
+
+                if store.calloutStyle == .brillyDer {
+                    HStack(spacing: 8) {
+                        ForEach(BrillyEmojiPack.allCases) { pack in
+                            let unlocked = store.isEmojiPackUnlocked(pack)
+                            let selected = store.effectiveEmojiPack == pack
+                            Button {
+                                if !unlocked {
+                                    store.triggerHaptic(.move)
+                                    return
+                                }
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    store.emojiPack = pack
+                                }
+                                store.triggerHaptic(.move)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(pack.pairLabel)
+                                        .font(.subheadline)
+                                    if !unlocked {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 8.5, weight: .bold))
+                                            .foregroundStyle(BrillyPalette.warpPurpleText)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(Color.white.opacity(selected ? 0.14 : 0.05))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                                .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08), lineWidth: 1.2)
+                                        )
+                                )
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
+                        }
+                    }
                 }
 
                 mascotOptionRow(
@@ -235,7 +275,8 @@ public struct BrillyWelcomeGuideSheet: View {
                 event: CelebrationEvent(
                     kind: .brilliant,
                     vibe: store.vibeMode,
-                    calloutStyle: store.calloutStyle
+                    calloutStyle: store.calloutStyle,
+                    emojiPack: store.emojiPack
                 ),
                 surfaceStyle: store.surfaceStyle,
                 onDismiss: {}
@@ -317,7 +358,7 @@ public struct BrillyWelcomeGuideSheet: View {
             VStack(spacing: 10) {
                 switch store.calloutStyle {
                 case .brillyDer:
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 78)
+                    BrillyGhibliBuddyView(mood: .brilliant, size: 78, emojiPack: store.emojiPack)
                 case .cosmicAlien:
                     BrillyAlienUFOView(mood: .brilliant, size: 84, showBeam: true)
                 case .standard:

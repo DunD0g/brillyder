@@ -155,9 +155,12 @@ struct AppStoreReadinessTests {
         #expect(!BrillyEntitlementPolicy.isDurationUnlocked(.twentyFive, hasProAccess: false))
         #expect(BrillyEntitlementPolicy.isDurationUnlocked(.twentyFive, hasProAccess: true))
 
-        // Piece sets: cburnett free, others Pro
+        // Piece sets & Emoji packs: cburnett + mindBlown free, extras Pro
         #expect(BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "cburnett", hasProAccess: false))
         #expect(!BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "chessnut", hasProAccess: false))
         #expect(BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "kiwen-suwi", hasProAccess: true))
+        #expect(BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "mindBlown", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: true))
     }
 }

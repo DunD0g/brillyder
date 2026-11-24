@@ -10,16 +10,18 @@ public struct CelebrationEvent: Equatable, Identifiable, Sendable {
     public let kind: Kind
     public let vibe: VibeMode
     public let calloutStyle: CalloutStyle
+    public let emojiPack: BrillyEmojiPack
     public let shoutPrefix: String
     public let shoutAccent: String
     public let tag: String
     public let message: String
 
-    public init(kind: Kind, vibe: VibeMode, calloutStyle: CalloutStyle = .brillyDer) {
+    public init(kind: Kind, vibe: VibeMode, calloutStyle: CalloutStyle = .brillyDer, emojiPack: BrillyEmojiPack = .mindBlown) {
         self.id = UUID()
         self.kind = kind
         self.vibe = vibe
         self.calloutStyle = calloutStyle
+        self.emojiPack = emojiPack
         let mood: BrillyAlienMood = (kind == .brilliant) ? .brilliant : .blunder
         let pool = BrillyShareQuips.pool(for: mood, vibe: vibe, calloutStyle: calloutStyle)
 
@@ -107,7 +109,7 @@ public struct AlienCelebrationBanner: View {
                 HStack(spacing: 12) {
                     switch event.calloutStyle {
                     case .brillyDer:
-                        BrillyGhibliBuddyView(mood: isBril ? .brilliant : .blunder, size: 62)
+                        BrillyGhibliBuddyView(mood: isBril ? .brilliant : .blunder, size: 62, emojiPack: event.emojiPack)
                     case .cosmicAlien:
                         BrillyAlienUFOView(mood: isBril ? .brilliant : .blunder, size: 66, showBeam: true)
                     case .standard:

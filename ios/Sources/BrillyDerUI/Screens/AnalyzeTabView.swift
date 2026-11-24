@@ -93,6 +93,7 @@ public struct AnalyzeTabView: View {
         }
         .sheet(item: $activeShareCard) { payload in
             BrillyShareCardSheet(payload: payload, surfaceStyle: store.surfaceStyle)
+                .environment(store)
         }
         .task(id: isAutoPlaying) {
             guard isAutoPlaying else { return }
@@ -461,6 +462,7 @@ public struct AnalyzeTabView: View {
                 pieceSet: store.effectivePieceSet,
                 vibe: store.vibeMode,
                 calloutStyle: store.effectiveCalloutStyle,
+                emojiPack: store.effectiveEmojiPack,
                 moveNotation: notation,
                 classification: activePly?.classification,
                 title: "\(ag.game.white.name) vs \(ag.game.black.name)",

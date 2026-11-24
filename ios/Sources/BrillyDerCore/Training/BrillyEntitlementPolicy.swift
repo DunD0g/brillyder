@@ -58,6 +58,9 @@ public enum BrillyEntitlementPolicy {
     /// Classic Retina piece set unlocked on Free; additional 3 sets require Pro.
     public static let freePieceSetRawValue: String = "cburnett"
 
+    /// Default Mind-Blown (`🤯 / 🤦`) emoji pair is Free; extra emoji packs & custom Share Card captions require Pro.
+    public static let freeEmojiPackRawValue: String = "mindBlown"
+
     public static func isCourseUnlocked(_ courseId: String, hasProAccess: Bool) -> Bool {
         hasProAccess || freeStarterCourseIDs.contains(courseId)
     }
@@ -68,6 +71,10 @@ public enum BrillyEntitlementPolicy {
 
     public static func isPieceSetUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
         hasProAccess || rawValue == freePieceSetRawValue
+    }
+
+    public static func isEmojiPackUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
+        hasProAccess || rawValue == freeEmojiPackRawValue
     }
 
     public static func remainingFreeAnalyses(usedToday: Int, hasProAccess: Bool) -> Int {

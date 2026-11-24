@@ -124,6 +124,74 @@ public struct CockpitSettingsSheet: View {
                                 Text(store.calloutStyle.subtitle)
                                     .font(.caption2)
                                     .foregroundStyle(BrillyPalette.inkSecondary)
+
+                                if store.calloutStyle == .brillyDer {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Text("Brilly/Der Emoji Pair")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.brillyTeal)
+                                            Spacer()
+                                            if !store.hasProAccess {
+                                                Text("Extra packs · PRO")
+                                                    .font(.caption2.weight(.bold))
+                                                    .foregroundStyle(BrillyPalette.warpPurpleText)
+                                            }
+                                        }
+                                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                            ForEach(BrillyEmojiPack.allCases) { pack in
+                                                let unlocked = store.isEmojiPackUnlocked(pack)
+                                                let selected = store.effectiveEmojiPack == pack
+                                                Button {
+                                                    if !unlocked {
+                                                        localProFeature = "Custom Emoji Packs & Share Card Captions"
+                                                        showingLocalProSheet = true
+                                                        return
+                                                    }
+                                                    withAnimation(.snappy(duration: 0.2)) {
+                                                        store.emojiPack = pack
+                                                    }
+                                                    store.triggerHaptic(.move)
+                                                    if let existing = previewCelebration {
+                                                        previewCelebration = CelebrationEvent(
+                                                            kind: existing.kind,
+                                                            vibe: store.vibeMode,
+                                                            calloutStyle: store.effectiveCalloutStyle,
+                                                            emojiPack: pack
+                                                        )
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: 5) {
+                                                        Text(pack.pairLabel)
+                                                            .font(.subheadline)
+                                                        Text(pack.title)
+                                                            .font(.caption2.weight(.bold))
+                                                            .foregroundStyle(selected ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                                                            .lineLimit(1)
+                                                        if !unlocked {
+                                                            Image(systemName: "lock.fill")
+                                                                .font(.system(size: 9, weight: .bold))
+                                                                .foregroundStyle(BrillyPalette.warpPurpleText)
+                                                        }
+                                                    }
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 8)
+                                                    .padding(.horizontal, 8)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                            .fill(Color.white.opacity(selected ? 0.12 : 0.05))
+                                                            .overlay(
+                                                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                                    .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08), lineWidth: 1.2)
+                                                            )
+                                                    )
+                                                }
+                                                .buttonStyle(BrillyPressScaleStyle())
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 4)
+                                }
                             }
 
                             Divider().overlay(Color.white.opacity(0.1))
@@ -173,7 +241,8 @@ public struct CockpitSettingsSheet: View {
                                         previewCelebration = CelebrationEvent(
                                             kind: .brilliant,
                                             vibe: store.vibeMode,
-                                            calloutStyle: store.effectiveCalloutStyle
+                                            calloutStyle: store.effectiveCalloutStyle,
+                                            emojiPack: store.effectiveEmojiPack
                                         )
                                     }
                                 } label: {
@@ -197,7 +266,8 @@ public struct CockpitSettingsSheet: View {
                                         previewCelebration = CelebrationEvent(
                                             kind: .blunder,
                                             vibe: store.vibeMode,
-                                            calloutStyle: store.effectiveCalloutStyle
+                                            calloutStyle: store.effectiveCalloutStyle,
+                                            emojiPack: store.effectiveEmojiPack
                                         )
                                     }
                                 } label: {

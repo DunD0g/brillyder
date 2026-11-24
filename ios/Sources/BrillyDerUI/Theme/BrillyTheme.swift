@@ -53,10 +53,51 @@ public enum CalloutStyle: String, Codable, CaseIterable, Sendable, Identifiable 
 
     public var subtitle: String {
         switch self {
-        case .brillyDer: return "Mind-blown 🤯 & facepalm 🤦 shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
+        case .brillyDer: return "Expressive emoji badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
         case .standard: return "Clean diamond & classic tournament chess callouts"
         case .cosmicAlien: return "Cosmic Alien UFO mascot & space-probe alerts"
         }
+    }
+}
+
+/// Selectable emoji pairs for the default `Brilly/Der` toast & share card medallions.
+public enum BrillyEmojiPack: String, Codable, CaseIterable, Sendable, Identifiable {
+    case mindBlown = "mindBlown"
+    case fireSkull = "fireSkull"
+    case thumbsClown = "thumbsClown"
+    case crownMelting = "crownMelting"
+
+    public var id: String { rawValue }
+
+    public var brilliantEmoji: String {
+        switch self {
+        case .mindBlown:    return "🤯"
+        case .fireSkull:    return "🔥"
+        case .thumbsClown:  return "👍"
+        case .crownMelting: return "👑"
+        }
+    }
+
+    public var blunderEmoji: String {
+        switch self {
+        case .mindBlown:    return "🤦"
+        case .fireSkull:    return "💀"
+        case .thumbsClown:  return "🤡"
+        case .crownMelting: return "🫠"
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .mindBlown:    return "Mind-Blown"
+        case .fireSkull:    return "Cooked"
+        case .thumbsClown:  return "Very Nice"
+        case .crownMelting: return "Royal Melt"
+        }
+    }
+
+    public var pairLabel: String {
+        "\(brilliantEmoji) / \(blunderEmoji)"
     }
 }
 

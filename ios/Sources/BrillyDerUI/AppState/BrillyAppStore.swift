@@ -75,6 +75,10 @@ public final class BrillyAppStore {
         isPieceSetUnlocked(pieceSet) ? pieceSet : .cburnett
     }
 
+    public var effectiveEmojiPack: BrillyEmojiPack {
+        isEmojiPackUnlocked(emojiPack) ? emojiPack : .mindBlown
+    }
+
     public var effectiveDailyDuration: DailyDurationMinutes {
         isDurationUnlocked(dailyDuration) ? dailyDuration : .ten
     }
@@ -97,6 +101,10 @@ public final class BrillyAppStore {
 
     public func isPieceSetUnlocked(_ set: PieceSetID) -> Bool {
         BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: set.rawValue, hasProAccess: hasProAccess)
+    }
+
+    public func isEmojiPackUnlocked(_ pack: BrillyEmojiPack) -> Bool {
+        BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: pack.rawValue, hasProAccess: hasProAccess)
     }
 
     public func canAnalyzeGame(_ gameId: String) -> Bool {
@@ -133,6 +141,9 @@ public final class BrillyAppStore {
     }
     public var calloutStyle: CalloutStyle {
         didSet { UserDefaults.standard.set(calloutStyle.rawValue, forKey: "brilly_callout_style") }
+    }
+    public var emojiPack: BrillyEmojiPack {
+        didSet { UserDefaults.standard.set(emojiPack.rawValue, forKey: "brilly_emoji_pack") }
     }
     public var boardTheme: BoardThemeID {
         didSet { UserDefaults.standard.set(boardTheme.rawValue, forKey: "brilly_board_theme") }
@@ -428,6 +439,7 @@ public final class BrillyAppStore {
         self.surfaceStyle = SurfaceStyle(rawValue: defaults.string(forKey: "brilly_surface_style") ?? "") ?? .liquidGlass
         self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .classic
         self.calloutStyle = CalloutStyle(rawValue: defaults.string(forKey: "brilly_callout_style") ?? "") ?? .brillyDer
+        self.emojiPack = BrillyEmojiPack(rawValue: defaults.string(forKey: "brilly_emoji_pack") ?? "") ?? .mindBlown
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
         self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced
@@ -540,7 +552,7 @@ public final class BrillyAppStore {
             BrillySoundEngine.shared.play(kind == .brilliant ? .brilliant : .blunder)
         }
         guard forceShow || celebrationsEnabled else { return }
-        let event = CelebrationEvent(kind: kind, vibe: vibeMode, calloutStyle: effectiveCalloutStyle)
+        let event = CelebrationEvent(kind: kind, vibe: vibeMode, calloutStyle: effectiveCalloutStyle, emojiPack: effectiveEmojiPack)
         withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
             activeCelebration = event
         }

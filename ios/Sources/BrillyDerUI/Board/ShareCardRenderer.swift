@@ -17,6 +17,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let pieceSet: PieceSetID
     public let vibe: VibeMode
     public let calloutStyle: CalloutStyle
+    public let emojiPack: BrillyEmojiPack
     public let moveNotation: String?
     public let classification: MoveClassification?
     public let badgeLabelOverride: String?
@@ -35,6 +36,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let lastMoveTo: Square?
     public let showMoveArrow: Bool
     public let quipIndex: Int
+    public let customCaption: String?
 
     public init(
         id: UUID = UUID(),
@@ -42,8 +44,9 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         orientation: PieceColor,
         theme: BoardThemeID,
         pieceSet: PieceSetID = .cburnett,
-        vibe: VibeMode = .cosmic,
+        vibe: VibeMode = .classic,
         calloutStyle: CalloutStyle = .brillyDer,
+        emojiPack: BrillyEmojiPack = .mindBlown,
         moveNotation: String? = nil,
         classification: MoveClassification? = nil,
         badgeLabelOverride: String? = nil,
@@ -60,7 +63,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         openingName: String? = nil,
         lastMove: (from: Square, to: Square)? = nil,
         showMoveArrow: Bool = true,
-        quipIndex: Int = 0
+        quipIndex: Int = 0,
+        customCaption: String? = nil
     ) {
         self.id = id
         self.fen = fen
@@ -69,6 +73,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.pieceSet = pieceSet
         self.vibe = vibe
         self.calloutStyle = calloutStyle
+        self.emojiPack = emojiPack
         self.moveNotation = moveNotation
         self.classification = classification
         self.badgeLabelOverride = badgeLabelOverride
@@ -87,6 +92,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.lastMoveTo = lastMove?.to
         self.showMoveArrow = showMoveArrow
         self.quipIndex = quipIndex
+        self.customCaption = customCaption
     }
 
     public var lastMove: (from: Square, to: Square)? {
@@ -102,7 +108,13 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         calloutStyle
     }
 
-    public func withOverrides(vibe: VibeMode, calloutStyle: CalloutStyle, showMoveArrow: Bool, quipIndex: Int) -> BrillyShareCardPayload {
+    public func withOverrides(
+        vibe: VibeMode,
+        calloutStyle: CalloutStyle,
+        showMoveArrow: Bool,
+        quipIndex: Int,
+        customCaption: String? = nil
+    ) -> BrillyShareCardPayload {
         BrillyShareCardPayload(
             id: id,
             fen: fen,
@@ -111,6 +123,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             pieceSet: pieceSet,
             vibe: vibe,
             calloutStyle: calloutStyle,
+            emojiPack: emojiPack,
             moveNotation: moveNotation,
             classification: classification,
             badgeLabelOverride: badgeLabelOverride,
@@ -127,7 +140,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             openingName: openingName,
             lastMove: lastMove,
             showMoveArrow: showMoveArrow,
-            quipIndex: quipIndex
+            quipIndex: quipIndex,
+            customCaption: customCaption
         )
     }
 }
@@ -252,7 +266,10 @@ public struct BrillyShareCardView: View {
     }
 
     private var heroQuip: String {
-        BrillyShareQuips.quip(for: mood, vibe: payload.vibe, calloutStyle: payload.calloutStyle, index: payload.quipIndex)
+        if let custom = payload.customCaption?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+            return custom
+        }
+        return BrillyShareQuips.quip(for: mood, vibe: payload.vibe, calloutStyle: payload.calloutStyle, index: payload.quipIndex)
     }
 
     private var normalizedCoaching: String? {
@@ -464,7 +481,7 @@ public struct BrillyShareCardView: View {
             // Theme-matched Mascot: Ghibli Thumbs-Up Buddy (Brilly/Der), Diamond Medallion (Standard), or Alien UFO
             switch payload.calloutStyle {
             case .brillyDer:
-                BrillyGhibliBuddyView(mood: mood, size: 84)
+                BrillyGhibliBuddyView(mood: mood, size: 84, emojiPack: payload.emojiPack)
             case .cosmicAlien:
                 BrillyAlienUFOView(mood: mood, size: 86, showBeam: true)
                     .shadow(color: accentColor.opacity(0.42), radius: 10, y: 2)
@@ -849,6 +866,7 @@ public struct BrillyShareCardView: View {
 /// lets users admire the card, toggle Cosmic Alien / Classic style, shuffle witty alien quotes,
 /// toggle the move arrow, save straight to Photos, or share via the iOS Share Sheet.
 public struct BrillyShareCardSheet: View {
+    @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     let basePayload: BrillyShareCardPayload
@@ -858,6 +876,9 @@ public struct BrillyShareCardSheet: View {
     @State private var calloutStyle: CalloutStyle
     @State private var showMoveArrow: Bool
     @State private var quipIndex: Int
+    @State private var customCaption: String
+    @State private var showingCaptionField: Bool = false
+    @State private var showingProPaywall: Bool = false
     @State private var saveNotice: String? = nil
     @State private var saveFailed: Bool = false
     @State private var containerWidth: CGFloat = 390
@@ -870,10 +891,18 @@ public struct BrillyShareCardSheet: View {
         _calloutStyle = State(initialValue: payload.calloutStyle)
         _showMoveArrow = State(initialValue: payload.showMoveArrow)
         _quipIndex = State(initialValue: payload.quipIndex)
+        _customCaption = State(initialValue: payload.customCaption ?? "")
     }
 
     private var activePayload: BrillyShareCardPayload {
-        basePayload.withOverrides(vibe: vibe, calloutStyle: calloutStyle, showMoveArrow: showMoveArrow, quipIndex: quipIndex)
+        let effectiveCaption: String? = store.hasProAccess ? customCaption : nil
+        return basePayload.withOverrides(
+            vibe: vibe,
+            calloutStyle: calloutStyle,
+            showMoveArrow: showMoveArrow,
+            quipIndex: quipIndex,
+            customCaption: effectiveCaption
+        )
     }
 
     private var shareItem: BrillyShareCardItem {
@@ -960,8 +989,63 @@ public struct BrillyShareCardSheet: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                            Button {
+                                if !store.hasProAccess {
+                                    showingProPaywall = true
+                                    return
+                                }
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    showingCaptionField.toggle()
+                                }
+                            } label: {
+                                Label(
+                                    store.hasProAccess ? "Caption" : "Caption",
+                                    systemImage: store.hasProAccess ? "pencil.line" : "lock.fill"
+                                )
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(
+                                    showingCaptionField && store.hasProAccess
+                                        ? BrillyPalette.voidBg
+                                        : (store.hasProAccess ? BrillyPalette.inkPrimary : BrillyPalette.warpPurpleText)
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Group {
+                                        if showingCaptionField && store.hasProAccess {
+                                            Capsule().fill(BrillyPalette.brillyTeal)
+                                        } else {
+                                            Capsule().fill(Color.clear)
+                                                .brillyGlassPill(surfaceStyle, tint: BrillyPalette.warpPurple)
+                                        }
+                                    }
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 16)
+
+                        if showingCaptionField && store.hasProAccess {
+                            HStack(spacing: 8) {
+                                TextField("Write your own Share Card caption…", text: $customCaption)
+                                    .textFieldStyle(.plain)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                if !customCaption.isEmpty {
+                                    Button {
+                                        customCaption = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .brillySurface(surfaceStyle, cornerRadius: 14, tint: BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 16)
+                        }
 
                         // Primary Share & Save to Photos Actions
                         HStack(spacing: 10) {
@@ -1017,6 +1101,10 @@ public struct BrillyShareCardSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .sheet(isPresented: $showingProPaywall) {
+                BrillyProPaywallSheet(highlightedFeature: "Custom Share Card Captions & Emoji Packs")
+                    .environment(store)
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

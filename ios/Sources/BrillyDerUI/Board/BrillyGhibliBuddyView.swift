@@ -6,10 +6,12 @@ import SwiftUI
 public struct BrillyGhibliBuddyView: View {
     public let mood: BrillyAlienMood
     public let size: CGFloat
+    public let emojiPack: BrillyEmojiPack
 
-    public init(mood: BrillyAlienMood = .brilliant, size: CGFloat = 68) {
+    public init(mood: BrillyAlienMood = .brilliant, size: CGFloat = 68, emojiPack: BrillyEmojiPack = .mindBlown) {
         self.mood = mood
         self.size = size
+        self.emojiPack = emojiPack
     }
 
     private var isBlunder: Bool {
@@ -23,9 +25,9 @@ public struct BrillyGhibliBuddyView: View {
     private var emojiGlyph: String {
         switch mood {
         case .brilliant:
-            return "🤯"
+            return emojiPack.brilliantEmoji
         case .great:
-            return "🔥"
+            return emojiPack == .fireSkull ? "⚡️" : "🔥"
         case .best:
             return "👍"
         case .book:
@@ -33,7 +35,7 @@ public struct BrillyGhibliBuddyView: View {
         case .mistake:
             return "😬"
         case .blunder:
-            return "🤦"
+            return emojiPack.blunderEmoji
         }
     }
 
