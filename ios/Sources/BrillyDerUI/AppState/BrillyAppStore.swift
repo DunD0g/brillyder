@@ -984,7 +984,7 @@ public final class BrillyAppStore {
         }
 
         if !canAnalyzeGame(game.id) {
-            openProPaywall(feature: "Unlimited Game Analysis (5/day Free limit reached)")
+            openProPaywall(feature: "Unlimited Game Analysis (2/day Free limit reached)")
             return
         }
 

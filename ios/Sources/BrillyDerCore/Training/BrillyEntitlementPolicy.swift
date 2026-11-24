@@ -45,9 +45,9 @@ public enum BrillyAppEdition: String, Sendable, Equatable {
 
 /// Deterministic Free vs. Pro feature boundary rules shared across UI & unit tests.
 public enum BrillyEntitlementPolicy {
-    /// Free users can run full on-device game analysis on up to 5 new games per local calendar day.
+    /// Free users can run full on-device game analysis on up to 2 new games per local calendar day.
     /// Re-opening previously analyzed games and syncing from Lichess / Chess.com are always unlimited and free.
-    public static let freeDailyAnalysisLimit: Int = 5
+    public static let freeDailyAnalysisLimit: Int = 2
 
     /// Two starter courses unlocked for Free FSRS opening drills (1 White + 1 Black).
     public static let freeStarterCourseIDs: Set<String> = [

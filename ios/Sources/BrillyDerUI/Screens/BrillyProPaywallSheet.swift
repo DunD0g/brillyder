@@ -140,7 +140,7 @@ public struct BrillyProPaywallSheet: View {
                 "infinity",
                 tint: BrillyPalette.brillyTeal,
                 title: "Unlimited Game & Batch Analysis",
-                subtitle: "Remove the 5/day Free limit · batch-analyze your full Lichess & Chess.com archive offline"
+                subtitle: "Remove the 2/day Free limit · batch-analyze your full Lichess & Chess.com archive offline"
             )
             benefitRow(
                 "clock.badge.checkmark.fill",

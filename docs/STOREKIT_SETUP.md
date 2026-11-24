@@ -15,7 +15,7 @@ BrillyDer ships **two synchronized iOS targets** from the exact same `main` bran
 |---|---|---|
 | Lichess & Chess.com Sync | Unlimited | Unlimited |
 | Re-opening Already-Analyzed Games | Unlimited | Unlimited |
-| New On-Device Game Analyses | 5 per day | Unlimited + Batch Analyze (5 / 10 / All) |
+| New On-Device Game Analyses | 2 per day | Unlimited + Batch Analyze (5 / 10 / All) |
 | Daily Orbit Coach & Warmup | 10m Coach + 60s Gravity Check + Mistake Deck | 10m, 15m & 25m Orbit Coach + Woodpecker Cycles + Advantage Conversion |
 | Opening Courses | 2 Starter Courses (*London System* + *Modern Defense*) | All 8 Starter Courses + Unlimited Custom PGN Imports |
 | Endgame & Vision Labs | — | 12 Syzygy Endgames, Board Vision & Puzzle Rush |

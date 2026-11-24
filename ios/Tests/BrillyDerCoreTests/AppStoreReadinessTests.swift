@@ -131,13 +131,13 @@ struct AppStoreReadinessTests {
         #expect(BrillyProProductID.annual.isSubscription)
         #expect(!BrillyProProductID.lifetime.isSubscription)
 
-        // Daily analysis quota: Free gets 5/day; cached games are always free; Pro is unlimited
-        #expect(BrillyEntitlementPolicy.freeDailyAnalysisLimit == 5)
-        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 0, hasProAccess: false) == 5)
-        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 4, hasProAccess: false) == 1)
-        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 5, hasProAccess: false) == 0)
-        #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 4, hasProAccess: false))
-        #expect(!BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 5, hasProAccess: false))
+        // Daily analysis quota: Free gets 2/day; cached games are always free; Pro is unlimited
+        #expect(BrillyEntitlementPolicy.freeDailyAnalysisLimit == 2)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 0, hasProAccess: false) == 2)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 1, hasProAccess: false) == 1)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 2, hasProAccess: false) == 0)
+        #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 1, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 2, hasProAccess: false))
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: true, usedToday: 99, hasProAccess: false))
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 99, hasProAccess: true))
 
