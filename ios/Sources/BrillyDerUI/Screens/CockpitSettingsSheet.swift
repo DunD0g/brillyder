@@ -750,8 +750,8 @@ public struct CockpitSettingsSheet: View {
     }
 
     private var appVersionString: String {
-        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.10.0"
-        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "13"
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.11.0"
+        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "14"
         return "v\(ver) (\(bld))"
     }
 }

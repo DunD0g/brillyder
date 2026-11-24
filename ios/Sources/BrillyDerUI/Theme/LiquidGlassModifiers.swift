@@ -236,3 +236,96 @@ public struct BrillyPressScaleStyle: ButtonStyle {
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: configuration.isPressed)
     }
 }
+
+private struct BrillyPressObserverButtonStyle: ButtonStyle {
+    let onPressChanged: (Bool) -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.78), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                onPressChanged(pressed)
+            }
+    }
+}
+
+/// Tap for a single step, or press & hold (`>= 260ms`) to turbo-scrub rapidly with progressive acceleration
+/// (`110ms` -> `65ms` -> `40ms` per tick). Uses `ButtonStyle.isPressed` so it never interferes with `ScrollView` or VoiceOver.
+public struct BrillyTurboStepButton<Label: View>: View {
+    private let onSingleStep: () -> Void
+    private let onTurboStep: (_ tickIndex: Int) -> Bool
+    private let onTurboStateChanged: ((Bool) -> Void)?
+    private let label: (_ isTurbo: Bool) -> Label
+
+    @State private var holdTask: Task<Void, Never>? = nil
+    @State private var isTurbo: Bool = false
+    @State private var didFireTurbo: Bool = false
+
+    public init(
+        onSingleStep: @escaping () -> Void,
+        onTurboStep: @escaping (_ tickIndex: Int) -> Bool,
+        onTurboStateChanged: ((Bool) -> Void)? = nil,
+        @ViewBuilder label: @escaping (_ isTurbo: Bool) -> Label
+    ) {
+        self.onSingleStep = onSingleStep
+        self.onTurboStep = onTurboStep
+        self.onTurboStateChanged = onTurboStateChanged
+        self.label = label
+    }
+
+    public var body: some View {
+        Button {
+            if didFireTurbo {
+                didFireTurbo = false
+                return
+            }
+            onSingleStep()
+        } label: {
+            label(isTurbo)
+        }
+        .buttonStyle(BrillyPressObserverButtonStyle { pressed in
+            if pressed {
+                startHoldTimer()
+            } else {
+                stopHoldTimer()
+            }
+        })
+        .onDisappear {
+            stopHoldTimer()
+        }
+    }
+
+    private func startHoldTimer() {
+        holdTask?.cancel()
+        didFireTurbo = false
+        holdTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(260))
+            guard !Task.isCancelled else { return }
+            isTurbo = true
+            didFireTurbo = true
+            onTurboStateChanged?(true)
+
+            var tick = 0
+            while !Task.isCancelled {
+                let progressed = onTurboStep(tick)
+                if !progressed { break }
+                tick += 1
+                let delayMs: Int = tick < 4 ? 110 : (tick < 12 ? 65 : 40)
+                try? await Task.sleep(for: .milliseconds(delayMs))
+            }
+            isTurbo = false
+            onTurboStateChanged?(false)
+        }
+    }
+
+    private func stopHoldTimer() {
+        holdTask?.cancel()
+        holdTask = nil
+        if isTurbo {
+            isTurbo = false
+            onTurboStateChanged?(false)
+        }
+    }
+}

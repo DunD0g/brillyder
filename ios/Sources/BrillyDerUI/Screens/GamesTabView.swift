@@ -1,5 +1,8 @@
 import SwiftUI
 import BrillyDerCore
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct GamesTabView: View {
     @Environment(BrillyAppStore.self) private var store
@@ -535,5 +538,32 @@ public struct GamesTabView: View {
             .brillySurface(store.surfaceStyle, cornerRadius: 18, interactive: true)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            let opponentName = (userSide == .white ? game.black.name : game.white.name)
+            Button {
+                store.startAnalysis(for: game)
+            } label: {
+                Label(cached != nil ? "Open Analysis" : "Analyze Game", systemImage: "sparkles")
+            }
+
+            if !opponentName.isEmpty && game.source != .sample && game.source != .pgn {
+                Button {
+                    Task {
+                        await store.runScout(opponent: opponentName, platform: game.source)
+                    }
+                } label: {
+                    Label("Scout \(opponentName)", systemImage: "binoculars.fill")
+                }
+            }
+
+            Button {
+                #if canImport(UIKit) && os(iOS)
+                UIPasteboard.general.string = game.pgn
+                #endif
+                store.triggerHaptic(.success)
+            } label: {
+                Label("Copy PGN", systemImage: "doc.on.doc")
+            }
+        }
     }
 }

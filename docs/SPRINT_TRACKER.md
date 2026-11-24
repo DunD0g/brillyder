@@ -493,3 +493,21 @@
 
 ### Verified
 - `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded and verified `brilly_buddy_thumbsup.png` & `brilly_buddy_blunder.png` bundled.
+
+---
+
+## v2.11.0 (Hold-to-Turbo Scrubbing, Press-and-Hold Power Shortcuts & Emoji-Style 👍/🤦 Badges)
+**Status:** Completed & Verified
+
+### Built
+- **Native Emoji-Style `👍` / `🤦` Reaction Medallions (`BrillyGhibliBuddyView.swift`):** Replaced AI-generated portraits with crisp native Apple emoji badges (`👍` + glowing sparkles for positive moves; `🤦` + comic shock lines & sweat drop for blunders) and removed ~300KB of unused PNG assets.
+- **Hold-to-Turbo Move Scrubbing (`BrillyTurboStepButton` in `LiquidGlassModifiers.swift` & `AnalyzeTabView.swift`):**
+  - Tap `<` / `>` for single ply; **press & hold (`>= 260ms`)** to engage progressive turbo scrubbing (`110ms` -> `65ms` -> `40ms` per ply) with glowing double-chevron feedback (`chevron.left.2` / `chevron.right.2`), subtle tactile ticks every 3rd ply, and suppressed celebration spam while scrubbing.
+- **Additional Tactile Press-and-Hold Shortcuts (`AnalyzeTabView.swift`, `GamesTabView.swift`):**
+  - **Hold `|<` / `>|`** in Analyze header to jump straight to the **Previous / Next Key Moment** (`!!` Brilliant, `?` Mistake, or `??` Blunder).
+  - **Tap `1x / 2x / 3x`** for Turbo Auto-Play (`280ms/ply`), or **hold** to snap back to `1x`.
+  - **Tap White/Black accuracy pills** to flip the board to that player's side; **hold** to copy their username.
+  - **Press & hold any game row** in `Games` for a native iOS context menu (`Analyze / Open`, `Scout Opponent`, `Copy PGN`).
+
+### Verified
+- `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded + passed `verify_app_bundle()`.

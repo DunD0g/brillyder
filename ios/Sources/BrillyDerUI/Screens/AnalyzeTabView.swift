@@ -31,7 +31,8 @@ public struct AnalyzeTabView: View {
     @State private var boostedDeviationCardId: String? = nil
     @State private var activeShareCard: BrillyShareCardPayload? = nil
     @State private var isAutoPlaying: Bool = false
-    @State private var autoPlaySpeed: Int = 1 // 1 = 1x, 2 = 2x
+    @State private var autoPlaySpeed: Int = 1 // 1 = 1x, 2 = 2x, 3 = 3x
+    @State private var isTurboScrubbing: Bool = false
 
     public var body: some View {
         ZStack {
@@ -69,7 +70,8 @@ public struct AnalyzeTabView: View {
             refreshCachedDeviation()
         }
         .onChange(of: currentPlyIndex) { _, newPly in
-            guard !retryMode && !botActive,
+            guard !isTurboScrubbing,
+                  !retryMode && !botActive,
                   let ag = store.activeAnalyzedGame,
                   newPly > 0 && newPly <= ag.plies.count else { return }
             let ply = ag.plies[newPly - 1]
@@ -99,7 +101,11 @@ public struct AnalyzeTabView: View {
                     isAutoPlaying = false
                     break
                 }
-                let baseMs: Int = (autoPlaySpeed == 2) ? 520 : 1020
+                let baseMs: Int = switch autoPlaySpeed {
+                case 3: 280
+                case 2: 520
+                default: 1020
+                }
                 let currentCls = (currentPlyIndex > 0 && currentPlyIndex <= ag.plies.count)
                     ? ag.plies[currentPlyIndex - 1].classification
                     : nil
@@ -486,15 +492,21 @@ public struct AnalyzeTabView: View {
                     Spacer(minLength: 4)
 
                     HStack(spacing: 6) {
-                        headerIconBtn("backward.end.fill", label: "First move") {
-                            goToPly(0, maxPly: ag.plies.count)
-                        }
-                        headerIconBtn("forward.end.fill", label: "Last move") {
-                            goToPly(ag.plies.count, maxPly: ag.plies.count)
-                        }
-                        headerIconBtn("arrow.up.arrow.down", label: "Flip board") {
+                        headerIconBtn(
+                            "backward.end.fill",
+                            label: "First move (hold for previous key moment)",
+                            onTap: { goToPly(0, maxPly: ag.plies.count) },
+                            onHold: { jumpToKeyMoment(in: ag, forward: false) }
+                        )
+                        headerIconBtn(
+                            "forward.end.fill",
+                            label: "Last move (hold for next key moment)",
+                            onTap: { goToPly(ag.plies.count, maxPly: ag.plies.count) },
+                            onHold: { jumpToKeyMoment(in: ag, forward: true) }
+                        )
+                        headerIconBtn("arrow.up.arrow.down", label: "Flip board", onTap: {
                             orientation = orientation.opposite
-                        }
+                        })
 
                         Menu {
                             if let ap = activePly {
@@ -600,10 +612,16 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
-                // 4. Spacious Un-Squished Transport Bar (< | AUTO/PAUSE | > | 1x)
+                // 4. Spacious Un-Squished Transport Bar (< Hold-Turbo | AUTO/PAUSE | > Hold-Turbo | 1x/2x/3x)
                 BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
                     HStack(spacing: 8) {
-                        transportBtn("chevron.left", label: "Previous move") { goToPly(clampedPly - 1, maxPly: ag.plies.count) }
+                        turboTransportBtn(
+                            icon: "chevron.left",
+                            turboIcon: "chevron.left.2",
+                            label: "Previous move (hold to rewind quickly)",
+                            delta: -1,
+                            maxPly: ag.plies.count
+                        )
 
                         Button {
                             if !isAutoPlaying {
@@ -643,22 +661,33 @@ public struct AnalyzeTabView: View {
                         .layoutPriority(1)
                         .accessibilityLabel(isAutoPlaying ? "Pause auto-play" : "Start auto-play")
 
-                        transportBtn("chevron.right", label: "Next move") { goToPly(clampedPly + 1, maxPly: ag.plies.count) }
+                        turboTransportBtn(
+                            icon: "chevron.right",
+                            turboIcon: "chevron.right.2",
+                            label: "Next move (hold to turbo forward)",
+                            delta: 1,
+                            maxPly: ag.plies.count
+                        )
 
-                        Button {
-                            autoPlaySpeed = (autoPlaySpeed == 1) ? 2 : 1
-                            store.triggerHaptic(.move)
-                        } label: {
-                            Text("\(autoPlaySpeed)x")
-                                .font(.subheadline.monospacedDigit().weight(.black))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
-                                .frame(minWidth: 48, minHeight: 44)
-                                .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: autoPlaySpeed == 2 ? BrillyPalette.brillyTeal : nil, interactive: true)
-                        }
-                        .buttonStyle(BrillyPressScaleStyle())
-                        .accessibilityLabel("Auto-play speed \(autoPlaySpeed)x")
+                        Text("\(autoPlaySpeed)x")
+                            .font(.subheadline.monospacedDigit().weight(.black))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .foregroundStyle(autoPlaySpeed > 1 ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                            .frame(minWidth: 48, minHeight: 44)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: autoPlaySpeed > 1 ? BrillyPalette.brillyTeal : nil, interactive: true)
+                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .onTapGesture {
+                                autoPlaySpeed = (autoPlaySpeed % 3) + 1
+                                store.triggerHaptic(.move)
+                            }
+                            .onLongPressGesture(minimumDuration: 0.35) {
+                                autoPlaySpeed = 1
+                                store.triggerHaptic(.move)
+                                flashNotice("Speed reset to 1x")
+                            }
+                            .accessibilityLabel("Auto-play speed \(autoPlaySpeed)x. Tap to cycle 1x, 2x, 3x; hold to reset.")
+                            .accessibilityAddTraits(.isButton)
                     }
                 }
 
@@ -1040,16 +1069,41 @@ public struct AnalyzeTabView: View {
         #if canImport(UIKit) && os(iOS)
         UIPasteboard.general.string = text
         #endif
-        copiedNotice = label
+        flashNotice(label)
         store.triggerHaptic(.success)
+    }
+
+    private func flashNotice(_ label: String) {
+        copiedNotice = label
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(1.8))
             if copiedNotice == label { copiedNotice = nil }
         }
     }
 
+    private func jumpToKeyMoment(in ag: AnalyzedGame, forward: Bool) {
+        let keyClasses: Set<MoveClassification> = [.brilliant, .blunder, .mistake]
+        let clamped = max(0, min(currentPlyIndex, ag.plies.count))
+        let match: AnalyzedPly?
+        if forward {
+            match = ag.plies.first { $0.ply > clamped && keyClasses.contains($0.classification) }
+        } else {
+            match = ag.plies.last { $0.ply < clamped && keyClasses.contains($0.classification) }
+        }
+        if let target = match {
+            goToPly(target.ply, maxPly: ag.plies.count)
+            let sym = target.classification.symbol
+            flashNotice("Key moment: \(target.moveNumber)\(target.color == .white ? "." : "...") \(target.san)\(sym)")
+        } else {
+            store.triggerHaptic(.move)
+            flashNotice(forward ? "No later key moment" : "No earlier key moment")
+        }
+    }
+
     private func playerSummaryPill(name: String, acc: Double, elo: Int, isWhite: Bool) -> some View {
-        HStack(spacing: 8) {
+        let targetSide: PieceColor = isWhite ? .white : .black
+        let isFocused = orientation == targetSide
+        return HStack(spacing: 8) {
             Circle()
                 .fill(isWhite ? Color.white : Color(hex: 0x1E293B))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
@@ -1069,36 +1123,77 @@ public struct AnalyzeTabView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .brillySurface(store.surfaceStyle, cornerRadius: 14)
-    }
-
-    private func headerIconBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button {
-            store.triggerHaptic(.move)
-            action()
-        } label: {
-            Image(systemName: icon)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(BrillyPalette.inkPrimary)
-                .frame(width: 38, height: 36)
-                .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: true)
+        .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: isFocused ? BrillyPalette.brillyTeal : nil)
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture {
+            if orientation != targetSide {
+                orientation = targetSide
+                store.triggerHaptic(.move)
+            }
         }
-        .buttonStyle(BrillyPressScaleStyle())
-        .accessibilityLabel(label)
+        .onLongPressGesture(minimumDuration: 0.4) {
+            copyText(name, label: "Copied \(name)")
+        }
+        .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy. Tap to view from \(isWhite ? "White" : "Black") side.")
     }
 
-    private func transportBtn(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button {
-            store.triggerHaptic(.move)
-            action()
-        } label: {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(BrillyPalette.inkPrimary)
+    private func headerIconBtn(
+        _ icon: String,
+        label: String,
+        onTap: @escaping () -> Void,
+        onHold: (() -> Void)? = nil
+    ) -> some View {
+        Image(systemName: icon)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(BrillyPalette.inkPrimary)
+            .frame(width: 38, height: 36)
+            .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: true)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onTapGesture {
+                store.triggerHaptic(.move)
+                onTap()
+            }
+            .onLongPressGesture(minimumDuration: 0.35) {
+                if let onHold {
+                    store.triggerHaptic(.move)
+                    onHold()
+                }
+            }
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private func turboTransportBtn(
+        icon: String,
+        turboIcon: String,
+        label: String,
+        delta: Int,
+        maxPly: Int
+    ) -> some View {
+        BrillyTurboStepButton(
+            onSingleStep: {
+                store.triggerHaptic(.move)
+                goToPly(currentPlyIndex + delta, maxPly: maxPly)
+            },
+            onTurboStep: { tick in
+                let next = max(0, min(maxPly, currentPlyIndex + delta))
+                guard next != currentPlyIndex else { return false }
+                goToPly(next, maxPly: maxPly)
+                if tick % 3 == 0 {
+                    store.triggerHaptic(.move)
+                }
+                return true
+            },
+            onTurboStateChanged: { active in
+                isTurboScrubbing = active
+            }
+        ) { isTurbo in
+            Image(systemName: isTurbo ? turboIcon : icon)
+                .font(.subheadline.weight(isTurbo ? .black : .semibold))
+                .foregroundStyle(isTurbo ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .brillySurface(store.surfaceStyle, cornerRadius: 14, interactive: true)
+                .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: isTurbo ? BrillyPalette.brillyTeal : nil, interactive: true)
         }
-        .buttonStyle(BrillyPressScaleStyle())
         .accessibilityLabel(label)
     }
 }
