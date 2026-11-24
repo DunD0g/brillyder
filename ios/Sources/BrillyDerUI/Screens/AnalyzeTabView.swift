@@ -577,6 +577,11 @@ public struct AnalyzeTabView: View {
             return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
         }()
 
+        let maskedWhite = store.maskedPlayerName(ag.game.white.name, opponent: ag.game.black.name, side: .white)
+        let maskedBlack = store.maskedPlayerName(ag.game.black.name, opponent: ag.game.white.name, side: .black)
+        let exhibitionTheme = store.effectiveExhibitionTheme
+        let broadcastRibbon = store.resolvedBroadcastRibbon(forPgn: ag.game.pgn)
+
         let sharePayload: () -> BrillyShareCardPayload = {
             let moverSide = activePly?.color ?? orientation
             let summary = moverSide == .white ? ag.whiteSummary : ag.blackSummary
@@ -593,12 +598,12 @@ public struct AnalyzeTabView: View {
                 emojiPack: store.effectiveEmojiPack,
                 moveNotation: notation,
                 classification: activePly?.classification,
-                title: "\(ag.game.white.name) vs \(ag.game.black.name)",
+                title: "\(maskedWhite.text) vs \(maskedBlack.text)",
                 coachingLine: detail,
                 evalDisplay: score.display,
                 evalScore: score,
-                whiteName: ag.game.white.name,
-                blackName: ag.game.black.name,
+                whiteName: maskedWhite.text,
+                blackName: maskedBlack.text,
                 whiteAccuracy: ag.whiteSummary.accuracy,
                 blackAccuracy: ag.blackSummary.accuracy,
                 activeSide: moverSide,
@@ -606,7 +611,11 @@ public struct AnalyzeTabView: View {
                 openingName: ag.openingLineDetected ?? ag.game.openingName,
                 lastMove: lastMovePair,
                 showMoveArrow: true,
-                quipIndex: Int.random(in: 0..<12)
+                quipIndex: Int.random(in: 0..<12),
+                blurPlayerNames: maskedWhite.isBlurred || maskedBlack.isBlurred,
+                exhibitionTheme: exhibitionTheme,
+                broadcastRibbon: broadcastRibbon,
+                showCreatorHandle: store.effectiveShowCreatorHandle
             )
         }
 
@@ -711,22 +720,53 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
+                // Optional Exhibition Broadcast Ribbon (Founder Admin Creator Studio)
+                if let broadcastRibbon, exhibitionTheme != .none {
+                    HStack(spacing: 6) {
+                        Image(systemName: exhibitionTheme == .worldChampionship ? "crown.fill" : "bolt.fill")
+                            .font(.system(size: 10, weight: .black))
+                        Text(broadcastRibbon)
+                            .font(.system(size: 10.5, weight: .black, design: .rounded))
+                            .tracking(1.2)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(BrillyPalette.voidBg)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 12)
+                    .background(
+                        Capsule().fill(
+                            LinearGradient(
+                                colors: [exhibitionTheme.accentColor, exhibitionTheme.secondaryAccent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    )
+                }
+
                 // 1. Accuracy & Live Material Summary Strip
                 let material = board.materialBalance
                 HStack(spacing: 10) {
                     playerSummaryPill(
-                        name: ag.game.white.name,
+                        name: maskedWhite.text,
+                        rawName: ag.game.white.name,
+                        isBlurred: maskedWhite.isBlurred,
                         acc: ag.whiteSummary.accuracy,
                         elo: ag.whiteSummary.estimatedElo,
                         isWhite: true,
-                        materialBadge: material.compactBadgeText(for: .white)
+                        materialBadge: material.compactBadgeText(for: .white),
+                        exhibitionTheme: exhibitionTheme
                     )
                     playerSummaryPill(
-                        name: ag.game.black.name,
+                        name: maskedBlack.text,
+                        rawName: ag.game.black.name,
+                        isBlurred: maskedBlack.isBlurred,
                         acc: ag.blackSummary.accuracy,
                         elo: ag.blackSummary.estimatedElo,
                         isWhite: false,
-                        materialBadge: material.compactBadgeText(for: .black)
+                        materialBadge: material.compactBadgeText(for: .black),
+                        exhibitionTheme: exhibitionTheme
                     )
                 }
 
@@ -1264,13 +1304,22 @@ public struct AnalyzeTabView: View {
 
     private func playerSummaryPill(
         name: String,
+        rawName: String,
+        isBlurred: Bool = false,
         acc: Double,
         elo: Int,
         isWhite: Bool,
-        materialBadge: String? = nil
+        materialBadge: String? = nil,
+        exhibitionTheme: CreatorExhibitionTheme = .none
     ) -> some View {
         let targetSide: PieceColor = isWhite ? .white : .black
         let isFocused = orientation == targetSide
+        let pillTint: Color? = {
+            if exhibitionTheme != .none {
+                return exhibitionTheme.accentColor
+            }
+            return isFocused ? BrillyPalette.brillyTeal : nil
+        }()
         return HStack(spacing: 7) {
             Circle()
                 .fill(isWhite ? Color.white : Color(hex: 0x1E293B))
@@ -1281,11 +1330,12 @@ public struct AnalyzeTabView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkPrimary)
                     .lineLimit(1)
+                    .blur(radius: isBlurred ? 5 : 0)
                 Text("\(String(format: "%.1f", acc))% · ~\(elo)")
                     .font(.caption2.monospacedDigit())
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                    .foregroundStyle(BrillyPalette.brillyTeal)
+                    .foregroundStyle(exhibitionTheme != .none ? exhibitionTheme.accentColor : BrillyPalette.brillyTeal)
             }
             Spacer(minLength: 2)
             if let materialBadge {
@@ -1305,7 +1355,14 @@ public struct AnalyzeTabView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: isFocused ? BrillyPalette.brillyTeal : nil)
+        .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: pillTint)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(
+                    exhibitionTheme != .none ? exhibitionTheme.accentColor.opacity(0.55) : Color.clear,
+                    lineWidth: exhibitionTheme != .none ? 1.2 : 0
+                )
+        )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
             if orientation != targetSide {
@@ -1314,7 +1371,7 @@ public struct AnalyzeTabView: View {
             }
         }
         .onLongPressGesture(minimumDuration: 0.4) {
-            copyText(name, label: "Copied \(name)")
+            copyText(rawName, label: "Copied \(name)")
         }
         .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy\(materialBadge.map { ", up \($0)" } ?? ""). Tap to view from \(isWhite ? "White" : "Black") side.")
     }

@@ -491,6 +491,8 @@ public struct GamesTabView: View {
         let accent: Color = res == "W" ? Color(hex: 0x22C55E) : (res == "L" ? BrillyPalette.blunderRose : BrillyPalette.inkSecondary)
         let cached = store.analyzedGames.first(where: { $0.id == game.id })
         let userSide = game.resolvedUserColor(handles: handles)
+        let maskedW = store.maskedPlayerName(game.white.name, opponent: game.black.name, side: .white)
+        let maskedB = store.maskedPlayerName(game.black.name, opponent: game.white.name, side: .black)
 
         return Button {
             store.startAnalysis(for: game)
@@ -502,10 +504,17 @@ public struct GamesTabView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text("\(game.white.name) vs \(game.black.name)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(maskedW.text)
+                                .blur(radius: maskedW.isBlurred ? 5 : 0)
+                            Text("vs")
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            Text(maskedB.text)
+                                .blur(radius: maskedB.isBlurred ? 5 : 0)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .lineLimit(1)
                         Spacer()
                         Text(game.timeControlLabel)
                             .font(.caption2.monospacedDigit().weight(.bold))

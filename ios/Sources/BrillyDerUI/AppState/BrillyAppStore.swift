@@ -145,6 +145,49 @@ public final class BrillyAppStore {
     public var emojiPack: BrillyEmojiPack {
         didSet { UserDefaults.standard.set(emojiPack.rawValue, forKey: "brilly_emoji_pack") }
     }
+    // MARK: - Founder Admin Creator & Exhibition Studio (strictly inactive on App Store target)
+    public var creatorNameMaskMode: CreatorNameMaskMode {
+        didSet { UserDefaults.standard.set(creatorNameMaskMode.rawValue, forKey: "brilly_creator_name_mask") }
+    }
+    public var creatorExhibitionTheme: CreatorExhibitionTheme {
+        didSet { UserDefaults.standard.set(creatorExhibitionTheme.rawValue, forKey: "brilly_creator_exhibition_theme") }
+    }
+    public var creatorEventRibbonText: String {
+        didSet { UserDefaults.standard.set(creatorEventRibbonText, forKey: "brilly_creator_event_ribbon") }
+    }
+    public var creatorShowHandleOnCards: Bool {
+        didSet { UserDefaults.standard.set(creatorShowHandleOnCards, forKey: "brilly_creator_show_handle") }
+    }
+
+    public var effectiveCreatorNameMask: CreatorNameMaskMode {
+        edition == .founderAdmin ? creatorNameMaskMode : .off
+    }
+    public var effectiveExhibitionTheme: CreatorExhibitionTheme {
+        edition == .founderAdmin ? creatorExhibitionTheme : .none
+    }
+    public var effectiveShowCreatorHandle: Bool {
+        edition == .founderAdmin && creatorShowHandleOnCards
+    }
+
+    public func maskedPlayerName(_ rawName: String, opponent: String? = nil, side: PieceColor) -> (text: String, isBlurred: Bool) {
+        CreatorNameMasker.mask(
+            rawName: rawName,
+            opponentRawName: opponent,
+            side: side,
+            mode: effectiveCreatorNameMask,
+            userHandles: userHandles
+        )
+    }
+
+    public func resolvedBroadcastRibbon(forPgn pgn: String? = nil) -> String? {
+        let theme = effectiveExhibitionTheme
+        guard theme != .none else { return nil }
+        let custom = creatorEventRibbonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if custom.isEmpty || custom.uppercased() == "AUTO" {
+            return CreatorNameMasker.extractPgnBroadcastLabel(from: pgn) ?? theme.defaultRibbonLabel
+        }
+        return custom.uppercased()
+    }
     public var boardTheme: BoardThemeID {
         didSet { UserDefaults.standard.set(boardTheme.rawValue, forKey: "brilly_board_theme") }
     }
@@ -441,6 +484,10 @@ public final class BrillyAppStore {
         self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .classic
         self.calloutStyle = CalloutStyle(rawValue: defaults.string(forKey: "brilly_callout_style") ?? "") ?? .brillyDer
         self.emojiPack = BrillyEmojiPack(rawValue: defaults.string(forKey: "brilly_emoji_pack") ?? "") ?? .mindBlown
+        self.creatorNameMaskMode = CreatorNameMaskMode(rawValue: defaults.string(forKey: "brilly_creator_name_mask") ?? "") ?? .off
+        self.creatorExhibitionTheme = CreatorExhibitionTheme(rawValue: defaults.string(forKey: "brilly_creator_exhibition_theme") ?? "") ?? .none
+        self.creatorEventRibbonText = defaults.string(forKey: "brilly_creator_event_ribbon") ?? "WORLD CHAMPIONSHIP 2026"
+        self.creatorShowHandleOnCards = defaults.bool(forKey: "brilly_creator_show_handle")
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
         self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced

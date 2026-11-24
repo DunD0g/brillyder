@@ -136,10 +136,23 @@ public struct BrillyVaultSheet: View {
                         )
                         .frame(width: 84, height: 84)
 
+                        let maskedW = store.maskedPlayerName(item.whiteName, opponent: item.blackName, side: .white)
+                        let maskedB = store.maskedPlayerName(item.blackName, opponent: item.whiteName, side: .black)
+                        let displayTitle: String = {
+                            if store.effectiveCreatorNameMask == .off {
+                                return item.title
+                            }
+                            let oppMasked = (item.color == .white ? maskedB.text : maskedW.text)
+                            return item.kind == .cleanSweep
+                                ? "Clean Sweep vs \(oppMasked)"
+                                : "\(item.moveNumber)\(item.color == .white ? "." : "...") \(item.san) vs \(oppMasked)"
+                        }()
+
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
+                            Text(displayTitle)
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
+                                .blur(radius: (maskedW.isBlurred || maskedB.isBlurred) ? 4 : 0)
                             Text(item.subtitle)
                                 .font(.caption)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
@@ -182,6 +195,9 @@ public struct BrillyVaultSheet: View {
                                 case .cleanSweep: return "Clean Sweep"
                                 }
                             }()
+                            let maskedW = store.maskedPlayerName(item.whiteName, opponent: item.blackName, side: .white)
+                            let maskedB = store.maskedPlayerName(item.blackName, opponent: item.whiteName, side: .black)
+                            let matchedPgn = store.analyzedGames.first(where: { $0.id == item.gameId })?.game.pgn
                             activeShareCard = BrillyShareCardPayload(
                                 fen: item.fen,
                                 orientation: item.color,
@@ -193,12 +209,12 @@ public struct BrillyVaultSheet: View {
                                 moveNotation: notation,
                                 classification: effectiveClass,
                                 badgeLabelOverride: badgeOverride,
-                                title: item.title,
+                                title: "\(maskedW.text) vs \(maskedB.text)",
                                 coachingLine: item.subtitle,
                                 evalDisplay: item.evalDisplay,
                                 evalScore: item.evalScore,
-                                whiteName: item.whiteName,
-                                blackName: item.blackName,
+                                whiteName: maskedW.text,
+                                blackName: maskedB.text,
                                 whiteAccuracy: item.whiteAccuracy,
                                 blackAccuracy: item.blackAccuracy,
                                 activeSide: item.color,
@@ -206,7 +222,11 @@ public struct BrillyVaultSheet: View {
                                 openingName: item.openingName,
                                 lastMove: movePair,
                                 showMoveArrow: true,
-                                quipIndex: Int.random(in: 0..<12)
+                                quipIndex: Int.random(in: 0..<12),
+                                blurPlayerNames: maskedW.isBlurred || maskedB.isBlurred,
+                                exhibitionTheme: store.effectiveExhibitionTheme,
+                                broadcastRibbon: store.resolvedBroadcastRibbon(forPgn: matchedPgn),
+                                showCreatorHandle: store.effectiveShowCreatorHandle
                             )
                         } label: {
                             Label("Share Card", systemImage: "square.and.arrow.up")

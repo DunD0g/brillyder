@@ -37,6 +37,10 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let showMoveArrow: Bool
     public let quipIndex: Int
     public let customCaption: String?
+    public let blurPlayerNames: Bool
+    public let exhibitionTheme: CreatorExhibitionTheme
+    public let broadcastRibbon: String?
+    public let showCreatorHandle: Bool
 
     public init(
         id: UUID = UUID(),
@@ -64,7 +68,11 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         lastMove: (from: Square, to: Square)? = nil,
         showMoveArrow: Bool = true,
         quipIndex: Int = 0,
-        customCaption: String? = nil
+        customCaption: String? = nil,
+        blurPlayerNames: Bool = false,
+        exhibitionTheme: CreatorExhibitionTheme = .none,
+        broadcastRibbon: String? = nil,
+        showCreatorHandle: Bool = false
     ) {
         self.id = id
         self.fen = fen
@@ -93,6 +101,10 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.showMoveArrow = showMoveArrow
         self.quipIndex = quipIndex
         self.customCaption = customCaption
+        self.blurPlayerNames = blurPlayerNames
+        self.exhibitionTheme = exhibitionTheme
+        self.broadcastRibbon = broadcastRibbon
+        self.showCreatorHandle = showCreatorHandle
     }
 
     public var lastMove: (from: Square, to: Square)? {
@@ -141,7 +153,11 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             lastMove: lastMove,
             showMoveArrow: showMoveArrow,
             quipIndex: quipIndex,
-            customCaption: customCaption
+            customCaption: customCaption,
+            blurPlayerNames: blurPlayerNames,
+            exhibitionTheme: exhibitionTheme,
+            broadcastRibbon: broadcastRibbon,
+            showCreatorHandle: showCreatorHandle
         )
     }
 }
@@ -288,6 +304,31 @@ public struct BrillyShareCardView: View {
 
             // 2. Card Content Stack
             VStack(spacing: 12) {
+                // Optional Exhibition / Broadcast Ribbon (Founder Admin Creator Studio)
+                if let ribbon = payload.broadcastRibbon, !ribbon.isEmpty, payload.exhibitionTheme != .none {
+                    HStack(spacing: 6) {
+                        Image(systemName: payload.exhibitionTheme == .worldChampionship ? "crown.fill" : "bolt.fill")
+                            .font(.system(size: 9.5, weight: .black))
+                        Text(ribbon)
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .tracking(1.3)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(BrillyPalette.voidBg)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 12)
+                    .background(
+                        Capsule().fill(
+                            LinearGradient(
+                                colors: [payload.exhibitionTheme.accentColor, payload.exhibitionTheme.secondaryAccent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    )
+                }
+
                 // Top Brand & Signal Strip
                 topBrandHeader
 
@@ -311,15 +352,13 @@ public struct BrillyShareCardView: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [
-                            accentColor.opacity(0.70),
-                            Color.white.opacity(0.22),
-                            mood.secondaryGlow.opacity(0.45),
-                        ],
+                        colors: payload.exhibitionTheme != .none
+                            ? [payload.exhibitionTheme.accentColor.opacity(0.90), payload.exhibitionTheme.secondaryAccent.opacity(0.70), payload.exhibitionTheme.accentColor.opacity(0.65)]
+                            : [accentColor.opacity(0.70), Color.white.opacity(0.22), mood.secondaryGlow.opacity(0.45)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1.6
+                    lineWidth: payload.exhibitionTheme != .none ? 2.2 : 1.6
                 )
         )
     }
@@ -745,6 +784,19 @@ public struct BrillyShareCardView: View {
                         .fill(Color.white.opacity(0.06))
                         .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.28), lineWidth: 0.8))
                 )
+
+                if payload.showCreatorHandle {
+                    Text("@brillyder")
+                        .font(.system(size: 9.5, weight: .black, design: .rounded))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                                .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.35), lineWidth: 0.8))
+                        )
+                }
             }
             .padding(.top, 2)
         }
@@ -775,6 +827,7 @@ public struct BrillyShareCardView: View {
                 .font(.system(size: 11.5, weight: highlighted ? .heavy : .semibold, design: .rounded))
                 .foregroundStyle(highlighted ? .white : BrillyPalette.inkSecondary)
                 .lineLimit(1)
+                .blur(radius: payload.blurPlayerNames ? 5 : 0)
             if let acc = accuracy {
                 Text("\(String(format: "%.1f", acc))%")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))

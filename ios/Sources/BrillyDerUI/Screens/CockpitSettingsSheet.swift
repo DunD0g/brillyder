@@ -589,6 +589,99 @@ public struct CockpitSettingsSheet: View {
                                     }
                                 }
                                 .tint(BrillyPalette.warpPurple)
+
+                                Divider().overlay(Color.white.opacity(0.12))
+
+                                // MARK: - Exclusive Founder Admin Creator & Exhibition Studio
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Label("CREATOR & EXHIBITION STUDIO", systemImage: "video.badge.checkmark")
+                                        .font(.caption.weight(.bold))
+                                        .tracking(0.9)
+                                        .foregroundStyle(BrillyPalette.goldAmber)
+
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("Player Name Masking")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Picker("Name Masking", selection: $bindableStore.creatorNameMaskMode) {
+                                            ForEach(CreatorNameMaskMode.allCases) { mode in
+                                                Text(mode.title).tag(mode)
+                                            }
+                                        }
+                                        .pickerStyle(.segmented)
+                                        Text(store.creatorNameMaskMode.subtitle)
+                                            .font(.caption2)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("Exhibition Broadcast Theme")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Picker("Exhibition Theme", selection: $bindableStore.creatorExhibitionTheme) {
+                                            ForEach(CreatorExhibitionTheme.allCases) { theme in
+                                                Text(theme.title).tag(theme)
+                                            }
+                                        }
+                                        .pickerStyle(.segmented)
+                                    }
+
+                                    if store.creatorExhibitionTheme != .none {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Event Broadcast Ribbon")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+
+                                            TextField("e.g. WORLD CHAMPIONSHIP 2026 (or AUTO)", text: $bindableStore.creatorEventRibbonText)
+                                                .textFieldStyle(.plain)
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 8)
+                                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.08)))
+
+                                            ScrollView(.horizontal, showsIndicators: false) {
+                                                HStack(spacing: 6) {
+                                                    ForEach([
+                                                        ("Auto PGN Event", "AUTO"),
+                                                        ("WCC 2026", "WORLD CHAMPIONSHIP 2026"),
+                                                        ("WCC Game 1", "WCC 2026 · GAME 1"),
+                                                        ("Rapid & Blitz 2026", "WORLD RAPID & BLITZ 2026"),
+                                                    ], id: \.0) { label, value in
+                                                        Button(label) {
+                                                            store.creatorEventRibbonText = value
+                                                            store.triggerHaptic(.move)
+                                                        }
+                                                        .font(.caption2.weight(.bold))
+                                                        .foregroundStyle(store.creatorEventRibbonText == value ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                                        .padding(.horizontal, 9)
+                                                        .padding(.vertical, 5)
+                                                        .background(
+                                                            Capsule().fill(
+                                                                store.creatorEventRibbonText == value
+                                                                    ? BrillyPalette.goldAmber
+                                                                    : Color.white.opacity(0.08)
+                                                            )
+                                                        )
+                                                        .buttonStyle(.plain)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Toggle(isOn: $bindableStore.creatorShowHandleOnCards) {
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text("Show @brillyder on Share Cards")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                            Text("Adds a crisp @brillyder handle pill to exported social cards.")
+                                                .font(.caption2)
+                                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                        }
+                                    }
+                                    .tint(BrillyPalette.goldAmber)
+                                }
                             } else {
                                 if store.hasProAccess {
                                     Text(store.storeKit.activePlanTitle)

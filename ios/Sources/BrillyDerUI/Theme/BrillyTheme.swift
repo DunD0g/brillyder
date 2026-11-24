@@ -101,6 +101,171 @@ public enum BrillyEmojiPack: String, Codable, CaseIterable, Sendable, Identifiab
     }
 }
 
+/// Non-destructive display-time player name masking modes (exclusive to Founder Admin Creator Studio).
+public enum CreatorNameMaskMode: String, Codable, CaseIterable, Sendable, Identifiable {
+    case off = "off"
+    case blurred = "blurred"
+    case anonymous = "anonymous"
+    case brillyFun = "brillyFun"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .off:       return "Off"
+        case .blurred:   return "Blur"
+        case .anonymous: return "Anon"
+        case .brillyFun: return "Brilly Fun"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .off:       return "Show real usernames"
+        case .blurred:   return "Blur usernames cleanly for screen recordings"
+        case .anonymous: return "Replace with You / Opponent (or White / Black)"
+        case .brillyFun: return "Consistent funny Brilly/Der chess aliases"
+        }
+    }
+}
+
+/// Optional broadcast/exhibition visual theme overlay (exclusive to Founder Admin Creator Studio).
+public enum CreatorExhibitionTheme: String, Codable, CaseIterable, Sendable, Identifiable {
+    case none = "none"
+    case worldChampionship = "worldChampionship"
+    case rapidBlitz = "rapidBlitz"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .none:              return "Off"
+        case .worldChampionship: return "WCC Gold"
+        case .rapidBlitz:        return "Rapid & Blitz"
+        }
+    }
+
+    public var accentColor: Color {
+        switch self {
+        case .none:              return BrillyPalette.brillyTeal
+        case .worldChampionship: return Color(hex: 0xF59E0B)
+        case .rapidBlitz:        return Color(hex: 0x22D3EE)
+        }
+    }
+
+    public var secondaryAccent: Color {
+        switch self {
+        case .none:              return BrillyPalette.warpPurple
+        case .worldChampionship: return Color(hex: 0xFDE68A)
+        case .rapidBlitz:        return Color(hex: 0xA855F7)
+        }
+    }
+
+    public var defaultRibbonLabel: String {
+        switch self {
+        case .none:              return ""
+        case .worldChampionship: return "WORLD CHAMPIONSHIP 2026"
+        case .rapidBlitz:        return "WORLD RAPID & BLITZ 2026"
+        }
+    }
+}
+
+/// Deterministic display-time player name masker so usernames stay consistent across a game
+/// without mutating saved PGNs or vault records.
+public enum CreatorNameMasker {
+    public static let funAliases: [String] = [
+        "Capt. Blun-DER",
+        "Sir Hangs-a-Lot",
+        "GM GalaxyBrain",
+        "Queen Sac Enjoyer",
+        "En Passant Bandit",
+        "Forklift Certified",
+        "Tunnel Vision 1200",
+        "Dr. Brilly",
+        "Rook Lift Legend",
+        "Back-Rank Victim",
+        "Tempo Goblin",
+        "Premove Gambler",
+        "Knight Fork Ninja",
+        "Bongcloud Scholar",
+        "Flagging Machine",
+        "Mouseslip Prodigy",
+    ]
+
+    public static func mask(
+        rawName: String,
+        opponentRawName: String? = nil,
+        side: PieceColor,
+        mode: CreatorNameMaskMode,
+        userHandles: [String]
+    ) -> (text: String, isBlurred: Bool) {
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? (side == .white ? "White" : "Black") : trimmed
+
+        switch mode {
+        case .off:
+            return (fallback, false)
+        case .blurred:
+            return (fallback, true)
+        case .anonymous:
+            let loweredHandles = Set(userHandles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty })
+            if !loweredHandles.isEmpty {
+                if loweredHandles.contains(fallback.lowercased()) {
+                    return ("You", false)
+                }
+                if let opp = opponentRawName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                   loweredHandles.contains(opp) {
+                    return ("Opponent", false)
+                }
+            }
+            return (side == .white ? "White" : "Black", false)
+        case .brillyFun:
+            let idx = stableIndex(for: fallback)
+            if let opp = opponentRawName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !opp.isEmpty,
+               opp.lowercased() != fallback.lowercased(),
+               stableIndex(for: opp) == idx,
+               side == .black {
+                return (funAliases[(idx + 1) % funAliases.count], false)
+            }
+            return (funAliases[idx], false)
+        }
+    }
+
+    private static func stableIndex(for name: String) -> Int {
+        // Deterministic 64-bit FNV-1a hash (consistent across app launches, unlike Swift Hasher)
+        var hash: UInt64 = 14695981039346656037
+        for byte in name.lowercased().utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1099511628211
+        }
+        return Int(hash % UInt64(funAliases.count))
+    }
+
+    /// Parses `[Event "..."]` and `[Round "..."]` from a PGN string for automatic broadcast ribbons.
+    public static func extractPgnBroadcastLabel(from pgn: String?) -> String? {
+        guard let pgn, !pgn.isEmpty else { return nil }
+        func tagValue(_ key: String) -> String? {
+            let needle = "[\(key) \""
+            guard let startRange = pgn.range(of: needle) else { return nil }
+            let rest = pgn[startRange.upperBound...]
+            guard let endQuote = rest.firstIndex(of: "\"") else { return nil }
+            let val = rest[..<endQuote].trimmingCharacters(in: .whitespacesAndNewlines)
+            return val.isEmpty || val == "?" || val == "-" ? nil : val
+        }
+        guard let event = tagValue("Event") else { return nil }
+        let lower = event.lowercased()
+        // Skip generic online ladder headers so WCC / Rapid & Blitz fallback looks crisp
+        if lower.hasPrefix("rated ") || lower.hasPrefix("casual ") || lower == "live chess" || lower == "online game" {
+            return nil
+        }
+        if let round = tagValue("Round") {
+            return "\(event.uppercased()) · RD \(round.uppercased())"
+        }
+        return event.uppercased()
+    }
+}
+
 public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable {
     case slate
     case emerald
