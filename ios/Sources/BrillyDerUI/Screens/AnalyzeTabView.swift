@@ -13,9 +13,11 @@ public struct AnalyzeTabView: View {
     @State private var retrySolvedBoard: ChessBoard? = nil
     @State private var retrySolvedLastMove: (from: Square, to: Square)? = nil
 
-    // Sandbox / Bot Play-Out State (with cancellable generation-guarded tasks)
+    // Sandbox / Explore / Bot Play-Out State (with cancellable generation-guarded tasks)
     @State private var botActive: Bool = false
     @State private var sandboxBoard: ChessBoard = ChessBoard()
+    @State private var sandboxHistory: [(fen: String, move: (Square, Square)?)] = []
+    @State private var sandboxCursor: Int = 0
     @State private var sandboxEval: EngineEval? = nil
     @State private var botThinking: Bool = false
     @State private var botStatusNotice: String? = nil
@@ -85,7 +87,8 @@ public struct AnalyzeTabView: View {
             cancelLiveTasks()
             if let newFen, let b = try? ChessBoard(fen: newFen) {
                 sandboxBoard = b
-                orientation = b.turn
+                sandboxHistory = [(fen: newFen, move: nil)]
+                sandboxCursor = 0
                 botActive = false
                 botStatusNotice = nil
                 evaluateSandbox(fen: newFen)
@@ -279,22 +282,37 @@ public struct AnalyzeTabView: View {
         .padding()
     }
 
-    // MARK: - Custom FEN Sandbox View
+    // MARK: - Explore / Variation Sandbox View
 
     private func sandboxView(startFen: String) -> some View {
-        ScrollView {
+        let canUndo = sandboxCursor > 0
+        let canRedo = sandboxCursor + 1 < sandboxHistory.count
+        let activeLastMove: (from: Square, to: Square)? = {
+            guard sandboxCursor >= 0 && sandboxCursor < sandboxHistory.count,
+                  let pair = sandboxHistory[sandboxCursor].move else { return nil }
+            return (from: pair.0, to: pair.1)
+        }()
+
+        return ScrollView {
             VStack(spacing: 12) {
                 HStack {
-                    Label("Custom Position Sandbox", systemImage: "square.grid.3x3")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    Label(
+                        store.activeAnalyzedGame != nil ? "Explore Variation" : "Position Explorer",
+                        systemImage: "arrow.triangle.branch"
+                    )
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(BrillyPalette.brillyTeal)
                     Spacer()
-                    Button("Exit Sandbox") {
+                    Button(store.activeAnalyzedGame != nil ? "Back to Game" : "Exit Explore") {
                         cancelLiveTasks()
+                        botActive = false
                         store.activeSandboxFen = nil
                     }
                     .font(.caption.weight(.bold))
                     .foregroundStyle(BrillyPalette.blunderRose)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.14)))
                     .buttonStyle(.plain)
                 }
 
@@ -308,24 +326,53 @@ public struct AnalyzeTabView: View {
                     theme: store.boardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: !botThinking && sandboxBoard.outcome == .ongoing,
+                    lastMove: activeLastMove,
                     arrows: sandboxBestArrow
                 ) { move in
-                    guard (try? sandboxBoard.apply(move)) != nil else { return }
-                    store.triggerHaptic(.move)
-                    updateSandboxOutcomeNotice()
-                    evaluateSandbox(fen: sandboxBoard.fen)
-                    if botActive && sandboxBoard.outcome == .ongoing {
-                        triggerBotReply()
-                    }
+                    applyExploreMove(move, triggerBotIfActive: true)
                 }
 
-                if let botStatusNotice {
-                    Text(botStatusNotice)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrillyPalette.goldAmber)
-                }
-
+                // Undo / Redo / Reset / Bot / Flip Controls
                 HStack(spacing: 8) {
+                    Button {
+                        stepSandboxHistory(to: sandboxCursor - 1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(canUndo ? BrillyPalette.inkPrimary : BrillyPalette.inkSecondary.opacity(0.4))
+                            .frame(width: 44, height: 40)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: canUndo)
+                    }
+                    .buttonStyle(BrillyPressScaleStyle())
+                    .disabled(!canUndo)
+                    .accessibilityLabel("Undo explore move")
+
+                    Button {
+                        stepSandboxHistory(to: sandboxCursor + 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(canRedo ? BrillyPalette.inkPrimary : BrillyPalette.inkSecondary.opacity(0.4))
+                            .frame(width: 44, height: 40)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: canRedo)
+                    }
+                    .buttonStyle(BrillyPressScaleStyle())
+                    .disabled(!canRedo)
+                    .accessibilityLabel("Redo explore move")
+
+                    Button {
+                        stepSandboxHistory(to: 0)
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(canUndo ? BrillyPalette.inkPrimary : BrillyPalette.inkSecondary.opacity(0.4))
+                            .frame(width: 40, height: 40)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: canUndo)
+                    }
+                    .buttonStyle(BrillyPressScaleStyle())
+                    .disabled(!canUndo)
+                    .accessibilityLabel("Reset to branch start")
+
                     Button {
                         botActive.toggle()
                         if botActive && sandboxBoard.outcome == .ongoing && sandboxBoard.turn != orientation {
@@ -334,71 +381,133 @@ public struct AnalyzeTabView: View {
                             cancelLiveTasks()
                         }
                     } label: {
-                        Label(botActive ? "Bot: ON" : "Play vs Bot", systemImage: "cpu")
+                        Label(botActive ? "Bot: ON" : "Bot", systemImage: "cpu")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(botActive ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
+                            .frame(maxWidth: .infinity, minHeight: 40)
                             .background(Capsule().fill(botActive ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrillyPressScaleStyle())
 
                     Button {
                         orientation = orientation.opposite
+                        store.triggerHaptic(.move)
                     } label: {
-                        Label("Flip", systemImage: "arrow.up.arrow.down")
+                        Image(systemName: "arrow.up.arrow.down")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                            .frame(width: 40, height: 40)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 12, interactive: true)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrillyPressScaleStyle())
+                    .accessibilityLabel("Flip board")
+                }
 
-                    Button {
-                        copyText(sandboxBoard.fen, label: "FEN copied!")
-                    } label: {
-                        Label("FEN", systemImage: "doc.on.doc")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                    }
-                    .buttonStyle(.plain)
+                if let botStatusNotice {
+                    Text(botStatusNotice)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
                 }
 
                 if let ev = sandboxEval {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Live Native Engine (Depth \(ev.depth)) · Eval \(ev.score.display)")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.brillyTeal)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("BrillyNative Engine (Depth \(ev.depth)) · \(ev.score.display)")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+                            Spacer()
+                            Button {
+                                copyText(sandboxBoard.fen, label: "FEN copied!")
+                            } label: {
+                                Label("FEN", systemImage: "doc.on.doc")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         ForEach(Array(ev.lines.prefix(3).enumerated()), id: \.offset) { idx, line in
                             let pv = ChessMath.uciLineToSAN(fen: sandboxBoard.fen, uciMoves: line.pv, maxMoves: 5)
-                            Text("#\(idx + 1) [\(line.score.display)] \(pv.joined(separator: " "))")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                .lineLimit(1)
+                            Button {
+                                if let firstUci = line.pv.first, let move = ChessMove(uci: firstUci) {
+                                    applyExploreMove(move, triggerBotIfActive: true)
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text("#\(idx + 1)")
+                                        .font(.caption2.monospacedDigit().weight(.black))
+                                        .foregroundStyle(idx == 0 ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+                                    Text(line.score.display)
+                                        .font(.caption.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .frame(width: 44, alignment: .leading)
+                                    Text(pv.joined(separator: " "))
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.vertical, 4)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
+                        Text("Tap any engine line to play its move on the board.")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.8))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(14)
                     .brillySurface(store.surfaceStyle, cornerRadius: 16)
                 }
 
+                if let copiedNotice {
+                    Text(copiedNotice)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                }
+
                 syzygyCardIfEligible(fen: sandboxBoard.fen)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 120)
+            .padding(.bottom, 36)
             .onAppear {
-                if let b = try? ChessBoard(fen: startFen) {
+                if sandboxHistory.isEmpty, let b = try? ChessBoard(fen: startFen) {
                     sandboxBoard = b
-                    orientation = b.turn
+                    sandboxHistory = [(fen: startFen, move: nil)]
+                    sandboxCursor = 0
                     evaluateSandbox(fen: startFen)
                 }
             }
         }
+        .brillySoftScrollEdge()
+    }
+
+    private func applyExploreMove(_ move: ChessMove, triggerBotIfActive: Bool) {
+        guard (try? sandboxBoard.apply(move)) != nil else { return }
+        // Truncate any redo branch when playing a new variation move
+        if sandboxCursor + 1 < sandboxHistory.count {
+            sandboxHistory = Array(sandboxHistory.prefix(sandboxCursor + 1))
+        }
+        sandboxHistory.append((fen: sandboxBoard.fen, move: (move.from, move.to)))
+        sandboxCursor = sandboxHistory.count - 1
+        store.triggerHaptic(.move)
+        updateSandboxOutcomeNotice()
+        evaluateSandbox(fen: sandboxBoard.fen)
+        if triggerBotIfActive && botActive && sandboxBoard.outcome == .ongoing {
+            triggerBotReply()
+        }
+    }
+
+    private func stepSandboxHistory(to index: Int) {
+        guard index >= 0 && index < sandboxHistory.count,
+              let b = try? ChessBoard(fen: sandboxHistory[index].fen) else { return }
+        cancelLiveTasks()
+        sandboxBoard = b
+        sandboxCursor = index
+        store.triggerHaptic(.move)
+        updateSandboxOutcomeNotice()
+        evaluateSandbox(fen: b.fen)
     }
 
     private var sandboxBestArrow: [BoardArrow] {
@@ -537,6 +646,21 @@ public struct AnalyzeTabView: View {
                                 Label("Copy PGN", systemImage: "text.alignleft")
                             }
                             Divider()
+                            Button {
+                                cancelLiveTasks()
+                                isAutoPlaying = false
+                                retryMode = false
+                                botActive = false
+                                botStatusNotice = nil
+                                sandboxBoard = board
+                                sandboxHistory = [(fen: displayFen, move: nil)]
+                                sandboxCursor = 0
+                                store.activeSandboxFen = displayFen
+                                evaluateSandbox(fen: displayFen)
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label("Explore from Here", systemImage: "arrow.triangle.branch")
+                            }
                             Button {
                                 if botActive {
                                     cancelLiveTasks()
@@ -1043,10 +1167,14 @@ public struct AnalyzeTabView: View {
             let reply = await store.computeBotReply(fen: fenNow, depth: 4)
             guard !Task.isCancelled && self.botGeneration == gen else { return }
             if let reply {
-                _ = try? sandboxBoard.apply(reply)
-                store.triggerHaptic(.move)
-                updateSandboxOutcomeNotice()
-                evaluateSandbox(fen: sandboxBoard.fen)
+                if store.activeSandboxFen != nil {
+                    applyExploreMove(reply, triggerBotIfActive: false)
+                } else {
+                    _ = try? sandboxBoard.apply(reply)
+                    store.triggerHaptic(.move)
+                    updateSandboxOutcomeNotice()
+                    evaluateSandbox(fen: sandboxBoard.fen)
+                }
             }
             botThinking = false
         }
