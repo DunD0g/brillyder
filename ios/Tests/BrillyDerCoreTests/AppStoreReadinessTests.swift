@@ -277,4 +277,50 @@ struct AppStoreReadinessTests {
         defaults.set("analyze", forKey: "brilly_default_launch_tab")
         #expect(defaults.string(forKey: "brilly_default_launch_tab") == "analyze")
     }
+
+    @Test("Lichess Broadcast PGNs route to PGN parser while direct game, broadcast, and study URLs resolve cleanly")
+    func lichessPgnVsUrlDetectionAndBroadcastSupport() throws {
+        let broadcastPGN = """
+        [Event "World Chess Championship 2026"]
+        [Site "https://lichess.org/broadcast/world-championship-2026/round-1/AbCdEf12"]
+        [GameURL "https://lichess.org/broadcast/world-championship-2026/round-1/AbCdEf12/GhIjKl34"]
+        [White "Gukesh D"]
+        [Black "Challenger"]
+        [Result "1-0"]
+
+        1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0
+        """
+        // Full PGN containing lichess.org/ in headers must NEVER be misclassified as a bare URL
+        #expect(!LichessClient.isDirectLichessURLOrID(broadcastPGN))
+        #expect(LichessClient.parseImportTarget(broadcastPGN) == nil)
+        #expect(!LichessClient.isDirectLichessURLOrID("1. e4 e5 2. Nf3 Nc6"))
+        #expect(!LichessClient.isDirectLichessURLOrID("[Site \"https://lichess.org/AbCdEf12\"]"))
+
+        // And it must parse cleanly into a GameRecord
+        let parsed = try LichessClient.parsePastedPGN(broadcastPGN)
+        #expect(parsed.white.name == "Gukesh D")
+        #expect(parsed.black.name == "Challenger")
+
+        // Direct Broadcast, Study, Game URLs & bare IDs resolve accurately
+        #expect(
+            LichessClient.parseImportTarget("https://lichess.org/broadcast/world-championship-2026/round-1/AbCdEf12/GhIjKl34")
+                == .broadcast(roundId: "AbCdEf12", gameId: "GhIjKl34")
+        )
+        #expect(
+            LichessClient.parseImportTarget("https://lichess.org/broadcast/world-championship-2026/round-1/AbCdEf12")
+                == .broadcast(roundId: "AbCdEf12", gameId: nil)
+        )
+        #expect(
+            LichessClient.parseImportTarget("https://lichess.org/study/StUdY123/ChApT456")
+                == .study(studyId: "StUdY123", chapterId: "ChApT456")
+        )
+        #expect(
+            LichessClient.parseImportTarget("https://lichess.org/AbCdEfGh/black")
+                == .game(id: "AbCdEfGh")
+        )
+        #expect(
+            LichessClient.parseImportTarget("AbCdEfGh")
+                == .game(id: "AbCdEfGh")
+        )
+    }
 }

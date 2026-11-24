@@ -429,7 +429,7 @@ public struct GamesTabView: View {
             ZStack {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
                 VStack(spacing: 14) {
-                    Text("Paste raw PGN text OR a public Lichess game URL (e.g. lichess.org/AbCdEfGh).")
+                    Text("Paste raw PGN text OR a public Lichess game, broadcast, or study URL.")
                         .font(.caption)
                         .foregroundStyle(BrillyPalette.inkSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -454,9 +454,7 @@ public struct GamesTabView: View {
 
                     Button {
                         let draft = pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let looksLikeLichess = draft.lowercased().contains("lichess.org/")
-                            || ((draft.count == 8 || draft.count == 12) && draft.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }))
-                        if looksLikeLichess {
+                        if LichessClient.isDirectLichessURLOrID(draft) {
                             showingPgnSheet = false
                             pgnDraft = ""
                             pgnError = nil

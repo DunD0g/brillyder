@@ -18,6 +18,12 @@ public enum SyncError: Error, LocalizedError, Sendable {
     }
 }
 
+public enum LichessInputTarget: Equatable, Sendable {
+    case game(id: String)
+    case broadcast(roundId: String, gameId: String?)
+    case study(studyId: String, chapterId: String?)
+}
+
 public enum LichessClient {
     private static let strictUsernameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
     private static let reservedPathSegments: Set<String> = [
@@ -25,6 +31,85 @@ public enum LichessClient {
         "tournament", "swiss", "broadcast", "editor", "paste", "login",
         "signup", "account", "forum", "blog", "coach", "video", "api", "games"
     ]
+
+    private static func isAsciiAlnum(_ s: String) -> Bool {
+        !s.isEmpty && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+
+    /// Strict classifier distinguishing a single-token Lichess URL/ID from pasted PGN text.
+    /// Any multi-line text, spaces, PGN tag headers (`[...]`), or move numbers (`1.`) always return `nil`
+    /// so full Lichess PGNs containing `[Site "https://lichess.org/..."]` are never misrouted as URLs.
+    public static func parseImportTarget(_ input: String) -> LichessInputTarget? {
+        let cleaned = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        // Must be a single token with no spaces/newlines, no PGN headers, and no move-number prefix
+        if cleaned.rangeOfCharacter(from: .whitespacesAndNewlines) != nil { return nil }
+        if cleaned.hasPrefix("[") || cleaned.contains("[") || cleaned.hasPrefix("1.") { return nil }
+
+        let lower = cleaned.lowercased()
+        let isUrlLike = lower.hasPrefix("https://") || lower.hasPrefix("http://")
+            || lower.hasPrefix("lichess.org/") || lower.hasPrefix("www.lichess.org/")
+
+        if isUrlLike {
+            let candidate = (lower.hasPrefix("http://") || lower.hasPrefix("https://")) ? cleaned : "https://" + cleaned
+            guard let url = URL(string: candidate),
+                  let host = url.host?.lowercased(),
+                  host == "lichess.org" || host.hasSuffix(".lichess.org") else {
+                return nil
+            }
+            let segments = url.pathComponents.filter { $0 != "/" }
+            guard let first = segments.first else { return nil }
+            let firstLower = first.lowercased()
+
+            // Broadcast URLs:
+            // - /broadcast/<slug>/<round-slug>/<roundId>/<gameId>
+            // - /broadcast/<slug>/<round-slug>/<roundId>
+            // - /broadcast/<roundId>/<gameId> or /broadcast/<roundId>
+            if firstLower == "broadcast" {
+                if segments.count >= 5, segments[3].count == 8, isAsciiAlnum(segments[3]) {
+                    let gId = (segments[4].count == 8 && isAsciiAlnum(segments[4])) ? segments[4] : nil
+                    return .broadcast(roundId: segments[3], gameId: gId)
+                }
+                if segments.count == 4, segments[3].count == 8, isAsciiAlnum(segments[3]) {
+                    return .broadcast(roundId: segments[3], gameId: nil)
+                }
+                if segments.count >= 2, segments[1].count == 8, isAsciiAlnum(segments[1]) {
+                    let gId = (segments.count >= 3 && segments[2].count == 8 && isAsciiAlnum(segments[2])) ? segments[2] : nil
+                    return .broadcast(roundId: segments[1], gameId: gId)
+                }
+                return nil
+            }
+
+            // Study URLs:
+            // - /study/<studyId>/<chapterId>
+            // - /study/<studyId>
+            if firstLower == "study" {
+                guard segments.count >= 2, segments[1].count == 8, isAsciiAlnum(segments[1]) else { return nil }
+                let chap = (segments.count >= 3 && segments[2].count == 8 && isAsciiAlnum(segments[2])) ? segments[2] : nil
+                return .study(studyId: segments[1], chapterId: chap)
+            }
+
+            // Standard Game URL: /<gameId> or /<gameId>/black
+            guard !reservedPathSegments.contains(firstLower),
+                  first.count == 8 || first.count == 12,
+                  isAsciiAlnum(first) else {
+                return nil
+            }
+            return .game(id: String(first.prefix(8)))
+        }
+
+        // Bare 8- or 12-char alphanumeric Lichess game ID
+        guard (cleaned.count == 8 || cleaned.count == 12),
+              isAsciiAlnum(cleaned),
+              !reservedPathSegments.contains(lower) else {
+            return nil
+        }
+        return .game(id: String(cleaned.prefix(8)))
+    }
+
+    public static func isDirectLichessURLOrID(_ input: String) -> Bool {
+        parseImportTarget(input) != nil
+    }
 
     private struct RawPlayer: Decodable {
         struct User: Decodable { let name: String? }
@@ -103,52 +188,87 @@ public enum LichessClient {
         return games.sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// Fetches a single public Lichess game from a URL (`https://lichess.org/AbCdEfGh`, `lichess.org/AbCdEfGh/black`) or 8-char game ID.
+    /// Fetches a single public Lichess game from a game URL/ID, broadcast URL, or study URL.
     public static func fetchSingleGame(
         urlOrId: String,
         preferredUsername: String? = nil,
         preferredUsernames: [String] = []
     ) async throws -> GameRecord {
-        let cleaned = urlOrId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else {
-            throw SyncError.invalidPGN("Enter a Lichess game link or 8-character ID.")
+        guard let target = parseImportTarget(urlOrId) else {
+            throw SyncError.invalidPGN("Enter a valid Lichess game, broadcast, or study link.")
         }
 
-        let candidateUrlString: String
-        if cleaned.lowercased().hasPrefix("lichess.org/") || cleaned.lowercased().hasPrefix("www.lichess.org/") {
-            candidateUrlString = "https://" + cleaned
-        } else {
-            candidateUrlString = cleaned
-        }
-
-        let gameId: String
-        if let url = URL(string: candidateUrlString),
-           let host = url.host?.lowercased(),
-           host == "lichess.org" || host.hasSuffix(".lichess.org") {
-            let segments = url.pathComponents.filter { $0 != "/" }
-            guard let first = segments.first,
-                  !reservedPathSegments.contains(first.lowercased()),
-                  first.count == 8 || first.count == 12 else {
-                throw SyncError.invalidPGN("Enter a valid Lichess game link (e.g. lichess.org/AbCdEfGh).")
+        switch target {
+        case .game(let gameId):
+            guard let apiUrl = URL(string: "https://lichess.org/game/export/\(gameId)?pgnInJson=true&clocks=true&opening=true") else {
+                throw SyncError.networkFailure("Invalid Lichess game URL.")
             }
-            gameId = String(first.prefix(8))
-        } else {
-            guard (cleaned.count == 8 || cleaned.count == 12),
-                  !reservedPathSegments.contains(cleaned.lowercased()) else {
-                throw SyncError.invalidPGN("Enter a valid Lichess game link or 8-character ID.")
-            }
-            gameId = String(cleaned.prefix(8))
-        }
+            var req = URLRequest(url: apiUrl, timeoutInterval: 15)
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            req.setValue("BrillyDer-iOS/2.12 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
-        guard gameId.count == 8, gameId.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
-            throw SyncError.invalidPGN("Enter a valid Lichess game link or 8-character ID.")
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await URLSession.shared.data(for: req)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let err as URLError where err.code == .cancelled {
+                throw CancellationError()
+            } catch {
+                throw SyncError.networkFailure("Could not reach Lichess: \(error.localizedDescription)")
+            }
+
+            if let http = response as? HTTPURLResponse {
+                if http.statusCode == 404 {
+                    throw SyncError.userNotFound("Lichess game \"\(gameId)\" not found.")
+                }
+                if http.statusCode == 429 {
+                    throw SyncError.rateLimited("Lichess rate limit hit — retry in a minute.")
+                }
+                if !(200..<300).contains(http.statusCode) {
+                    throw SyncError.networkFailure("Lichess API error (\(http.statusCode)).")
+                }
+            }
+            let raw = try JSONDecoder().decode(RawGame.self, from: data)
+            var handles = preferredUsernames
+            if let u = preferredUsername, !u.isEmpty { handles.append(u) }
+            guard let mapped = mapRawGame(raw, handles: handles) else {
+                throw SyncError.invalidPGN("Could not parse Lichess game \(gameId) (only standard chess is supported).")
+            }
+            return mapped
+
+        case .broadcast(let roundId, let gameId):
+            // Try direct chapter PGN first when a specific broadcast gameId is provided; fall back to full round PGN.
+            if let gameId,
+               let chapterUrl = URL(string: "https://lichess.org/study/\(roundId)/\(gameId).pgn"),
+               let pgnText = try? await fetchRawPGN(from: chapterUrl),
+               !pgnText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return try parsePastedPGN(pgnText, preferredUsername: preferredUsername, preferredUsernames: preferredUsernames)
+            }
+            guard let roundUrl = URL(string: "https://lichess.org/api/broadcast/round/\(roundId).pgn") else {
+                throw SyncError.networkFailure("Invalid Lichess broadcast URL.")
+            }
+            let roundPgn = try await fetchRawPGN(from: roundUrl)
+            let chosen = extractMatchingPGN(fromMultiPGN: roundPgn, preferredGameId: gameId)
+            return try parsePastedPGN(chosen, preferredUsername: preferredUsername, preferredUsernames: preferredUsernames)
+
+        case .study(let studyId, let chapterId):
+            let urlStr = chapterId != nil
+                ? "https://lichess.org/study/\(studyId)/\(chapterId!).pgn"
+                : "https://lichess.org/api/study/\(studyId).pgn"
+            guard let studyUrl = URL(string: urlStr) else {
+                throw SyncError.networkFailure("Invalid Lichess study URL.")
+            }
+            let studyPgn = try await fetchRawPGN(from: studyUrl)
+            let chosen = extractMatchingPGN(fromMultiPGN: studyPgn, preferredGameId: chapterId)
+            return try parsePastedPGN(chosen, preferredUsername: preferredUsername, preferredUsernames: preferredUsernames)
         }
-        guard let apiUrl = URL(string: "https://lichess.org/game/export/\(gameId)?pgnInJson=true&clocks=true&opening=true") else {
-            throw SyncError.networkFailure("Invalid Lichess game URL.")
-        }
-        var req = URLRequest(url: apiUrl, timeoutInterval: 15)
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+    }
+
+    private static func fetchRawPGN(from url: URL) async throws -> String {
+        var req = URLRequest(url: url, timeoutInterval: 18)
+        req.setValue("application/x-chess-pgn, text/plain", forHTTPHeaderField: "Accept")
+        req.setValue("BrillyDer-iOS/2.12 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -163,7 +283,7 @@ public enum LichessClient {
 
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 404 {
-                throw SyncError.userNotFound("Lichess game \"\(gameId)\" not found.")
+                throw SyncError.userNotFound("Lichess broadcast or study not found.")
             }
             if http.statusCode == 429 {
                 throw SyncError.rateLimited("Lichess rate limit hit — retry in a minute.")
@@ -172,13 +292,28 @@ public enum LichessClient {
                 throw SyncError.networkFailure("Lichess API error (\(http.statusCode)).")
             }
         }
-        let raw = try JSONDecoder().decode(RawGame.self, from: data)
-        var handles = preferredUsernames
-        if let u = preferredUsername, !u.isEmpty { handles.append(u) }
-        guard let mapped = mapRawGame(raw, handles: handles) else {
-            throw SyncError.invalidPGN("Could not parse Lichess game \(gameId) (only standard chess is supported).")
+        guard let text = String(data: data, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SyncError.invalidPGN("No PGN data returned from Lichess.")
         }
-        return mapped
+        return text
+    }
+
+    private static func extractMatchingPGN(fromMultiPGN text: String, preferredGameId: String?) -> String {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+        // Split multi-game PGN on blank lines preceding an [Event "..."] header
+        let chunks = normalized
+            .components(separatedBy: "\n\n[Event ")
+            .enumerated()
+            .map { idx, part in idx == 0 ? part : "[Event " + part }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !chunks.isEmpty else { return normalized }
+        if let preferredGameId, !preferredGameId.isEmpty,
+           let matched = chunks.first(where: { $0.contains(preferredGameId) }) {
+            return matched
+        }
+        return chunks[0]
     }
 
     public static func parsePastedPGN(
