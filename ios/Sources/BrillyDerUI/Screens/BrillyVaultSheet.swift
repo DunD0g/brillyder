@@ -186,7 +186,7 @@ public struct BrillyVaultSheet: View {
                                 fen: item.fen,
                                 orientation: item.color,
                                 theme: store.boardTheme,
-                                pieceSet: store.pieceSet,
+                                pieceSet: store.effectivePieceSet,
                                 vibe: store.vibeMode,
                                 calloutStyle: store.effectiveCalloutStyle,
                                 moveNotation: notation,

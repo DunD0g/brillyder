@@ -120,4 +120,44 @@ struct AppStoreReadinessTests {
             #expect(report == nil)
         }
     }
+
+    @Test("BrillyEntitlementPolicy enforces Free vs Pro boundaries and StoreKit 2 product IDs cleanly")
+    func entitlementPolicyBoundaries() throws {
+        // Canonical App Store Connect product identifiers
+        #expect(BrillyProProductID.monthly.rawValue == "com.brillyder.pro.monthly")
+        #expect(BrillyProProductID.annual.rawValue == "com.brillyder.pro.annual")
+        #expect(BrillyProProductID.lifetime.rawValue == "com.brillyder.pro.lifetime")
+        #expect(BrillyProProductID.monthly.isSubscription)
+        #expect(BrillyProProductID.annual.isSubscription)
+        #expect(!BrillyProProductID.lifetime.isSubscription)
+
+        // Daily analysis quota: Free gets 5/day; cached games are always free; Pro is unlimited
+        #expect(BrillyEntitlementPolicy.freeDailyAnalysisLimit == 5)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 0, hasProAccess: false) == 5)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 4, hasProAccess: false) == 1)
+        #expect(BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: 5, hasProAccess: false) == 0)
+        #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 4, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 5, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: true, usedToday: 99, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 99, hasProAccess: true))
+
+        // Openings: 2 starter courses free (1 White + 1 Black); all 8 unlocked on Pro
+        let courses = try CourseRepository.loadStarterCourses()
+        let freeCourses = courses.filter { BrillyEntitlementPolicy.isCourseUnlocked($0.id, hasProAccess: false) }
+        #expect(freeCourses.count == 2)
+        #expect(freeCourses.contains(where: { $0.side == .white }))
+        #expect(freeCourses.contains(where: { $0.side == .black }))
+        #expect(courses.allSatisfy { BrillyEntitlementPolicy.isCourseUnlocked($0.id, hasProAccess: true) })
+
+        // Coach durations: 10m free, 15m & 25m Pro
+        #expect(BrillyEntitlementPolicy.isDurationUnlocked(.ten, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isDurationUnlocked(.fifteen, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isDurationUnlocked(.twentyFive, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isDurationUnlocked(.twentyFive, hasProAccess: true))
+
+        // Piece sets: cburnett free, others Pro
+        #expect(BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "cburnett", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "chessnut", hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: "kiwen-suwi", hasProAccess: true))
+    }
 }

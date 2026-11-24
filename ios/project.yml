@@ -11,8 +11,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "2.8.0"
-    CURRENT_PROJECT_VERSION: "11"
+    MARKETING_VERSION: "2.9.0"
+    CURRENT_PROJECT_VERSION: "12"
     TARGETED_DEVICE_FAMILY: "1,2"
     SUPPORTS_MACCATALYST: NO
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -25,6 +25,7 @@ targets:
       - path: App
         excludes:
           - Info.plist
+          - Info-Admin.plist
     dependencies:
       - package: BrillyDer
         product: BrillyDerCore
@@ -59,11 +60,65 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
         SWIFT_STRICT_CONCURRENCY: complete
+
+  BrillyDerAdmin:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+          - Info-Admin.plist
+    dependencies:
+      - package: BrillyDer
+        product: BrillyDerCore
+      - package: BrillyDer
+        product: BrillyDerUI
+    info:
+      path: App/Info-Admin.plist
+      properties:
+        CFBundleDisplayName: BrillyDer Admin
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        NSPhotoLibraryAddUsageDescription: "Save BrillyDer chess position share cards to your Photo Library."
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen:
+          UIColorName: LaunchVoid
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.brillyder.admin
+        INFOPLIST_FILE: App/Info-Admin.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BRILLY_ADMIN_EDITION"
+
 schemes:
   BrillyDer:
     build:
       targets:
         BrillyDer: all
+    run:
+      config: Debug
+      storeKitConfiguration: BrillyDer.storekit
+    archive:
+      config: Release
+  BrillyDerAdmin:
+    build:
+      targets:
+        BrillyDerAdmin: all
     run:
       config: Debug
     archive:

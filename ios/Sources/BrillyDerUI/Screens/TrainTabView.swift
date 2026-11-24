@@ -62,27 +62,51 @@ public struct TrainTabView: View {
                         HStack(spacing: 8) {
                             ForEach(TrainSubMode.allCases) { mode in
                                 let sel = store.selectedTrainMode == mode
-                                Button(mode.rawValue) {
-                                    if mode == .labs && !store.hasProAccess {
-                                        store.openProPaywall(feature: "Endgame & Vision Labs")
+                                let isProMode = (mode == .woodpecker || mode == .conversion || mode == .labs)
+                                let locked = isProMode && !store.hasProAccess
+                                let title = mode == .daily ? "\(store.effectiveDailyDuration.label) Coach" : mode.rawValue
+                                Button {
+                                    if locked {
+                                        let feat: String = switch mode {
+                                        case .woodpecker: "Woodpecker Cycles"
+                                        case .conversion: "Advantage Conversion Drills"
+                                        case .labs: "Endgame & Vision Labs"
+                                        default: "Brilly/Der Pro"
+                                        }
+                                        store.openProPaywall(feature: feat)
                                         return
                                     }
                                     withAnimation(.snappy) {
                                         store.selectedTrainMode = mode
                                     }
                                     store.triggerHaptic(.move)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text(title)
+                                        if locked {
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 9, weight: .bold))
+                                        }
+                                    }
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                    .padding(.horizontal, 13)
+                                    .padding(.vertical, 8)
+                                    .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                .padding(.horizontal, 13)
-                                .padding(.vertical, 8)
-                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                                 .buttonStyle(.plain)
                             }
                         }
                     }
 
-                    switch store.selectedTrainMode {
+                    let activeMode: TrainSubMode = {
+                        if !store.hasProAccess && (store.selectedTrainMode == .woodpecker || store.selectedTrainMode == .conversion || store.selectedTrainMode == .labs) {
+                            return .daily
+                        }
+                        return store.selectedTrainMode
+                    }()
+
+                    switch activeMode {
                     case .daily:
                         dailyCoachBody(plan: plan)
                     case .woodpecker:
@@ -131,8 +155,8 @@ public struct TrainTabView: View {
                         .foregroundStyle(BrillyPalette.brillyTeal)
 
                     Text(store.copy(
-                        cosmic: "\(store.dailyDuration.rawValue)-Minute Orbit Coach",
-                        classic: "\(store.dailyDuration.rawValue)-Minute Daily Coach"
+                        cosmic: "\(store.effectiveDailyDuration.rawValue)-Minute Orbit Coach",
+                        classic: "\(store.effectiveDailyDuration.rawValue)-Minute Daily Coach"
                     ))
                     .font(.title2.weight(.bold))
                     .foregroundStyle(BrillyPalette.inkPrimary)
@@ -151,14 +175,14 @@ public struct TrainTabView: View {
                 .buttonStyle(.plain)
             }
 
-            // Duration Picker (10m | 15m | 25m)
+            // Duration Picker (10m Free | 15m & 25m Pro)
             HStack(spacing: 8) {
                 ForEach(DailyDurationMinutes.allCases) { dur in
-                    let selected = store.dailyDuration == dur
-                    let lockedPro = (dur == .twentyFive && !store.hasProAccess)
+                    let selected = store.effectiveDailyDuration == dur
+                    let lockedPro = !store.isDurationUnlocked(dur)
                     Button {
                         if lockedPro {
-                            store.openProPaywall(feature: "25-Minute Orbit Coach")
+                            store.openProPaywall(feature: "\(dur.rawValue)-Minute Orbit Coach")
                             return
                         }
                         withAnimation(.snappy) {
@@ -225,7 +249,7 @@ public struct TrainTabView: View {
             } label: {
                 HStack {
                     Image(systemName: "play.fill")
-                    Text(store.copy(cosmic: "Launch \(store.dailyDuration.label) Mission", classic: "Start \(store.dailyDuration.label) Daily Session"))
+                    Text(store.copy(cosmic: "Launch \(store.effectiveDailyDuration.label) Mission", classic: "Start \(store.effectiveDailyDuration.label) Daily Session"))
                         .fontWeight(.bold)
                 }
                 .font(.headline)
@@ -1035,6 +1059,8 @@ private struct GravityCheckSheet: View {
 public struct DailyOpeningsPickerSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var showingPaywall = false
+    @State private var paywallFeature: String? = nil
 
     public init() {}
 
@@ -1059,8 +1085,8 @@ public struct DailyOpeningsPickerSheet: View {
                                     let imported = Set(store.allCourses.filter { $0.source == "pgn" || $0.source == "lichess-study" }.map(\.id))
                                     store.setDailyOpenings(practiced.union(imported))
                                 }
-                                quickPresetButton("All Openings") {
-                                    store.setDailyOpenings(Set(store.allCourses.map(\.id)))
+                                quickPresetButton(store.hasProAccess ? "All Openings" : "Free Starters") {
+                                    store.setDailyOpenings(Set(store.allCourses.filter { store.isCourseUnlocked($0.id) }.map(\.id)))
                                 }
                                 quickPresetButton("Clear") {
                                     store.setDailyOpenings([])
@@ -1085,6 +1111,10 @@ public struct DailyOpeningsPickerSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .sheet(isPresented: $showingPaywall) {
+                BrillyProPaywallSheet(highlightedFeature: paywallFeature)
+                    .environment(store)
+            }
         }
     }
 
@@ -1099,20 +1129,26 @@ public struct DailyOpeningsPickerSheet: View {
                     .padding(.horizontal, 4)
 
                 ForEach(courses) { course in
+                    let unlocked = store.isCourseUnlocked(course.id)
                     let isOn = store.isCourseInDaily(course.id)
                     let cards = store.fsrsCards.filter { $0.courseId == course.id }
                     let due = cards.filter { FSRS6Scheduler.isCardDue($0) }.count
                     let practiced = cards.filter { $0.attempts > 0 }.count
 
                     Button {
+                        if !unlocked {
+                            paywallFeature = "\(course.name) & All 8 Starter Openings"
+                            showingPaywall = true
+                            return
+                        }
                         withAnimation(.snappy(duration: 0.2)) {
                             store.toggleCourseInDaily(course.id)
                         }
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                                .font(.title3)
-                                .foregroundStyle(isOn ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+                            Image(systemName: unlocked ? (isOn ? "checkmark.circle.fill" : "circle") : "lock.fill")
+                                .font(unlocked ? .title3 : .subheadline.weight(.bold))
+                                .foregroundStyle(unlocked ? (isOn ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary) : BrillyPalette.warpPurpleText)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(course.name)
@@ -1120,18 +1156,18 @@ public struct DailyOpeningsPickerSheet: View {
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                                 Text(practiced > 0
                                     ? "\(practiced) practiced · \(due) due"
-                                    : "\(course.lines.count) lines · not practiced yet"
+                                    : "\(course.lines.count) lines · \(unlocked ? "ready to drill" : "Brilly/Der Pro")"
                                 )
                                 .font(.caption2)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                             }
                             Spacer()
-                            Text(isOn ? "Active" : "Off")
+                            Text(unlocked ? (isOn ? "Active" : "Off") : "PRO")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(isOn ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+                                .foregroundStyle(unlocked ? (isOn ? BrillyPalette.voidBg : BrillyPalette.inkSecondary) : BrillyPalette.warpPurpleText)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
-                                .background(Capsule().fill(isOn ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .background(Capsule().fill(unlocked ? (isOn ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)) : BrillyPalette.warpPurple.opacity(0.18)))
                         }
                         .padding(12)
                         .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: isOn ? BrillyPalette.brillyTeal : nil)

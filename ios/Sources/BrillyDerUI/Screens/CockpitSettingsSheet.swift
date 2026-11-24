@@ -34,7 +34,9 @@ public struct CockpitSettingsSheet: View {
     @State private var previewCelebration: CelebrationEvent? = nil
     @State private var showingDailyOpeningsPicker = false
     @State private var showingLocalProSheet = false
+    @State private var localProFeature: String? = nil
     @State private var showingPrivacySheet = false
+    @State private var showingTermsSheet = false
     @State private var showingLicensesSheet = false
 
     public var body: some View {
@@ -237,8 +239,14 @@ public struct CockpitSettingsSheet: View {
 
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                                 ForEach(PieceSetID.allCases) { set in
-                                    let selected = store.pieceSet == set
+                                    let selected = store.effectivePieceSet == set
+                                    let locked = !store.isPieceSetUnlocked(set)
                                     Button {
+                                        if locked {
+                                            localProFeature = "All 4 Retina Piece Sets"
+                                            showingLocalProSheet = true
+                                            return
+                                        }
                                         withAnimation(.snappy) {
                                             store.pieceSet = set
                                         }
@@ -261,7 +269,14 @@ public struct CockpitSettingsSheet: View {
                                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                                                 Spacer()
-                                                if selected {
+                                                if locked {
+                                                    Label("PRO", systemImage: "lock.fill")
+                                                        .font(.system(size: 9.5, weight: .black))
+                                                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 3)
+                                                        .background(Capsule().fill(BrillyPalette.warpPurple.opacity(0.18)))
+                                                } else if selected {
                                                     Image(systemName: "checkmark.circle.fill")
                                                         .font(.subheadline)
                                                         .foregroundStyle(BrillyPalette.brillyTeal)
@@ -450,56 +465,146 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
-                        #if DEBUG
-                        // MARK: - Developer StoreKit 2 Paywall Preview (DEBUG only — never exposed in App Store Release!)
+                        // MARK: - Brilly/Der Pro Membership & StoreKit 2 Controls
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("BRILLY/DER PRO (DEBUG PREVIEW)")
+                                Text(store.edition == .founderAdmin ? "FOUNDER ADMIN EDITION" : "BRILLY/DER PRO")
                                     .font(.caption.weight(.bold))
                                     .tracking(1.0)
                                     .foregroundStyle(BrillyPalette.warpPurpleText)
                                 Spacer()
-                                Label(store.hasProAccess ? "Founder Pro" : "Free Preview", systemImage: store.hasProAccess ? "checkmark.seal.fill" : "eye.fill")
-                                    .font(.caption2.weight(.bold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                                    .foregroundStyle(store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        Capsule().fill((store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber).opacity(0.16))
-                                    )
+                                Label(
+                                    store.edition == .founderAdmin
+                                        ? (store.hasProAccess ? "Admin Unlocked" : "Free Preview")
+                                        : (store.hasProAccess ? "Pro Active" : "Free Plan"),
+                                    systemImage: store.hasProAccess ? "checkmark.seal.fill" : "sparkles"
+                                )
+                                .font(.caption2.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .foregroundStyle(store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule().fill((store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber).opacity(0.16))
+                                )
                             }
 
-                            Button {
-                                showingLocalProSheet = true
-                            } label: {
-                                Label("Preview Pro Upgrade Tiers", systemImage: "crown.fill")
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.inkPrimary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                            }
-                            .buttonStyle(BrillyPressScaleStyle())
+                            if store.edition == .founderAdmin {
+                                Text("Personal Founder build (`com.brillyder.admin`) — all Pro features unlocked permanently and updated alongside the App Store edition.")
+                                    .font(.caption)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
 
-                            Toggle(isOn: $bindableStore.previewFreeTier) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("Simulate Free Tier Locks")
-                                        .font(.caption.weight(.semibold))
+                                Button {
+                                    localProFeature = nil
+                                    showingLocalProSheet = true
+                                } label: {
+                                    Label("Inspect StoreKit 2 Paywall", systemImage: "crown.fill")
+                                        .font(.subheadline.weight(.bold))
                                         .foregroundStyle(BrillyPalette.inkPrimary)
-                                    Text("Debug only — off by default.")
-                                        .font(.caption2)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+
+                                Toggle(isOn: $bindableStore.simulateFreeTierInAdmin) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Simulate Free Tier Locks")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Text("Admin build only — test the Free experience & paywall gates anytime.")
+                                            .font(.caption2)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                }
+                                .tint(BrillyPalette.warpPurple)
+                            } else {
+                                if store.hasProAccess {
+                                    Text(store.storeKit.activePlanTitle)
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    if let exp = store.storeKit.activeExpirationDate {
+                                        Text("Renews \(exp.formatted(date: .abbreviated, time: .omitted)) via Apple App Store.")
+                                            .font(.caption)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    } else {
+                                        Text("Lifetime Pro unlocked on this Apple Account.")
+                                            .font(.caption)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                } else {
+                                    Text("Free Plan · \(store.remainingFreeAnalysesToday) of \(BrillyEntitlementPolicy.freeDailyAnalysisLimit) daily game analyses left today. Upgrade for unlimited batch analysis, all 8 openings, Woodpecker, Labs & all 4 piece sets.")
+                                        .font(.caption)
                                         .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
+
+                                HStack(spacing: 10) {
+                                    if store.hasProAccess && store.storeKit.hasAutoRenewingSubscription {
+                                        Button {
+                                            Task { await store.storeKit.openManageSubscriptions() }
+                                        } label: {
+                                            Label("Manage Plan", systemImage: "creditcard")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.voidBg)
+                                                .frame(maxWidth: .infinity, minHeight: 40)
+                                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.brillyTeal))
+                                        }
+                                        .buttonStyle(BrillyPressScaleStyle())
+                                    } else if !store.hasProAccess {
+                                        Button {
+                                            localProFeature = nil
+                                            showingLocalProSheet = true
+                                        } label: {
+                                            Label("Upgrade to Pro", systemImage: "crown.fill")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.voidBg)
+                                                .frame(maxWidth: .infinity, minHeight: 40)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(
+                                                        LinearGradient(
+                                                            colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
+                                                            startPoint: .leading,
+                                                            endPoint: .trailing
+                                                        )
+                                                    )
+                                                )
+                                        }
+                                        .buttonStyle(BrillyPressScaleStyle())
+                                    }
+
+                                    Button {
+                                        Task {
+                                            let restored = await store.storeKit.restorePurchases()
+                                            if restored { store.triggerHaptic(.success) }
+                                        }
+                                    } label: {
+                                        Label(store.storeKit.isRestoring ? "Restoring…" : "Restore", systemImage: "arrow.clockwise")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                    }
+                                    .buttonStyle(BrillyPressScaleStyle())
+                                    .disabled(store.storeKit.isRestoring)
+                                }
+
+                                if let status = store.storeKit.statusMessage {
+                                    Text(status)
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                }
+                                if let err = store.storeKit.errorMessage {
+                                    Text(err)
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                }
                             }
-                            .tint(BrillyPalette.warpPurple)
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple)
-                        #endif
 
-                        // MARK: - About, Privacy Policy & Open-Source Licenses (App Store Guidelines 5.1.1 & 5.2.1)
+                        // MARK: - About, Privacy Policy, Terms & Open-Source Licenses (App Store Guidelines 3.1.2, 5.1.1 & 5.2.1)
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Text("ABOUT & PRIVACY")
@@ -512,18 +617,35 @@ public struct CockpitSettingsSheet: View {
                                     .foregroundStyle(BrillyPalette.inkSecondary)
                             }
 
-                            Text("BrillyDer Complete · BrillyNative Swift Engine · 100% On-Device & Local-First")
-                                .font(.caption)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            Text(
+                                store.edition == .founderAdmin
+                                    ? "BrillyDer Founder Admin · BrillyNative Swift Engine · 100% On-Device"
+                                    : "BrillyDer · BrillyNative Swift Engine · 100% On-Device & Local-First"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
 
-                            HStack(spacing: 10) {
+                            HStack(spacing: 8) {
                                 Button {
                                     showingPrivacySheet = true
                                 } label: {
-                                    Label("Privacy Policy", systemImage: "hand.raised.fill")
+                                    Label("Privacy", systemImage: "hand.raised.fill")
                                         .font(.caption.weight(.bold))
                                         .lineLimit(1)
-                                        .minimumScaleFactor(0.85)
+                                        .minimumScaleFactor(0.8)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .frame(maxWidth: .infinity, minHeight: 40)
+                                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+
+                                Button {
+                                    showingTermsSheet = true
+                                } label: {
+                                    Label("Terms", systemImage: "doc.plaintext")
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
                                         .foregroundStyle(BrillyPalette.inkPrimary)
                                         .frame(maxWidth: .infinity, minHeight: 40)
                                         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
@@ -533,10 +655,10 @@ public struct CockpitSettingsSheet: View {
                                 Button {
                                     showingLicensesSheet = true
                                 } label: {
-                                    Label("Licenses & Credits", systemImage: "doc.text.fill")
+                                    Label("Licenses", systemImage: "doc.text.fill")
                                         .font(.caption.weight(.bold))
                                         .lineLimit(1)
-                                        .minimumScaleFactor(0.85)
+                                        .minimumScaleFactor(0.8)
                                         .foregroundStyle(BrillyPalette.inkPrimary)
                                         .frame(maxWidth: .infinity, minHeight: 40)
                                         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
@@ -555,14 +677,15 @@ public struct CockpitSettingsSheet: View {
                 DailyOpeningsPickerSheet()
                     .environment(store)
             }
-            #if DEBUG
             .sheet(isPresented: $showingLocalProSheet) {
-                BrillyProPaywallSheet()
+                BrillyProPaywallSheet(highlightedFeature: localProFeature)
                     .environment(store)
             }
-            #endif
             .sheet(isPresented: $showingPrivacySheet) {
                 BrillyPrivacySheet(surfaceStyle: store.surfaceStyle)
+            }
+            .sheet(isPresented: $showingTermsSheet) {
+                BrillyTermsSheet(surfaceStyle: store.surfaceStyle)
             }
             .sheet(isPresented: $showingLicensesSheet) {
                 BrillyLicensesSheet(surfaceStyle: store.surfaceStyle)
@@ -614,19 +737,23 @@ public struct CockpitSettingsSheet: View {
     }
 
     private var appVersionString: String {
-        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.8.0"
-        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "11"
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.9.0"
+        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "12"
         return "v\(ver) (\(bld))"
     }
 }
 
 // MARK: - In-App Privacy Policy Sheet (App Store Guideline 5.1.1)
 
-private struct BrillyPrivacySheet: View {
+public struct BrillyPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
-    let surfaceStyle: SurfaceStyle
+    public let surfaceStyle: SurfaceStyle
 
-    var body: some View {
+    public init(surfaceStyle: SurfaceStyle) {
+        self.surfaceStyle = surfaceStyle
+    }
+
+    public var body: some View {
         NavigationStack {
             ZStack {
                 CosmicVoidBackdrop(style: surfaceStyle)

@@ -241,6 +241,55 @@ public struct GamesTabView: View {
             }
             .padding(14)
             .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.brillyTeal)
+        } else if !store.hasProAccess {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Free Daily Analyses")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            Text("\(store.remainingFreeAnalysesToday)/\(BrillyEntitlementPolicy.freeDailyAnalysisLimit) left")
+                                .font(.caption2.monospacedDigit().weight(.black))
+                                .foregroundStyle(store.remainingFreeAnalysesToday > 0 ? BrillyPalette.brillyTeal : BrillyPalette.blunderRose)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule().fill((store.remainingFreeAnalysesToday > 0 ? BrillyPalette.brillyTeal : BrillyPalette.blunderRose).opacity(0.16))
+                                )
+                        }
+                        Text(pending > 0
+                            ? "Lichess & Chess.com sync is unlimited. Upgrade to Pro for unlimited & batch analysis of all \(pending) games."
+                            : "Lichess & Chess.com sync is unlimited. Upgrade to Pro for unlimited game & batch analysis."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+                    Spacer(minLength: 4)
+                }
+
+                Button {
+                    store.openProPaywall(feature: "Unlimited Game & Batch Analysis")
+                } label: {
+                    Label(pending > 0 ? "Unlock Batch Analyze (\(pending) Games)" : "Upgrade to Brilly/Der Pro", systemImage: "crown.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(
+                                    colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        )
+                }
+                .buttonStyle(BrillyPressScaleStyle())
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.warpPurple)
         } else if pending > 0 {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {

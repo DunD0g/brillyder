@@ -54,17 +54,73 @@ public final class BrillyAppStore {
     public var selectedTrainMode: TrainSubMode = .daily
     public var showingSettings: Bool = false
     public var showingVault: Bool = false
-    #if DEBUG
+    // MARK: - Edition, StoreKit 2 & Entitlements
+    public let edition: BrillyAppEdition
+    public let storeKit: BrillyStoreKitManager
     public var showingProPaywall: Bool = false
     public var proPaywallFeature: String? = nil
-    public var isFounderPro: Bool = true
-    public var previewFreeTier: Bool = false
-    public var hasProAccess: Bool { isFounderPro && !previewFreeTier }
-    #else
-    public var showingProPaywall: Bool = false
-    public var proPaywallFeature: String? = nil
-    public var hasProAccess: Bool { true }
-    #endif
+    /// Only honored on the personal Founder/Admin target (`com.brillyder.admin`) for testing the Free paywall flow.
+    public var simulateFreeTierInAdmin: Bool = false
+    private var dailyAnalysisQuotaDay: String
+    private var dailyAnalysisQuotaCount: Int
+
+    public var hasProAccess: Bool {
+        if edition == .founderAdmin {
+            return !simulateFreeTierInAdmin
+        }
+        return storeKit.hasProEntitlement
+    }
+
+    public var effectivePieceSet: PieceSetID {
+        isPieceSetUnlocked(pieceSet) ? pieceSet : .cburnett
+    }
+
+    public var effectiveDailyDuration: DailyDurationMinutes {
+        isDurationUnlocked(dailyDuration) ? dailyDuration : .ten
+    }
+
+    public var freeAnalysesUsedToday: Int {
+        dailyAnalysisQuotaDay == BrillyEntitlementPolicy.localDayKey() ? dailyAnalysisQuotaCount : 0
+    }
+
+    public var remainingFreeAnalysesToday: Int {
+        BrillyEntitlementPolicy.remainingFreeAnalyses(usedToday: freeAnalysesUsedToday, hasProAccess: hasProAccess)
+    }
+
+    public func isCourseUnlocked(_ courseId: String) -> Bool {
+        BrillyEntitlementPolicy.isCourseUnlocked(courseId, hasProAccess: hasProAccess)
+    }
+
+    public func isDurationUnlocked(_ duration: DailyDurationMinutes) -> Bool {
+        BrillyEntitlementPolicy.isDurationUnlocked(duration, hasProAccess: hasProAccess)
+    }
+
+    public func isPieceSetUnlocked(_ set: PieceSetID) -> Bool {
+        BrillyEntitlementPolicy.isPieceSetUnlocked(rawValue: set.rawValue, hasProAccess: hasProAccess)
+    }
+
+    public func canAnalyzeGame(_ gameId: String) -> Bool {
+        let isCached = analyzedGames.contains(where: { $0.id == gameId })
+        return BrillyEntitlementPolicy.canStartNewAnalysis(
+            isAlreadyCached: isCached,
+            usedToday: freeAnalysesUsedToday,
+            hasProAccess: hasProAccess
+        )
+    }
+
+    private func recordFreeAnalysisConsumed() {
+        guard !hasProAccess else { return }
+        let today = BrillyEntitlementPolicy.localDayKey()
+        if dailyAnalysisQuotaDay != today {
+            dailyAnalysisQuotaDay = today
+            dailyAnalysisQuotaCount = 1
+        } else {
+            dailyAnalysisQuotaCount += 1
+        }
+        let defaults = UserDefaults.standard
+        defaults.set(dailyAnalysisQuotaDay, forKey: "brilly_free_analyses_day")
+        defaults.set(dailyAnalysisQuotaCount, forKey: "brilly_free_analyses_count")
+    }
     public var pendingAnalyzePly: Int? = nil
     public var preferredEndgameCategory: EndgameCategory? = nil
     public var preferredMotifFilter: String? = nil
@@ -240,10 +296,11 @@ public final class BrillyAppStore {
         return value
     }
 
-    /// FSRS cards filtered strictly to openings the user has enabled for Daily Coach & Gravity Check.
+    /// FSRS cards filtered strictly to openings the user has enabled (and unlocked) for Daily Coach & Gravity Check.
     public var dailyEligibleFsrsCards: [FsrsOpeningCard] {
         fsrsCards.filter { card in
-            dailyOpeningCourseIds.contains(card.courseId) || card.source == "game-deviation"
+            (dailyOpeningCourseIds.contains(card.courseId) && isCourseUnlocked(card.courseId))
+                || card.source == "game-deviation"
         }
     }
 
@@ -253,17 +310,21 @@ public final class BrillyAppStore {
 
     public var dailyWorkoutPlan: DailyWorkoutPlan {
         DailyCoachPlanner.buildPlan(
-            duration: dailyDuration,
+            duration: effectiveDailyDuration,
             fsrsCards: dailyEligibleFsrsCards,
             mistakeDeck: mistakeDeck
         )
     }
 
     public func isCourseInDaily(_ courseId: String) -> Bool {
-        dailyOpeningCourseIds.contains(courseId)
+        dailyOpeningCourseIds.contains(courseId) && isCourseUnlocked(courseId)
     }
 
     public func toggleCourseInDaily(_ courseId: String) {
+        guard isCourseUnlocked(courseId) else {
+            openProPaywall(feature: "All 8 Opening Courses & Custom Repertoires")
+            return
+        }
         hasConfiguredDailyOpenings = true
         if dailyOpeningCourseIds.contains(courseId) {
             dailyOpeningCourseIds.remove(courseId)
@@ -277,7 +338,7 @@ public final class BrillyAppStore {
     public func setDailyOpenings(_ ids: Set<String>) {
         hasConfiguredDailyOpenings = true
         let validIds = Set(allCourses.map(\.id))
-        let filtered = ids.intersection(validIds)
+        let filtered = ids.intersection(validIds).filter { isCourseUnlocked($0) }
         dailyOpeningCourseIds = filtered
         for cid in filtered {
             ensureFirstLineUnlocked(forCourseId: cid)
@@ -286,10 +347,12 @@ public final class BrillyAppStore {
     }
 
     public func openProPaywall(feature: String? = nil) {
-        #if DEBUG
+        storeKit.clearNotices()
         proPaywallFeature = feature
         showingProPaywall = true
-        #endif
+        if !storeKit.hasLoadedProducts {
+            Task { await storeKit.loadProducts() }
+        }
     }
 
     private func ensureFirstLineUnlocked(forCourseId courseId: String) {
@@ -349,8 +412,13 @@ public final class BrillyAppStore {
         AdvancedInsightsService.buildScoutGameplan(opponent: scoutOpponent, games: scoutGames)
     }
 
-    public init() {
+    public init(edition: BrillyAppEdition = .appStore) {
+        self.edition = edition
+        self.storeKit = BrillyStoreKitManager()
         let defaults = UserDefaults.standard
+        self.dailyAnalysisQuotaDay = defaults.string(forKey: "brilly_free_analyses_day") ?? BrillyEntitlementPolicy.localDayKey()
+        self.dailyAnalysisQuotaCount = defaults.integer(forKey: "brilly_free_analyses_count")
+        self.dailyDuration = edition == .founderAdmin ? .fifteen : .ten
         self.surfaceStyle = SurfaceStyle(rawValue: defaults.string(forKey: "brilly_surface_style") ?? "") ?? .liquidGlass
         self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .cosmic
         self.calloutStyle = CalloutStyle(rawValue: defaults.string(forKey: "brilly_callout_style") ?? "") ?? .brillyDer
@@ -423,6 +491,9 @@ public final class BrillyAppStore {
                 BrillySoundEngine.shared.resumeIfNeeded()
             }
             validateDailyStreakLiveness()
+            Task {
+                await storeKit.refreshEntitlements()
+            }
         }
     }
 
@@ -885,6 +956,11 @@ public final class BrillyAppStore {
             return
         }
 
+        if !canAnalyzeGame(game.id) {
+            openProPaywall(feature: "Unlimited Game Analysis (5/day Free limit reached)")
+            return
+        }
+
         cancelBatchAnalysis()
         analysisTask?.cancel()
         analysisGeneration &+= 1
@@ -921,6 +997,7 @@ public final class BrillyAppStore {
                     self.pendingAnalyzePly = jumpToPly
                     self.isAnalyzing = false
                     self.analysisProgress = 1.0
+                    self.recordFreeAnalysisConsumed()
                     self.triggerHaptic(.success)
                     self.persistToDisk()
                 }
@@ -947,6 +1024,10 @@ public final class BrillyAppStore {
     }
 
     public func startBatchAnalysis(maxCount: Int) {
+        guard hasProAccess else {
+            openProPaywall(feature: "Unlimited Batch Analysis")
+            return
+        }
         let targets = Array(unanalyzedRecentGames.prefix(maxCount))
         guard !targets.isEmpty else { return }
 

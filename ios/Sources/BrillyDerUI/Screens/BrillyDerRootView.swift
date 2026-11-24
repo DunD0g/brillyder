@@ -85,29 +85,27 @@ public struct BrillyDerRootView: View {
                 }
             }
         }
-        .environment(\.brillyPieceSet, store.pieceSet)
+        .environment(\.brillyPieceSet, store.effectivePieceSet)
         .sheet(isPresented: $bindableStore.showingSettings) {
             CockpitSettingsSheet()
                 .environment(store)
-                .environment(\.brillyPieceSet, store.pieceSet)
+                .environment(\.brillyPieceSet, store.effectivePieceSet)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $bindableStore.showingVault) {
             BrillyVaultSheet()
                 .environment(store)
-                .environment(\.brillyPieceSet, store.pieceSet)
+                .environment(\.brillyPieceSet, store.effectivePieceSet)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        #if DEBUG
         .sheet(isPresented: $bindableStore.showingProPaywall) {
             BrillyProPaywallSheet(highlightedFeature: store.proPaywallFeature)
                 .environment(store)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        #endif
     }
 
     private var globalBatchPill: some View {

@@ -1,4 +1,5 @@
 import SwiftUI
+import BrillyDerCore
 import BrillyDerUI
 #if canImport(AVFoundation) && os(iOS)
 import AVFoundation
@@ -6,7 +7,11 @@ import AVFoundation
 
 @main
 struct BrillyDerApp: App {
-    @State private var store = BrillyAppStore()
+    #if BRILLY_ADMIN_EDITION
+    @State private var store = BrillyAppStore(edition: .founderAdmin)
+    #else
+    @State private var store = BrillyAppStore(edition: .appStore)
+    #endif
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -17,7 +22,7 @@ struct BrillyDerApp: App {
         WindowGroup {
             BrillyDerRootView()
                 .environment(store)
-                .environment(\.brillyPieceSet, store.pieceSet)
+                .environment(\.brillyPieceSet, store.effectivePieceSet)
                 .preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, newPhase in

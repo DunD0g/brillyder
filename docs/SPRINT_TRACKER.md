@@ -456,3 +456,23 @@
 ### Verified
 - `npm test && npm run build`: **21 test files, 102 tests passed** + Vite production build clean (including `public/privacy.html` & `public/support.html`).
 - `cd ios && ./scripts/build-ipa.sh --unsigned`: `starterCourses.json` parity clean, `swift test` **6 suites, 35 tests passed** (added `AppStoreReadinessTests.swift`), Release `arm64` `** BUILD SUCCEEDED **` (`v2.8.0`, build `11`), all App Store bundle checks (`PrivacyInfo.xcprivacy`, `Info.plist`, opaque `AppIcon`, pieces & courses) passed.
+
+---
+
+## v2.9.0 (Production StoreKit 2 Monetization + Side-by-Side Founder Admin Edition)
+**Status:** Completed & Verified
+
+### Built
+- **Real StoreKit 2 Engine & Entitlement Policy (`BrillyEntitlementPolicy.swift`, `BrillyStoreKitManager.swift`, `ios/BrillyDer.storekit`, `docs/STOREKIT_SETUP.md`):**
+  - Implemented `BrillyStoreKitManager` (`@MainActor @Observable`) with live `Product.products(for:)` discovery (`com.brillyder.pro.monthly`, `com.brillyder.pro.annual`, `com.brillyder.pro.lifetime`), dynamic 7-day introductory trial eligibility (`subscription.isEligibleForIntroOffer`), `Product.purchase()`, background `Transaction.updates` listener, offline JWS-verified `Transaction.currentEntitlements`, `AppStore.sync()` Restore Purchases, and `AppStore.showManageSubscriptions`.
+  - Added local Xcode `ios/BrillyDer.storekit` configuration linked to the `BrillyDer` run scheme + `docs/STOREKIT_SETUP.md` App Store Connect checklist + hosted `public/terms.html` & in-app `BrillyTermsSheet`.
+- **Production Paywall & Clear Free-vs-Pro Boundaries (`BrillyProPaywallSheet.swift`, `BrillyAppStore.swift`, `TrainTabView.swift`, `GamesTabView.swift`, `OpeningsTabView.swift`, `CockpitSettingsSheet.swift`):**
+  - Replaced debug-only preview with full App Store Guideline 3.1.2-compliant StoreKit 2 paywall (localized Apple prices, trial-eligibility-gated 7-day badge, auto-renewal disclosure, Restore Purchases, Privacy Policy & Terms links).
+  - Enforced clean Free vs. Pro boundaries on the App Store target: Free = unlimited Lichess/Chess.com sync, 5 new game analyses/day (cached games always free), 10m Orbit Coach + 60s Gravity Check + Mistake Deck, 2 starter openings (*London System* + *Modern Defense*), and `cburnett` piece set; Pro = unlimited game & batch analysis, 15m/25m Orbit Coach, Woodpecker Cycles, Advantage Conversion, Endgame/Vision Labs, all 8 openings + Custom PGN imports, and all 4 Retina piece sets.
+- **Synchronized Dual Targets — App Store (`BrillyDer`) + Founder Admin (`BrillyDerAdmin`) (`ios/project.yml`, `ios/App/BrillyDerApp.swift`, `ios/scripts/build-ipa.sh`, `.github/workflows/ios-ipa.yml`):**
+  - Added a second `BrillyDerAdmin` target (`com.brillyder.admin`, display name `BrillyDer Admin`, compile flag `BRILLY_ADMIN_EDITION`) sharing 100% of `BrillyDerCore` & `BrillyDerUI` so every future commit updates BOTH editions automatically with zero branch drift and installs side-by-side on the same iPhone.
+  - Updated `build-ipa.sh` (`--edition both|store|admin`, enforcing `com.brillyder.app` on `--app-store`) and GitHub Actions `ios-ipa.yml` to build, verify, and upload both `BrillyDer-iOS-unsigned.ipa` and `BrillyDer-Admin-iOS-unsigned.ipa`.
+
+### Verified
+- `npm test && npm run build`: Web PWA tests & Vite production build clean (including `public/terms.html`).
+- `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded + passed `verify_app_bundle()`.

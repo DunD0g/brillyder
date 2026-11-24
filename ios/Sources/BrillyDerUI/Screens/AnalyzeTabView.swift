@@ -452,7 +452,7 @@ public struct AnalyzeTabView: View {
                 fen: displayFen,
                 orientation: orientation,
                 theme: store.boardTheme,
-                pieceSet: store.pieceSet,
+                pieceSet: store.effectivePieceSet,
                 vibe: store.vibeMode,
                 calloutStyle: store.effectiveCalloutStyle,
                 moveNotation: notation,

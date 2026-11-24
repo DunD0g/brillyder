@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   build-ios-ipa:
-    name: Build iOS 26 Native IPA
+    name: Build iOS 26 Native IPAs (App Store + Founder Admin)
     runs-on: macos-26
     timeout-minutes: 25
 
@@ -63,61 +63,89 @@ jobs:
           xcodegen generate
           ls -la BrillyDer.xcodeproj
 
-      - name: Build BrillyDer for iOS (arm64)
+      - name: Build BrillyDer (App Store Edition) & BrillyDerAdmin (Founder Edition)
         working-directory: ios
         env:
           BUILD_CONFIG: ${{ inputs.configuration || 'Release' }}
         run: |
           set -o pipefail
-          xcodebuild build \
-            -project BrillyDer.xcodeproj \
-            -scheme BrillyDer \
-            -configuration "$BUILD_CONFIG" \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=NO
+          for SCHEME in BrillyDer BrillyDerAdmin; do
+            echo "=== Building $SCHEME ($BUILD_CONFIG) ==="
+            xcodebuild build \
+              -project BrillyDer.xcodeproj \
+              -scheme "$SCHEME" \
+              -configuration "$BUILD_CONFIG" \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build/DerivedData \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              AD_HOC_CODE_SIGNING_ALLOWED=NO
+          done
 
-      - name: Verify app bundle & package unsigned .ipa
+      - name: Verify app bundles & package unsigned .ipa artifacts
         working-directory: ios
         env:
           BUILD_CONFIG: ${{ inputs.configuration || 'Release' }}
         run: |
-          APP_PATH="build/DerivedData/Build/Products/${BUILD_CONFIG}-iphoneos/BrillyDer.app"
-          test -d "$APP_PATH"
-          test -f "$APP_PATH/PrivacyInfo.xcprivacy"
-          /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP_PATH/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$APP_PATH/Info.plist"
-          find "$APP_PATH" -name "starterCourses.json" | grep -q "starterCourses.json"
-          find "$APP_PATH" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
+          package_ipa() {
+            local app_name="$1"
+            local expected_bundle="$2"
+            local ipa_name="$3"
+            local app_path="build/DerivedData/Build/Products/${BUILD_CONFIG}-iphoneos/${app_name}.app"
+            test -d "$app_path"
+            test -f "$app_path/PrivacyInfo.xcprivacy"
+            plutil -lint "$app_path/PrivacyInfo.xcprivacy"
+            local actual_bundle
+            actual_bundle="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_path/Info.plist")"
+            test "$actual_bundle" = "$expected_bundle"
+            /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$app_path/Info.plist"
+            /usr/libexec/PlistBuddy -c "Print :NSPhotoLibraryAddUsageDescription" "$app_path/Info.plist"
+            /usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$app_path/Info.plist"
+            find "$app_path" -name "starterCourses.json" | grep -q "starterCourses.json"
+            find "$app_path" -name "cburnett_wK.png" | grep -q "cburnett_wK.png"
 
-          rm -rf build/Payload build/BrillyDer-iOS-unsigned.ipa
-          mkdir -p build/Payload
-          cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -r -y BrillyDer-iOS-unsigned.ipa Payload >/dev/null)
+            rm -rf build/Payload "build/${ipa_name}"
+            mkdir -p build/Payload
+            cp -R "$app_path" build/Payload/
+            (cd build && zip -r -y "$ipa_name" Payload >/dev/null)
+          }
 
-          IPA_SIZE=$(du -h build/BrillyDer-iOS-unsigned.ipa | awk '{print $1}')
-          echo "Packaged BrillyDer-iOS-unsigned.ipa ($IPA_SIZE)"
+          package_ipa "BrillyDer" "com.brillyder.app" "BrillyDer-iOS-unsigned.ipa"
+          package_ipa "BrillyDerAdmin" "com.brillyder.admin" "BrillyDer-Admin-iOS-unsigned.ipa"
+
+          STORE_SIZE=$(du -h build/BrillyDer-iOS-unsigned.ipa | awk '{print $1}')
+          ADMIN_SIZE=$(du -h build/BrillyDer-Admin-iOS-unsigned.ipa | awk '{print $1}')
+          echo "Packaged BrillyDer-iOS-unsigned.ipa ($STORE_SIZE) & BrillyDer-Admin-iOS-unsigned.ipa ($ADMIN_SIZE)"
 
           {
-            echo "## BrillyDer Native iOS Build"
+            echo "## BrillyDer Native iOS Builds"
             echo ""
-            echo "- **Artifact:** \`BrillyDer-iOS-unsigned.ipa\` ($IPA_SIZE)"
+            echo "| Edition | Bundle ID | Artifact | Size |"
+            echo "|---|---|---|---|"
+            echo "| **App Store (StoreKit 2)** | \`com.brillyder.app\` | \`BrillyDer-iOS-unsigned.ipa\` | $STORE_SIZE |"
+            echo "| **Founder Admin (All Pro Unlocked)** | \`com.brillyder.admin\` | \`BrillyDer-Admin-iOS-unsigned.ipa\` | $ADMIN_SIZE |"
+            echo ""
             echo "- **Configuration:** \`$BUILD_CONFIG\`"
             echo "- **iOS SDK:** \`$(xcrun --sdk iphoneos --show-sdk-version)\`"
-            echo "- **Checks Verified:** \`swift test\` passed, \`PrivacyInfo.xcprivacy\`, \`UILaunchScreen\`, \`NSPhotoLibraryAddUsageDescription\` & \`starterCourses.json\` bundled."
+            echo "- **Checks Verified:** \`swift test\` passed, \`PrivacyInfo.xcprivacy\`, \`UILaunchScreen\`, \`NSPhotoLibraryAddUsageDescription\`, \`starterCourses.json\`, and piece sets bundled in both editions."
             echo ""
-            echo "### Installing on your iPhone"
-            echo "- **Sideload (free Apple ID):** Download the artifact zip, extract \`BrillyDer-iOS-unsigned.ipa\`, and install via **AltStore**, **SideStore**, or **Sideloadly**."
-            echo "- **Xcode / TestFlight:** Run \`cd ios && xcodegen generate && open BrillyDer.xcodeproj\` to sign & deploy directly via ⌘R or Archive to TestFlight."
+            echo "### Side-by-Side Installation"
+            echo "Because **BrillyDer Admin** uses bundle ID \`com.brillyder.admin\`, you can sideload it right next to the App Store **BrillyDer** app (\`com.brillyder.app\`) on the same iPhone — and both update automatically on every commit."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload BrillyDer-iOS-unsigned.ipa artifact
+      - name: Upload BrillyDer (App Store Edition) .ipa artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ (inputs.configuration || 'Release') == 'Release' && 'BrillyDer-iOS-unsigned-ipa' || 'BrillyDer-iOS-unsigned-debug-ipa' }}
           path: ios/build/BrillyDer-iOS-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload BrillyDer Admin (Founder Edition) .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ (inputs.configuration || 'Release') == 'Release' && 'BrillyDer-Admin-iOS-unsigned-ipa' || 'BrillyDer-Admin-iOS-unsigned-debug-ipa' }}
+          path: ios/build/BrillyDer-Admin-iOS-unsigned.ipa
           retention-days: 30
           if-no-files-found: error

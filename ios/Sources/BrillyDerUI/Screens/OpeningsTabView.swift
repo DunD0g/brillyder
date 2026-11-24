@@ -25,14 +25,22 @@ public struct OpeningsTabView: View {
                         .pickerStyle(.segmented)
 
                         Button {
+                            if !store.hasProAccess {
+                                store.openProPaywall(feature: "Custom PGN Opening Imports")
+                                return
+                            }
                             showingImportSheet = true
                         } label: {
-                            Label("Import PGN", systemImage: "square.and.arrow.down")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                            HStack(spacing: 5) {
+                                Image(systemName: store.hasProAccess ? "square.and.arrow.down" : "lock.fill")
+                                    .font(.caption2.weight(.bold))
+                                Text("Import PGN")
+                                    .font(.caption.weight(.bold))
+                            }
+                            .foregroundStyle(store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.warpPurpleText)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .brillyGlassPill(store.surfaceStyle, tint: store.hasProAccess ? BrillyPalette.brillyTeal : BrillyPalette.warpPurple)
                         }
                         .buttonStyle(.plain)
                     }
@@ -72,6 +80,7 @@ public struct OpeningsTabView: View {
     }
 
     private func courseCard(_ course: OpeningCourse) -> some View {
+        let unlocked = store.isCourseUnlocked(course.id)
         let courseCards = store.fsrsCards.filter { $0.courseId == course.id }
         let dueCount = courseCards.filter { FSRS6Scheduler.isCardDue($0) }.count
         let reviewed = courseCards.filter { $0.attempts > 0 }
@@ -86,42 +95,55 @@ public struct OpeningsTabView: View {
                     Text(store.copy(cosmic: course.codename.uppercased(), classic: course.difficulty.uppercased()))
                         .font(.caption2.weight(.bold))
                         .tracking(0.8)
-                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .foregroundStyle(unlocked ? BrillyPalette.brillyTeal : BrillyPalette.warpPurpleText)
                     Text(course.name)
                         .font(.headline.weight(.bold))
                         .foregroundStyle(BrillyPalette.inkPrimary)
                 }
                 Spacer(minLength: 6)
 
-                // Direct one-tap Daily FSRS inclusion toggle pill
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        store.toggleCourseInDaily(course.id)
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: inDaily ? "checkmark.circle.fill" : "plus.circle")
-                            .font(.caption2.weight(.bold))
-                        Text(inDaily ? "Daily" : "Add Daily")
-                            .font(.caption2.weight(.bold))
-                    }
-                    .foregroundStyle(inDaily ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(inDaily ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(inDaily ? "Included in Daily FSRS. Tap to remove." : "Not in Daily FSRS. Tap to include.")
-
-                if inDaily && dueCount > 0 {
-                    Text("\(dueCount) due")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(BrillyPalette.brillyTeal)
-                        .padding(.horizontal, 8)
+                if unlocked {
+                    // Direct one-tap Daily FSRS inclusion toggle pill
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            store.toggleCourseInDaily(course.id)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: inDaily ? "checkmark.circle.fill" : "plus.circle")
+                                .font(.caption2.weight(.bold))
+                            Text(inDaily ? "Daily" : "Add Daily")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .foregroundStyle(inDaily ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill(BrillyPalette.brillyTeal.opacity(0.16)))
+                        .background(
+                            Capsule().fill(inDaily ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(inDaily ? "Included in Daily FSRS. Tap to remove." : "Not in Daily FSRS. Tap to include.")
+
+                    if inDaily && dueCount > 0 {
+                        Text("\(dueCount) due")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal.opacity(0.16)))
+                    }
+                } else {
+                    Label("PRO", systemImage: "lock.fill")
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(BrillyPalette.warpPurple.opacity(0.18))
+                                .overlay(Capsule().strokeBorder(BrillyPalette.warpPurple.opacity(0.45), lineWidth: 1))
+                        )
                 }
             }
 
@@ -130,8 +152,18 @@ public struct OpeningsTabView: View {
                 .foregroundStyle(BrillyPalette.inkSecondary)
                 .lineLimit(2)
 
-            // Inviting empty state when unstarted (0% recall) vs active recall bar
-            if reviewed.isEmpty {
+            if !unlocked {
+                HStack(spacing: 8) {
+                    Text("\(course.lines.count) FSRS lines · Upgrade to unlock")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    Spacer()
+                    Text("Unlock Pro")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                }
+            } else if reviewed.isEmpty {
+                // Inviting empty state when unstarted (0% recall) vs active recall bar
                 HStack(spacing: 10) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -176,26 +208,38 @@ public struct OpeningsTabView: View {
             }
         }
         .padding(16)
-        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: inDaily ? BrillyPalette.brillyTeal : nil, interactive: true)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: inDaily ? BrillyPalette.brillyTeal : (unlocked ? nil : BrillyPalette.warpPurple), interactive: true)
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture {
+            if !unlocked {
+                store.openProPaywall(feature: "\(course.name) & All 8 Starter Openings")
+                return
+            }
             selectedCourse = course
         }
         .contextMenu {
-            Button {
-                withAnimation(.snappy(duration: 0.2)) {
-                    store.toggleCourseInDaily(course.id)
+            if unlocked {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        store.toggleCourseInDaily(course.id)
+                    }
+                } label: {
+                    Label(
+                        inDaily ? "Remove from Daily FSRS" : "Include in Daily FSRS",
+                        systemImage: inDaily ? "minus.circle" : "checkmark.circle.fill"
+                    )
                 }
-            } label: {
-                Label(
-                    inDaily ? "Remove from Daily FSRS" : "Include in Daily FSRS",
-                    systemImage: inDaily ? "minus.circle" : "checkmark.circle.fill"
-                )
-            }
-            Button {
-                selectedCourse = course
-            } label: {
-                Label("Open Course & Drills", systemImage: "book.fill")
+                Button {
+                    selectedCourse = course
+                } label: {
+                    Label("Open Course & Drills", systemImage: "book.fill")
+                }
+            } else {
+                Button {
+                    store.openProPaywall(feature: "\(course.name) & All 8 Starter Openings")
+                } label: {
+                    Label("Unlock with Brilly/Der Pro", systemImage: "crown.fill")
+                }
             }
         }
     }
