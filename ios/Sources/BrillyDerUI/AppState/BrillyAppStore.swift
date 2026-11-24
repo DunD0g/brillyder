@@ -221,6 +221,24 @@ public final class BrillyAppStore {
             UserDefaults.standard.set(hasCompletedOnboarding, forKey: "brilly_has_completed_onboarding")
         }
     }
+    public var defaultLaunchTab: BrillyTab {
+        didSet {
+            UserDefaults.standard.set(defaultLaunchTab.rawValue, forKey: "brilly_default_launch_tab")
+        }
+    }
+    public var autoSyncOnLaunch: Bool {
+        didSet {
+            UserDefaults.standard.set(autoSyncOnLaunch, forKey: "brilly_auto_sync_on_launch")
+        }
+    }
+    public var effectiveAutoSyncOnLaunch: Bool {
+        BrillyEntitlementPolicy.isAutoSyncOnLaunchUnlocked(hasProAccess: hasProAccess) && autoSyncOnLaunch
+    }
+    public var hasPinnedManualGameSelection: Bool = false
+    public var isShowingLaunchOverlay: Bool = true
+    public var launchOverlayStatusText: String = "Warming up cockpit…"
+    @ObservationIgnored private var lastAutoSyncDate: Date? = nil
+    @ObservationIgnored private var hasAppliedInitialLaunchTab: Bool = false
     public var showingWelcomeGuide: Bool = false
     public var pendingReviewRequestVersion: String? = nil
     public var activeCelebration: CelebrationEvent? = nil
@@ -497,7 +515,15 @@ public final class BrillyAppStore {
         self.hasConfiguredDailyOpenings = defaults.bool(forKey: "brilly_daily_opening_configured")
         let completedOnboarding = defaults.bool(forKey: "brilly_has_completed_onboarding")
         self.hasCompletedOnboarding = completedOnboarding
+        let savedLaunchTab = BrillyTab(rawValue: defaults.string(forKey: "brilly_default_launch_tab") ?? "") ?? .train
+        self.defaultLaunchTab = savedLaunchTab
+        self.autoSyncOnLaunch = defaults.object(forKey: "brilly_auto_sync_on_launch") as? Bool ?? true
         self.showingWelcomeGuide = !completedOnboarding
+        self.isShowingLaunchOverlay = completedOnboarding
+        if completedOnboarding {
+            self.selectedTab = savedLaunchTab
+            self.hasAppliedInitialLaunchTab = true
+        }
         let savedIds = defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? []
         self.dailyOpeningCourseIds = Set(savedIds)
 
@@ -520,9 +546,18 @@ public final class BrillyAppStore {
         calloutStyle
     }
 
-    public func completeOnboarding() {
+    public func completeOnboarding(applyDefaultTab: Bool = true) {
         hasCompletedOnboarding = true
         showingWelcomeGuide = false
+        isShowingLaunchOverlay = false
+        if applyDefaultTab && !hasAppliedInitialLaunchTab {
+            selectedTab = defaultLaunchTab
+            hasAppliedInitialLaunchTab = true
+        }
+    }
+
+    public func dismissLaunchOverlay() {
+        isShowingLaunchOverlay = false
     }
 
     public func classificationLabel(_ classification: MoveClassification) -> String {
@@ -567,6 +602,7 @@ public final class BrillyAppStore {
             validateDailyStreakLiveness()
             Task {
                 await storeKit.refreshEntitlements()
+                await runQuietAutoSyncIfEligible(isColdLaunch: false)
             }
         }
     }
@@ -658,6 +694,29 @@ public final class BrillyAppStore {
         if hasPendingSave {
             hasPendingSave = false
             persistToDisk()
+        }
+
+        // Launch transition & optional Pro Auto-Sync on cold open
+        let hasSavedHandle = !lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        if hasCompletedOnboarding && effectiveAutoSyncOnLaunch && hasSavedHandle {
+            self.launchOverlayStatusText = copy(cosmic: "Syncing latest trajectory…", classic: "Syncing latest game…")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.runQuietAutoSyncIfEligible(isColdLaunch: true)
+                self.dismissLaunchOverlay()
+            }
+        } else {
+            if hasCompletedOnboarding && selectedTab == .analyze && !hasPinnedManualGameSelection {
+                autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
+            }
+            if isShowingLaunchOverlay {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(320))
+                    self?.dismissLaunchOverlay()
+                }
+            }
         }
     }
 
@@ -942,6 +1001,88 @@ public final class BrillyAppStore {
         await task.value
     }
 
+    /// Quiet, throttled background sync for Pro users on cold launch and foreground resume.
+    /// Never overwrites `syncErrorMessage` or triggers error haptics when offline.
+    public func runQuietAutoSyncIfEligible(isColdLaunch: Bool) async {
+        guard hasCompletedOnboarding, effectiveAutoSyncOnLaunch, !isSyncing else { return }
+
+        let liHandle = lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ccHandle = chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedPlatform: GameSource
+        let resolvedHandle: String
+        if syncPlatform == .chesscom && !ccHandle.isEmpty {
+            resolvedPlatform = .chesscom
+            resolvedHandle = ccHandle
+        } else if syncPlatform == .lichess && !liHandle.isEmpty {
+            resolvedPlatform = .lichess
+            resolvedHandle = liHandle
+        } else if !ccHandle.isEmpty {
+            resolvedPlatform = .chesscom
+            resolvedHandle = ccHandle
+        } else if !liHandle.isEmpty {
+            resolvedPlatform = .lichess
+            resolvedHandle = liHandle
+        } else {
+            return
+        }
+
+        if !isColdLaunch, let last = lastAutoSyncDate,
+           Date().timeIntervalSince(last) < BrillyEntitlementPolicy.autoSyncThrottleSeconds {
+            return
+        }
+        lastAutoSyncDate = Date()
+
+        do {
+            let fetched: [GameRecord]
+            if resolvedPlatform == .chesscom {
+                fetched = try await ChessComClient.fetchRecentGames(username: resolvedHandle, maxGames: 20)
+            } else {
+                fetched = try await LichessClient.fetchRecentGames(username: resolvedHandle, maxGames: 20)
+            }
+            guard !Task.isCancelled else { return }
+            if !fetched.isEmpty {
+                let fetchedIds = Set(fetched.map(\.id))
+                let preserved = self.recentGames.filter { rec in
+                    rec.source != .sample && !fetchedIds.contains(rec.id) &&
+                    (rec.source != resolvedPlatform || self.analyzedGames.contains(where: { ag in ag.id == rec.id }))
+                }
+                self.recentGames = (fetched + preserved).sorted { $0.createdAt > $1.createdAt }
+                self.persistToDisk()
+            }
+            if !hasPinnedManualGameSelection && (selectedTab == .analyze || (isColdLaunch && defaultLaunchTab == .analyze)) {
+                autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
+            }
+        } catch {
+            // Silent fail when offline or rate-limited; if on Analyze with a cached latest game, still ensure it's loaded.
+            if isColdLaunch && selectedTab == .analyze && !hasPinnedManualGameSelection {
+                autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
+            }
+        }
+    }
+
+    /// Auto-loads (and starts analyzing if unanalyzed) the most recent real game when the user
+    /// has not manually pinned a different game and no active analysis/sandbox is running.
+    public func autoLoadLatestGameIfAppropriate(switchToAnalyze: Bool = false) {
+        guard isHydrated else { return }
+        let latest = recentGames.first(where: { $0.source != .sample }) ?? recentGames.first
+        guard let latest else { return }
+        guard BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: hasPinnedManualGameSelection,
+            isAnalyzing: isAnalyzing,
+            isBatchAnalyzing: isBatchAnalyzing,
+            hasActiveSandbox: activeSandboxFen != nil,
+            latestGameId: latest.id,
+            currentAnalyzedGameId: activeAnalyzedGame?.id
+        ) else {
+            return
+        }
+        // Only auto-start a brand-new analysis if the user has quota/Pro (avoid popping a paywall unprompted on tab switch).
+        if !canAnalyzeGame(latest.id) {
+            return
+        }
+        startAnalysis(for: latest, jumpToPly: nil, isManualSelection: false, switchToAnalyze: switchToAnalyze)
+    }
+
     public func runScout(opponent: String, platform: GameSource) async {
         let clean = opponent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
@@ -1014,6 +1155,7 @@ public final class BrillyAppStore {
     }
 
     public func openCustomFEN(_ fen: String) {
+        hasPinnedManualGameSelection = true
         activeSandboxFen = fen
         selectedTab = .analyze
         triggerHaptic(.move)
@@ -1021,12 +1163,22 @@ public final class BrillyAppStore {
 
     // MARK: - Single & Batch Game Analysis
 
-    public func startAnalysis(for game: GameRecord, jumpToPly: Int? = nil) {
+    public func startAnalysis(
+        for game: GameRecord,
+        jumpToPly: Int? = nil,
+        isManualSelection: Bool = true,
+        switchToAnalyze: Bool = true
+    ) {
+        if isManualSelection {
+            hasPinnedManualGameSelection = true
+        }
         activeSandboxFen = nil
         if let cached = analyzedGames.first(where: { $0.id == game.id }) {
             activeAnalyzedGame = cached
             pendingAnalyzePly = jumpToPly
-            selectedTab = .analyze
+            if switchToAnalyze {
+                selectedTab = .analyze
+            }
             return
         }
 
@@ -1044,7 +1196,9 @@ public final class BrillyAppStore {
         analysisProgress = 0
         analyzingMatchupTitle = "\(game.white.name) vs \(game.black.name)"
         analysisStatusText = copy(cosmic: "Scanning trajectory…", classic: "Analyzing game…")
-        selectedTab = .analyze
+        if switchToAnalyze {
+            selectedTab = .analyze
+        }
 
         let preset = analysisPreset
         let engineRef = engine
@@ -1184,6 +1338,7 @@ public final class BrillyAppStore {
     }
 
     public func openGameAtPly(gameId: String, ply: Int) {
+        hasPinnedManualGameSelection = true
         showingVault = false
         activeSandboxFen = nil
         if let ag = analyzedGames.first(where: { $0.id == gameId }) {

@@ -186,4 +186,90 @@ struct AppStoreReadinessTests {
         #expect(whiteUpQueen.whiteExtraPieces == [.queen])
         #expect(whiteUpQueen.compactBadgeText(for: .white)?.contains("+9") == true)
     }
+
+    @Test("Auto-Sync Pro gating, latest-game auto-open guards, and launch tab persistence")
+    func autoSyncAndLaunchTabPolicy() {
+        // Free vs. Pro Auto-Sync gating + 90s throttle
+        #expect(!BrillyEntitlementPolicy.isAutoSyncOnLaunchUnlocked(hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isAutoSyncOnLaunchUnlocked(hasProAccess: true))
+        #expect(BrillyEntitlementPolicy.autoSyncThrottleSeconds == 90)
+
+        // Auto-open latest game when unpinned & idle
+        #expect(BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: "game-old"
+        ))
+        #expect(BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: nil
+        ))
+
+        // Preserve manual selection once user picks a specific game
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: true,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: "game-manual"
+        ))
+
+        // Never interrupt running analysis, batch scan, custom FEN sandbox, or duplicate game
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: true,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: "game-old"
+        ))
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: true,
+            hasActiveSandbox: false,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: "game-old"
+        ))
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: true,
+            latestGameId: "game-new",
+            currentAnalyzedGameId: "game-old"
+        ))
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: "game-same",
+            currentAnalyzedGameId: "game-same"
+        ))
+        #expect(!BrillyEntitlementPolicy.shouldAutoOpenLatestGame(
+            isPinnedManualSelection: false,
+            isAnalyzing: false,
+            isBatchAnalyzing: false,
+            hasActiveSandbox: false,
+            latestGameId: nil,
+            currentAnalyzedGameId: nil
+        ))
+
+        // Launch tab UserDefaults persistence round-trip (isolated suite)
+        let suiteName = "com.brillyder.tests.launchTab.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        #expect(defaults.string(forKey: "brilly_default_launch_tab") == nil)
+        defaults.set("analyze", forKey: "brilly_default_launch_tab")
+        #expect(defaults.string(forKey: "brilly_default_launch_tab") == "analyze")
+    }
 }

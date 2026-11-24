@@ -407,6 +407,52 @@ public struct BrillyWelcomeGuideSheet: View {
             }
             .padding(16)
             .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+
+            // Compact default launch screen preference
+            VStack(alignment: .leading, spacing: 10) {
+                Text("OPEN BRILLYDER ON")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.9)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+
+                HStack(spacing: 8) {
+                    ForEach([BrillyTab.train, .analyze, .openings, .insights]) { tab in
+                        let selected = store.defaultLaunchTab == tab
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                store.defaultLaunchTab = tab
+                            }
+                            store.triggerHaptic(.move)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: tab.systemImage)
+                                    .font(.caption.weight(.bold))
+                                Text(tab.title)
+                                    .font(.caption2.weight(.bold))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.06))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.09), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                    }
+                }
+
+                Text("Pro tip: enable Auto-Sync on Open in Settings to jump straight into your latest game after playing.")
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
         }
     }
 
@@ -414,7 +460,7 @@ public struct BrillyWelcomeGuideSheet: View {
 
     private func finishAndSyncIfEntered() {
         let cleaned = handleInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.completeOnboarding()
+        store.completeOnboarding(applyDefaultTab: cleaned.isEmpty)
         if !cleaned.isEmpty {
             if store.syncPlatform == .lichess {
                 store.lichessUsername = cleaned

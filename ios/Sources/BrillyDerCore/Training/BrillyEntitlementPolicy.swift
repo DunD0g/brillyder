@@ -61,6 +61,9 @@ public enum BrillyEntitlementPolicy {
     /// Default Mind-Blown (`🤯 / 🤦`) emoji pair is Free; extra emoji packs & custom Share Card captions require Pro.
     public static let freeEmojiPackRawValue: String = "mindBlown"
 
+    /// Minimum interval between automatic background game syncs on foreground resume (90 seconds).
+    public static let autoSyncThrottleSeconds: TimeInterval = 90
+
     public static func isCourseUnlocked(_ courseId: String, hasProAccess: Bool) -> Bool {
         hasProAccess || freeStarterCourseIDs.contains(courseId)
     }
@@ -75,6 +78,32 @@ public enum BrillyEntitlementPolicy {
 
     public static func isEmojiPackUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
         hasProAccess || rawValue == freeEmojiPackRawValue
+    }
+
+    /// Automatic sync on app launch / foreground resume is a Pro convenience perk; manual sync is always unlimited & free.
+    public static func isAutoSyncOnLaunchUnlocked(hasProAccess: Bool) -> Bool {
+        hasProAccess
+    }
+
+    /// Determines whether the Analyze tab should automatically load/analyze the latest synced game
+    /// without overriding a user's manual selection, running analysis, or custom FEN sandbox.
+    public static func shouldAutoOpenLatestGame(
+        isPinnedManualSelection: Bool,
+        isAnalyzing: Bool,
+        isBatchAnalyzing: Bool,
+        hasActiveSandbox: Bool,
+        latestGameId: String?,
+        currentAnalyzedGameId: String?
+    ) -> Bool {
+        guard !isPinnedManualSelection,
+              !isAnalyzing,
+              !isBatchAnalyzing,
+              !hasActiveSandbox,
+              let latestGameId,
+              !latestGameId.isEmpty else {
+            return false
+        }
+        return latestGameId != currentAnalyzedGameId
     }
 
     public static func remainingFreeAnalyses(usedToday: Int, hasProAccess: Bool) -> Int {

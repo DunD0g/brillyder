@@ -151,8 +151,8 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "infinity",
                 tint: BrillyPalette.goldAmber,
-                title: "Unlimited Offline Game & Batch Analysis",
-                subtitle: "Remove the 2/day Free cap & batch-scan your full Lichess & Chess.com archive"
+                title: "Unlimited Offline Game, Batch Analysis & Instant Auto-Sync",
+                subtitle: "Remove the 2/day Free cap, auto-sync on open & jump straight into your latest game"
             )
             benefitRow(
                 "crown.fill",

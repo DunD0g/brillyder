@@ -66,7 +66,27 @@ public struct BrillyDerRootView: View {
                 .brillyTabBarChrome(store.surfaceStyle)
             }
             .tint(BrillyPalette.brillyTeal)
+
+            if store.isShowingLaunchOverlay && store.hasCompletedOnboarding {
+                BrillyLaunchTransitionOverlay(
+                    statusText: store.launchOverlayStatusText,
+                    surfaceStyle: store.surfaceStyle
+                ) {
+                    withAnimation(.easeOut(duration: 0.24)) {
+                        store.dismissLaunchOverlay()
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(99)
+                .task {
+                    try? await Task.sleep(for: .milliseconds(1200))
+                    withAnimation(.easeOut(duration: 0.28)) {
+                        store.dismissLaunchOverlay()
+                    }
+                }
+            }
         }
+        .animation(.easeOut(duration: 0.28), value: store.isShowingLaunchOverlay)
         // Safe-area-aware floating HUD banners positioned cleanly below the navigation toolbar
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
@@ -132,6 +152,11 @@ public struct BrillyDerRootView: View {
         }
         .onChange(of: store.showingWelcomeGuide) { _, _ in
             attemptPendingReviewPrompt()
+        }
+        .onChange(of: store.selectedTab) { _, newTab in
+            if newTab == .analyze && !store.hasPinnedManualGameSelection {
+                store.autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
+            }
         }
     }
 
@@ -263,5 +288,60 @@ public struct BrillyDerRootView: View {
             }
             .accessibilityLabel(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
         }
+    }
+}
+
+private struct BrillyLaunchTransitionOverlay: View {
+    let statusText: String
+    let surfaceStyle: SurfaceStyle
+    let onDismiss: () -> Void
+
+    @State private var pulseExpanded: Bool = false
+
+    var body: some View {
+        ZStack {
+            CosmicVoidBackdrop(style: surfaceStyle)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(BrillyPalette.brillyTeal.opacity(pulseExpanded ? 0.16 : 0.06))
+                        .frame(width: pulseExpanded ? 116 : 86, height: pulseExpanded ? 116 : 86)
+                        .blur(radius: 12)
+
+                    Circle()
+                        .strokeBorder(BrillyPalette.brillyTeal.opacity(pulseExpanded ? 0.45 : 0.15), lineWidth: 1.5)
+                        .frame(width: pulseExpanded ? 96 : 78, height: pulseExpanded ? 96 : 78)
+
+                    BrillyLogoMark(size: 70, circular: true)
+                }
+
+                BrillyWordmarkView(fontSize: 28)
+
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(BrillyPalette.brillyTeal)
+                    Text(statusText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+                .padding(.top, 2)
+            }
+            .padding(24)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onDismiss()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true)) {
+                pulseExpanded = true
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("BrillyDer launching. \(statusText)")
+        .accessibilityHint("Tap to dismiss")
     }
 }

@@ -99,6 +99,107 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
 
+                        // MARK: - 1b. Launch Tab & Pro Auto-Sync
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("LAUNCH & AUTO-SYNC")
+                                .font(.caption.weight(.bold))
+                                .tracking(1.0)
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Default Launch Screen")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    Spacer()
+                                    Menu {
+                                        ForEach(BrillyTab.allCases) { tab in
+                                            Button {
+                                                store.defaultLaunchTab = tab
+                                                store.triggerHaptic(.move)
+                                            } label: {
+                                                Label(
+                                                    tab == .analyze ? "Analyze (Latest Game)" : (tab == .train ? "Train (Default)" : tab.title),
+                                                    systemImage: store.defaultLaunchTab == tab ? "checkmark" : tab.systemImage
+                                                )
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: store.defaultLaunchTab.systemImage)
+                                                .font(.caption.weight(.semibold))
+                                            Text(store.defaultLaunchTab == .analyze ? "Analyze (Latest)" : store.defaultLaunchTab.title)
+                                                .font(.caption.weight(.bold))
+                                            Image(systemName: "chevron.up.chevron.down")
+                                                .font(.caption2.weight(.semibold))
+                                        }
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            Capsule()
+                                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                                                .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.35), lineWidth: 1))
+                                        )
+                                    }
+                                }
+
+                                Text("Choose which tab BrillyDer opens on. Pick Analyze to jump straight into your latest game.")
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+
+                            Divider().overlay(Color.white.opacity(0.08))
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                if store.hasProAccess {
+                                    Toggle(isOn: $bindableStore.autoSyncOnLaunch) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Auto-Sync on Open")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                            Text("Quietly fetches your latest Lichess/Chess.com games on launch & resume.")
+                                                .font(.caption2)
+                                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                        }
+                                    }
+                                    .tint(BrillyPalette.brillyTeal)
+                                } else {
+                                    Button {
+                                        localProFeature = "Instant Auto-Sync & Latest-Game Launch"
+                                        showingLocalProSheet = true
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 6) {
+                                                    Text("Auto-Sync on Open")
+                                                        .font(.subheadline.weight(.semibold))
+                                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                                    Text("PRO")
+                                                        .font(.system(size: 9, weight: .black, design: .rounded))
+                                                        .foregroundStyle(BrillyPalette.voidBg)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(Capsule().fill(BrillyPalette.warpPurpleText))
+                                                }
+                                                Text("Quietly sync on launch & auto-load your latest game. Manual sync is always free.")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                                    .multilineTextAlignment(.leading)
+                                            }
+                                            Spacer(minLength: 6)
+                                            Image(systemName: "lock.fill")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.warpPurpleText)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+
                         // MARK: - 2. Copy Vibe, Engine Depth, Sound, Haptics & Celebrations
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 8) {
