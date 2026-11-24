@@ -232,11 +232,13 @@ public struct SavedPositionBookmark: Codable, Hashable, Sendable, Identifiable {
     public let san: String
     public let moveNumber: Int
     public let color: PieceColor
-    public let label: String
+    public var label: String
     public let note: String?
     public let evalDisplay: String?
     public let classification: MoveClassification?
     public let createdAt: Int64
+    public var tags: [String]
+    public var matchup: String?
 
     public init(
         id: String,
@@ -250,7 +252,9 @@ public struct SavedPositionBookmark: Codable, Hashable, Sendable, Identifiable {
         note: String? = nil,
         evalDisplay: String? = nil,
         classification: MoveClassification? = nil,
-        createdAt: Int64
+        createdAt: Int64,
+        tags: [String] = [],
+        matchup: String? = nil
     ) {
         self.id = id
         self.gameId = gameId
@@ -264,5 +268,25 @@ public struct SavedPositionBookmark: Codable, Hashable, Sendable, Identifiable {
         self.evalDisplay = evalDisplay
         self.classification = classification
         self.createdAt = createdAt
+        self.tags = tags
+        self.matchup = matchup
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.gameId = try c.decode(String.self, forKey: .gameId)
+        self.ply = try c.decode(Int.self, forKey: .ply)
+        self.fen = try c.decode(String.self, forKey: .fen)
+        self.san = try c.decode(String.self, forKey: .san)
+        self.moveNumber = try c.decode(Int.self, forKey: .moveNumber)
+        self.color = try c.decode(PieceColor.self, forKey: .color)
+        self.label = try c.decode(String.self, forKey: .label)
+        self.note = try c.decodeIfPresent(String.self, forKey: .note)
+        self.evalDisplay = try c.decodeIfPresent(String.self, forKey: .evalDisplay)
+        self.classification = try c.decodeIfPresent(MoveClassification.self, forKey: .classification)
+        self.createdAt = try c.decode(Int64.self, forKey: .createdAt)
+        self.tags = (try? c.decodeIfPresent([String].self, forKey: .tags)) ?? []
+        self.matchup = try? c.decodeIfPresent(String.self, forKey: .matchup)
     }
 }

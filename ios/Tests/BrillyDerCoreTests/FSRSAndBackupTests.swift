@@ -53,11 +53,26 @@ struct FSRSAndBackupTests {
     func backupRoundTrip() throws {
         let courses = try CourseRepository.loadStarterCourses()
         let cards = Array(try CourseRepository.hydrateCourseCards(course: courses[0], unlocked: true).prefix(3))
+        let taggedBookmark = SavedPositionBookmark(
+            id: "wcc1::24",
+            gameId: "wcc1",
+            ply: 24,
+            fen: ChessBoard.initialFEN,
+            san: "Nxf7",
+            moveNumber: 12,
+            color: .white,
+            label: "WCC Game 1 · Sindarov vs Gukesh",
+            evalDisplay: "+1.8",
+            classification: .brilliant,
+            createdAt: 1_795_540_000_000,
+            tags: ["WCC", "Study"],
+            matchup: "Sindarov, Javokhir vs Gukesh D"
+        )
         let original = VaultSnapshot(
             analyzedGames: [],
             fsrsCards: cards,
             customCourses: [],
-            bookmarks: [],
+            bookmarks: [taggedBookmark],
             dailyStreakDays: 4,
             lastDailyCompletedDate: "2026-11-23",
             lichessUsername: "MagnusTest",
@@ -69,6 +84,29 @@ struct FSRSAndBackupTests {
         #expect(merged.fsrsCards.count == 3)
         #expect(merged.lichessUsername == "MagnusTest")
         #expect(merged.chessComUsername == "HikaruTest")
+        #expect(merged.bookmarks.count == 1)
+        #expect(merged.bookmarks[0].label == "WCC Game 1 · Sindarov vs Gukesh")
+        #expect(merged.bookmarks[0].tags == ["WCC", "Study"])
+        #expect(merged.bookmarks[0].matchup == "Sindarov, Javokhir vs Gukesh D")
+
+        // Legacy bookmark JSON without `tags` or `matchup` must decode cleanly with empty defaults
+        let legacyJSON = """
+        {
+          "id": "legacy::10",
+          "gameId": "legacy",
+          "ply": 10,
+          "fen": "\(ChessBoard.initialFEN)",
+          "san": "Bc4",
+          "moveNumber": 5,
+          "color": "w",
+          "label": "Italian · Move 5 (Bc4)",
+          "createdAt": 1795500000000
+        }
+        """
+        let decodedLegacy = try JSONDecoder().decode(SavedPositionBookmark.self, from: Data(legacyJSON.utf8))
+        #expect(decodedLegacy.tags.isEmpty)
+        #expect(decodedLegacy.matchup == nil)
+        #expect(decodedLegacy.label == "Italian · Move 5 (Bc4)")
     }
 
     @Test("DailyCoachPlanner validates legal UCI moves, rejects phantom arrows, computes authoritative FEN move numbers, and replays opponent last move")

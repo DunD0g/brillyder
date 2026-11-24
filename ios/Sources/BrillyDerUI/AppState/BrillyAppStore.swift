@@ -1698,12 +1698,34 @@ public final class BrillyAppStore {
         persistToDisk()
     }
 
+    public func updateBookmark(id: String, label: String, tags: [String]) {
+        guard let idx = bookmarks.firstIndex(where: { $0.id == id }) else { return }
+        let cleanedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedLabel.isEmpty {
+            bookmarks[idx].label = cleanedLabel
+        }
+        var seen = Set<String>()
+        var cleanedTags: [String] = []
+        for raw in tags {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.lowercased()
+            if seen.insert(key).inserted {
+                cleanedTags.append(trimmed)
+            }
+        }
+        bookmarks[idx].tags = cleanedTags
+        triggerHaptic(.success)
+        persistToDisk()
+    }
+
     public func toggleBookmark(ply: AnalyzedPly, game: GameRecord) {
         let canonical = "\(game.id)::\(ply.ply)"
         let legacy = "\(game.id)::ply::\(ply.ply)"
         if let idx = bookmarks.firstIndex(where: { $0.id == canonical || $0.id == legacy || ($0.gameId == game.id && $0.ply == ply.ply) }) {
             bookmarks.remove(at: idx)
         } else {
+            let matchupText = "\(game.white.name) vs \(game.black.name)"
             let bm = SavedPositionBookmark(
                 id: canonical,
                 gameId: game.id,
@@ -1715,7 +1737,9 @@ public final class BrillyAppStore {
                 label: "\(game.openingName) · Move \(ply.moveNumber) (\(ply.san))",
                 evalDisplay: ply.evalAfter.display,
                 classification: ply.classification,
-                createdAt: Int64(Date().timeIntervalSince1970 * 1000.0)
+                createdAt: Int64(Date().timeIntervalSince1970 * 1000.0),
+                tags: [],
+                matchup: matchupText
             )
             bookmarks.insert(bm, at: 0)
             if ply.classification == .brilliant {
