@@ -2372,5 +2372,1136 @@
         ]
       }
     ]
+  },
+  {
+    "id": "alien-gambit-core",
+    "name": "The Alien Gambit",
+    "codename": "Hyperdrive Sacrifice",
+    "side": "white",
+    "difficulty": "Aggressive",
+    "tagline": "BrillyDer’s signature knight sacrifice on f7 vs the Caro-Kann — rip the Black king into open space.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "c6",
+        "d4",
+        "d5",
+        "Nc3",
+        "dxe4",
+        "Nxe4",
+        "Nf6",
+        "Ng5",
+        "h6",
+        "Nxf7",
+        "Kxf7",
+        "Nf3",
+        "Bf5",
+        "Bc4+",
+        "e6",
+        "O-O"
+      ],
+      "arrows": [
+        {
+          "from": "g5",
+          "to": "f7",
+          "color": "best"
+        },
+        {
+          "from": "f1",
+          "to": "c4",
+          "color": "plan"
+        },
+        {
+          "from": "f3",
+          "to": "e5",
+          "color": "outpost"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "f7",
+          "color": "threat"
+        },
+        {
+          "square": "e5",
+          "color": "outpost"
+        },
+        {
+          "square": "c4",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "Lure 5...h6 with 5. Ng5, then detonate 6. Nxf7! Kxf7 to drag the Black king into the center and destroy castling rights.",
+        "Plant a monster knight on e5 (Nf3-e5+) and aim Bc4+ right down the a2-g8 diagonal.",
+        "Keep every piece racing forward (O-O, Re1, Qe2) — Black’s extra piece is useless while their king is trapped in the middle."
+      ],
+      "goldenRules": [
+        "Never trade queens while down a piece — keep attacking fuel on the board.",
+        "Control e5 and the a2-g8 diagonal before Black can consolidate with ...Kg8 and ...e6.",
+        "If Black avoids 5...h6 with 5...Bf5, pivot smoothly into a dominant Ne5 kingside clamp."
+      ]
+    },
+    "lines": [
+      {
+        "id": "alien-gambit-main-bf5",
+        "title": "Main Line vs 7...Bf5",
+        "subtitle": "Shatter the shelter with 6. Nxf7! and lock down the e5 outpost",
+        "eco": "B15",
+        "frequencyNote": "Most common club defense after 6. Nxf7 Kxf7 7. Nf3",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Nf6",
+          "Ng5",
+          "h6",
+          "Nxf7",
+          "Kxf7",
+          "Nf3",
+          "Bf5",
+          "Ne5+",
+          "Ke8",
+          "Bc4",
+          "e6",
+          "O-O",
+          "Nbd7",
+          "Qe2"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "plan": "Play 5. Ng5! Instead of retreating or trading on f6, you bait 5...h6 to launch the Alien Gambit.",
+            "cosmicCue": "Bait the shield wall — charge the f7 warp core.",
+            "arrows": [
+              {
+                "from": "e4",
+                "to": "g5",
+                "color": "best"
+              },
+              {
+                "from": "g5",
+                "to": "f7",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "plan": "6. Nxf7!! The signature Alien Gambit sacrifice. Black’s king is forced to f7, losing castling rights and exposing the e5 and c4 squares.",
+            "cosmicCue": "Detonate on f7! Drag the enemy flagship out of dock.",
+            "arrows": [
+              {
+                "from": "g5",
+                "to": "f7",
+                "color": "best"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "f7",
+                "color": "threat"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "N5f3",
+                "punishmentLine": [
+                  "Bg4",
+                  "Be2",
+                  "e6"
+                ],
+                "reason": "Retreating with 6. N5f3 wastes a tempo and lets Black develop comfortably with ...Bg4 and ...e6.",
+                "arrows": [
+                  {
+                    "from": "c8",
+                    "to": "g4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Jump immediately into e5 with check! 8. Ne5+ drives the king back to e8 and blocks Black’s e-pawn.",
+            "cosmicCue": "Lock onto the e5 beacon with check.",
+            "arrows": [
+              {
+                "from": "f3",
+                "to": "e5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "plan": "Develop 9. Bc4 targeting the weak e6/f7 complex, followed by O-O and Qe2/Re1 for a crushing initiative.",
+            "cosmicCue": "Sweep the a2-g8 laser across the stranded king.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "c4",
+                "color": "best"
+              },
+              {
+                "from": "c4",
+                "to": "e6",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "alien-gambit-e6-siege",
+        "title": "Dark-Square Siege vs 7...e6",
+        "subtitle": "Aim Bd3 + Ne5+ at g6 when Black tries to tuck the king away",
+        "eco": "B15",
+        "frequencyNote": "Popular practical attempt to return to safety via ...Kg8",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Nf6",
+          "Ng5",
+          "h6",
+          "Nxf7",
+          "Kxf7",
+          "Nf3",
+          "e6",
+          "Bd3",
+          "Bd6",
+          "Ne5+",
+          "Kg8",
+          "O-O",
+          "c5",
+          "Ng6"
+        ],
+        "annotations": [
+          {
+            "ply": 14,
+            "plan": "Against 7...e6, place the bishop on d3 instead of c4 — it targets the newly weakened g6 square and h7.",
+            "cosmicCue": "Target the g6 hull breach.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "d3",
+                "color": "best"
+              },
+              {
+                "from": "d3",
+                "to": "g6",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 20,
+            "plan": "11. Ng6! Forking the h8 rook and cementing a monster outpost on the kingside.",
+            "cosmicCue": "Board the enemy reactor on g6.",
+            "arrows": [
+              {
+                "from": "e5",
+                "to": "g6",
+                "color": "best"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "g6",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "alien-gambit-declined-bf5",
+        "title": "Declined: 5...Bf5",
+        "subtitle": "Claim a huge positional edge when Black refuses to play ...h6",
+        "eco": "B15",
+        "frequencyNote": "How stronger Caro-Kann players try to sidestep 6. Nxf7",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Nf6",
+          "Ng5",
+          "Bf5",
+          "N1f3",
+          "e6",
+          "Ne5",
+          "Bg6",
+          "h4",
+          "Nbd7",
+          "Nxg6",
+          "hxg6",
+          "Bd3"
+        ],
+        "annotations": [
+          {
+            "ply": 12,
+            "plan": "7. Ne5! Threatening both Ngxf7 and Nxg6. Black is forced to tuck the bishop back to g6.",
+            "cosmicCue": "Double-threaten f7 and g6 in one leap.",
+            "arrows": [
+              {
+                "from": "f3",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "e5",
+                "to": "f7",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Push 8. h4! Threatening h5 to trap or dismantle the g6 bishop and grab the bishop pair.",
+            "cosmicCue": "Launch the h-pawn battering ram.",
+            "arrows": [
+              {
+                "from": "h2",
+                "to": "h4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "vienna-gambit-core",
+    "name": "Vienna Gambit",
+    "codename": "Solar Flare",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Blast open the f-file with 3. f4 and overrun unprepared 1...e5 players.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e5",
+        "Nc3",
+        "Nf6",
+        "f4",
+        "d5",
+        "fxe5",
+        "Nxe4",
+        "Nf3",
+        "Be7",
+        "d4",
+        "O-O",
+        "Bd3"
+      ],
+      "arrows": [
+        {
+          "from": "f2",
+          "to": "f4",
+          "color": "best"
+        },
+        {
+          "from": "e4",
+          "to": "e5",
+          "color": "plan"
+        },
+        {
+          "from": "f1",
+          "to": "d3",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "f4",
+          "color": "best"
+        },
+        {
+          "square": "e5",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "If Black greedily takes 3...exf4, unleash 4. e5! kicking the f6 knight all the way back to g8 and seizing the whole center.",
+        "Against the best defense 3...d5, play 4. fxe5 Nxe4 5. Nf3 and build a towering d4 + Bd3 + O-O kingside attack.",
+        "Use the open f-file after O-O to pile up rooks and pieces on f7."
+      ],
+      "goldenRules": [
+        "Always meet 3...exf4 with 4. e5! — never allow Black to keep the f6 knight active.",
+        "Keep d4 protected before pushing e5 unless Black’s knight has no safe forward squares.",
+        "Castle kingside early so your f1 rook immediately owns the half-open f-file."
+      ]
+    },
+    "lines": [
+      {
+        "id": "vienna-gambit-accepted",
+        "title": "Accepted 3...exf4 — Center Stampede",
+        "subtitle": "Kick the knight back to g8 and crush Black’s cramped position",
+        "eco": "C29",
+        "frequencyNote": "Over 50% of club players fall into 3...exf4?",
+        "moves": [
+          "e4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "f4",
+          "exf4",
+          "e5",
+          "Ng8",
+          "Nf3",
+          "d6",
+          "d4",
+          "dxe5",
+          "Qe2",
+          "Bb4",
+          "Bxf4",
+          "Bxc3+",
+          "bxc3"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "plan": "3. f4! The Vienna Gambit. You challenge e5 immediately while keeping the f1-a6 diagonal and f-file ready.",
+            "cosmicCue": "Ignite the f4 solar flare.",
+            "arrows": [
+              {
+                "from": "f2",
+                "to": "f4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 6,
+            "plan": "4. e5! The knight has zero safe forward squares (Qe7 is met by Qe2) and must retreat in shame to g8.",
+            "cosmicCue": "Send the knight back to orbit on g8.",
+            "arrows": [
+              {
+                "from": "e4",
+                "to": "e5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nf3",
+                "punishmentLine": [
+                  "d5",
+                  "exd5",
+                  "Nxd5"
+                ],
+                "reason": "Delaying e5 lets Black strike back with 4...d5 and equalize effortlessly.",
+                "arrows": [
+                  {
+                    "from": "d7",
+                    "to": "d5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "plan": "7. Qe2 pins the e5 pawn to the king and prepares Bxf4 + O-O-O or O-O with a huge lead in development.",
+            "cosmicCue": "Pin the e-file and mobilize every thruster.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "e2",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "vienna-gambit-d5-main",
+        "title": "Main Line 3...d5 Counter-Strike",
+        "subtitle": "Solidify with Nf3 + d4 + Bd3 and attack down the open f-file",
+        "eco": "C29",
+        "frequencyNote": "Black’s strongest theoretical reply to 3. f4",
+        "moves": [
+          "e4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "f4",
+          "d5",
+          "fxe5",
+          "Nxe4",
+          "Nf3",
+          "Be7",
+          "d4",
+          "O-O",
+          "Bd3",
+          "f5",
+          "exf6",
+          "Bxf6",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "4. fxe5 opens the f-file for your rook while forcing Black’s knight onto e4.",
+            "cosmicCue": "Crack open the f-file corridor.",
+            "arrows": [
+              {
+                "from": "f4",
+                "to": "e5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "plan": "7. Bd3 challenges the e4 knight and aims straight at h7 once Black castles.",
+            "cosmicCue": "Lock the bishop onto e4 and h7.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "d3",
+                "color": "best"
+              },
+              {
+                "from": "d3",
+                "to": "h7",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Capture en passant (8. exf6) to keep the e-file and f-file wide open for your pieces.",
+            "cosmicCue": "Clear the lane with en passant.",
+            "arrows": [
+              {
+                "from": "e5",
+                "to": "f6",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "vienna-gambit-nc6",
+        "title": "Passive 3...Nc6 — Classic f-File Crush",
+        "subtitle": "Win massive space with fxe5, d4, and e5",
+        "eco": "C29",
+        "frequencyNote": "Very common below 1600 when Black develops instinctively",
+        "moves": [
+          "e4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "f4",
+          "Nc6",
+          "fxe5",
+          "Nxe5",
+          "d4",
+          "Ng6",
+          "e5",
+          "Ng8",
+          "Nf3",
+          "d6",
+          "Bc4",
+          "Be7",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "plan": "5. d4! Kick the e5 knight immediately and build a colossal pawn duo.",
+            "cosmicCue": "Claim the entire center with tempo.",
+            "arrows": [
+              {
+                "from": "d2",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "plan": "6. e5! Once again the f6 knight is driven all the way back to g8.",
+            "cosmicCue": "Push Black’s pieces off the board.",
+            "arrows": [
+              {
+                "from": "e4",
+                "to": "e5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "stafford-gambit-core",
+    "name": "Stafford Gambit",
+    "codename": "Venom Probe",
+    "side": "black",
+    "difficulty": "Aggressive",
+    "tagline": "Sacrifice a pawn on move 3 to unleash lethal ...Bc5, ...Ng4, and ...Qh4 mating webs.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nf6",
+        "Nxe5",
+        "Nc6",
+        "Nxc6",
+        "dxc6",
+        "d3",
+        "Bc5",
+        "Be2",
+        "h5",
+        "O-O",
+        "Ng4"
+      ],
+      "arrows": [
+        {
+          "from": "f8",
+          "to": "c5",
+          "color": "best"
+        },
+        {
+          "from": "f6",
+          "to": "g4",
+          "color": "plan"
+        },
+        {
+          "from": "d8",
+          "to": "h4",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "f2",
+          "color": "threat"
+        },
+        {
+          "square": "h2",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Always recapture 4...dxc6! opening BOTH the c8 bishop and the d8 queen on move 4.",
+        "Aim ...Bc5 at f2, launch ...h5 to protect ...Ng4, and swing the queen to d6 or h4 for unstoppable mating threats.",
+        "Watch for the famous ...Nxe4! queen-sacrifice trap whenever White plays Bg5."
+      ],
+      "goldenRules": [
+        "Never recapture 4...bxc6 — 4...dxc6 is the entire point of the Stafford Gambit.",
+        "If White plays Bg5 while f2 is undefended, check if ...Nxe4! wins immediately.",
+        "In blitz & rapid, prioritize piece speed and open lines over winning back the pawn."
+      ]
+    },
+    "lines": [
+      {
+        "id": "stafford-bg5-mate-trap",
+        "title": "The Classic 6. Bg5 ...Nxe4! Mate Trap",
+        "subtitle": "Sacrifice the queen on d8 to deliver a stunning 8...Bg4# checkmate",
+        "eco": "C42",
+        "frequencyNote": "One of the most famous traps in online chess history",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nf6",
+          "Nxe5",
+          "Nc6",
+          "Nxc6",
+          "dxc6",
+          "d3",
+          "Bc5",
+          "Bg5",
+          "Nxe4",
+          "Bxd8",
+          "Bxf2+",
+          "Ke2",
+          "Bg4#"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "4...dxc6! Opens both diagonals for your queen and c8 bishop for instant piece activity.",
+            "cosmicCue": "Unleash the queen and bishop in one capture.",
+            "arrows": [
+              {
+                "from": "d7",
+                "to": "c6",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "bxc6",
+                "punishmentLine": [
+                  "d3",
+                  "d5",
+                  "Nc3"
+                ],
+                "reason": "4...bxc6 keeps your queen and c8 bishop locked in — you lose all the Stafford traps.",
+                "arrows": [
+                  {
+                    "from": "d2",
+                    "to": "d3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "6...Nxe4!! Ignoring the pin on your queen! If White takes on d8, 7...Bxf2+ 8. Ke2 Bg4# is pure checkmate.",
+            "cosmicCue": "Oh no, my queen! Spring the Legall-style mate.",
+            "arrows": [
+              {
+                "from": "f6",
+                "to": "e4",
+                "color": "best"
+              },
+              {
+                "from": "c5",
+                "to": "f2",
+                "color": "plan"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "f2",
+                "color": "threat"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "8...Bg4# Checkmate! Both bishops and the e4 knight weave a flawless mating net.",
+            "cosmicCue": "Target neutralized — checkmate in 8.",
+            "arrows": [
+              {
+                "from": "c8",
+                "to": "g4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "stafford-e5-ne4",
+        "title": "Against 5. e5 — The ...Ne4 & ...Bxf2+ Strike",
+        "subtitle": "Punish greedy 6. d3? or 7. dxe4? with a crushing tactic on f2",
+        "eco": "C42",
+        "frequencyNote": "Frequent knee-jerk reaction from 1. e4 players",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nf6",
+          "Nxe5",
+          "Nc6",
+          "Nxc6",
+          "dxc6",
+          "e5",
+          "Ne4",
+          "d3",
+          "Bc5",
+          "dxe4",
+          "Bxf2+",
+          "Ke2",
+          "Bg4+"
+        ],
+        "annotations": [
+          {
+            "ply": 9,
+            "plan": "5...Ne4! Centralize aggressively instead of retreating — you already eye f2 and c5.",
+            "cosmicCue": "Dive into e4 and paint a target on f2.",
+            "arrows": [
+              {
+                "from": "f6",
+                "to": "e4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "6...Bc5! Leaving the e4 knight as bait. Taking it walks straight into 7...Bxf2+ winning the d1 queen!",
+            "cosmicCue": "Leave the knight as venom bait.",
+            "arrows": [
+              {
+                "from": "f8",
+                "to": "c5",
+                "color": "best"
+              },
+              {
+                "from": "c5",
+                "to": "f2",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "8...Bg4+! Skewers the king and wins White’s queen on d1 cleanly.",
+            "cosmicCue": "Skewer the flagship on d1.",
+            "arrows": [
+              {
+                "from": "c8",
+                "to": "g4",
+                "color": "best"
+              },
+              {
+                "from": "g4",
+                "to": "d1",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "stafford-be2-h5",
+        "title": "Solid 6. Be2 — The ...h5 & ...Ng4 Storm",
+        "subtitle": "Launch a full-scale kingside assault with ...h5, ...Ng4, and ...Qd6",
+        "eco": "C42",
+        "frequencyNote": "Main battleground when White plays solidly with Be2 + O-O",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nf6",
+          "Nxe5",
+          "Nc6",
+          "Nxc6",
+          "dxc6",
+          "d3",
+          "Bc5",
+          "Be2",
+          "h5",
+          "O-O",
+          "Ng4",
+          "h3",
+          "Qd6"
+        ],
+        "annotations": [
+          {
+            "ply": 11,
+            "plan": "6...h5! Prepares ...Ng4 (making Bxg4 hxg4 open the h-file for your rook).",
+            "cosmicCue": "Anchor the g4 launchpad and prime the h-file.",
+            "arrows": [
+              {
+                "from": "h7",
+                "to": "h5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "8...Qd6! Threatening ...Qh2# mate! If White plays hxg4, ...hxg4 unleashes a devastating h-file attack.",
+            "cosmicCue": "Point the queen straight at h2.",
+            "arrows": [
+              {
+                "from": "d8",
+                "to": "d6",
+                "color": "best"
+              },
+              {
+                "from": "d6",
+                "to": "h2",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "englund-gambit-core",
+    "name": "Englund Gambit",
+    "codename": "Chaos Warp",
+    "side": "black",
+    "difficulty": "Aggressive",
+    "tagline": "Ambush 1. d4 players immediately with 1...e5 and weaponize ...Qb4+ double-attack traps.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "e5",
+        "dxe5",
+        "Nc6",
+        "Nf3",
+        "Qe7",
+        "Bf4",
+        "Qb4+",
+        "Bd2",
+        "Qxb2",
+        "Bc3",
+        "Bb4"
+      ],
+      "arrows": [
+        {
+          "from": "e7",
+          "to": "b4",
+          "color": "best"
+        },
+        {
+          "from": "b4",
+          "to": "b2",
+          "color": "plan"
+        },
+        {
+          "from": "f8",
+          "to": "b4",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "b4",
+          "color": "best"
+        },
+        {
+          "square": "b2",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Throw 1. d4 London players completely out of their comfort zone on move 1 with 1...e5!",
+        "Pair 2...Nc6 and 3...Qe7 to attack e5 and set up the lethal ...Qb4+ double attack against b2 and f4.",
+        "Pin the c3 bishop with ...Bb4 and race into White’s back rank on c1."
+      ],
+      "goldenRules": [
+        "Against 4. Bf4, ALWAYS check with 4...Qb4+ — it forks the king, the f4 bishop, and the b2 pawn.",
+        "After 5. Bd2 Qxb2 6. Bc3, unleash 6...Bb4! pinning the bishop to the queen and rook.",
+        "If White avoids the trap with 6. Nc3, pin with 6...Bb4 and fight for rapid piece activity."
+      ]
+    },
+    "lines": [
+      {
+        "id": "englund-bf4-qb4-mate",
+        "title": "The Famous 4. Bf4 Qb4+ Mate Trap",
+        "subtitle": "Pin with 6...Bb4 and deliver 8...Qc1# back-rank checkmate",
+        "eco": "A40",
+        "frequencyNote": "Catches thousands of London System players off guard",
+        "moves": [
+          "d4",
+          "e5",
+          "dxe5",
+          "Nc6",
+          "Nf3",
+          "Qe7",
+          "Bf4",
+          "Qb4+",
+          "Bd2",
+          "Qxb2",
+          "Bc3",
+          "Bb4",
+          "Qd2",
+          "Bxc3",
+          "Qxc3",
+          "Qc1#"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "plan": "3...Qe7! Attacks e5 a second time and sets up the deadly ...Qb4+ fork against any London-style 4. Bf4.",
+            "cosmicCue": "Prime the Qb4+ ambush.",
+            "arrows": [
+              {
+                "from": "d8",
+                "to": "e7",
+                "color": "best"
+              },
+              {
+                "from": "e7",
+                "to": "b4",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Bc5",
+                "punishmentLine": [
+                  "Qd5",
+                  "Qe7",
+                  "Bg5"
+                ],
+                "reason": "Developing 3...Bc5 before ...Qe7 lets White keep the extra pawn comfortably with Qd5 or Bf4.",
+                "arrows": [
+                  {
+                    "from": "d1",
+                    "to": "d5",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 7,
+            "plan": "4...Qb4+! Triple-forking the king, the f4 bishop, and the b2 pawn.",
+            "cosmicCue": "Triple fork! King, bishop, and b2 all under fire.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "b4",
+                "color": "best"
+              },
+              {
+                "from": "b4",
+                "to": "f4",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "6...Bb4!! Pins the c3 bishop to the queen and a1 rook. If White plays 7. Qd2 Bxc3 8. Qxc3, 8...Qc1# is instant checkmate!",
+            "cosmicCue": "Pin the c3 defender and lock the c1 hatch.",
+            "arrows": [
+              {
+                "from": "f8",
+                "to": "b4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "8...Qc1# Checkmate! The back rank collapses in 8 moves.",
+            "cosmicCue": "Warp complete — back-rank checkmate!",
+            "arrows": [
+              {
+                "from": "b2",
+                "to": "c1",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "englund-nc3-pin",
+        "title": "Against 6. Nc3 — The ...Bb4 Pin",
+        "subtitle": "Keep the initiative alive when White sidesteps 6. Bc3",
+        "eco": "A40",
+        "frequencyNote": "Best practical reply for White after 5...Qxb2",
+        "moves": [
+          "d4",
+          "e5",
+          "dxe5",
+          "Nc6",
+          "Nf3",
+          "Qe7",
+          "Bf4",
+          "Qb4+",
+          "Bd2",
+          "Qxb2",
+          "Nc3",
+          "Bb4",
+          "Rb1",
+          "Qa3",
+          "Rb3",
+          "Qa5"
+        ],
+        "annotations": [
+          {
+            "ply": 11,
+            "plan": "6...Bb4! Pin the c3 knight immediately so White cannot easily trap your queen.",
+            "cosmicCue": "Pin the knight before retreating the queen.",
+            "arrows": [
+              {
+                "from": "f8",
+                "to": "b4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "plan": "8...Qa5 keeps pressure on e5 and c3 while preparing ...Nge7 and ...O-O.",
+            "cosmicCue": "Sidestep the rook and maintain full fire on c3.",
+            "arrows": [
+              {
+                "from": "a3",
+                "to": "a5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "englund-qd5-f6",
+        "title": "Against 4. Qd5 — Rapid ...f6 Gambit",
+        "subtitle": "Open the f-file and gain huge development tempos on White’s queen",
+        "eco": "A40",
+        "frequencyNote": "Common attempt by 1. d4 players to defend e5 with the queen",
+        "moves": [
+          "d4",
+          "e5",
+          "dxe5",
+          "Nc6",
+          "Nf3",
+          "Qe7",
+          "Qd5",
+          "f6",
+          "exf6",
+          "Nxf6",
+          "Qb3",
+          "d5",
+          "Nc3",
+          "Be6"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "4...f6! Offer a second pawn to open the f-file and kick the White queen around with ...Nxf6.",
+            "cosmicCue": "Feed a second pawn for hyperdrive development.",
+            "arrows": [
+              {
+                "from": "f7",
+                "to": "f6",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 11,
+            "plan": "6...d5 claims the center and opens your c8 bishop for ...Be6 and ...O-O-O.",
+            "cosmicCue": "Seize the center while White’s pieces sleep.",
+            "arrows": [
+              {
+                "from": "d7",
+                "to": "d5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 ]

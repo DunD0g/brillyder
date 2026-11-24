@@ -294,6 +294,11 @@ public final class BrillyAppStore {
     public var lastDailyCompletedDate: String? = nil
     public var woodpeckerCycle: WoodpeckerCycleRecord? = nil
     public var masteredEndgameIds: Set<String> = []
+    public var solvedEscapeIds: Set<String> {
+        didSet {
+            UserDefaults.standard.set(Array(solvedEscapeIds).sorted(), forKey: "brilly_solved_escape_ids")
+        }
+    }
     public var convertedAdvantageIds: Set<String> = []
     public var boardVisionBestScore: Int = 0
     public var puzzleRushBlitzBest: Int = 0
@@ -401,7 +406,7 @@ public final class BrillyAppStore {
 
     public func toggleCourseInDaily(_ courseId: String) {
         guard isCourseUnlocked(courseId) else {
-            openProPaywall(feature: "All 8 Opening Courses & Custom Repertoires")
+            openProPaywall(feature: "All 12 Opening Courses (incl. Alien & Stafford Gambits)")
             return
         }
         hasConfiguredDailyOpenings = true
@@ -526,6 +531,8 @@ public final class BrillyAppStore {
         }
         let savedIds = defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? []
         self.dailyOpeningCourseIds = Set(savedIds)
+        let savedEscapeIds = defaults.stringArray(forKey: "brilly_solved_escape_ids") ?? []
+        self.solvedEscapeIds = Set(savedEscapeIds)
 
         self.starterCourses = (try? CourseRepository.loadStarterCourses()) ?? []
         self.recentGames = LichessClient.sampleGames()
@@ -1450,6 +1457,12 @@ public final class BrillyAppStore {
         recordTrainingActivity()
         triggerHaptic(.success)
         persistToDisk()
+    }
+
+    public func markEscapeSolved(_ id: String) {
+        solvedEscapeIds.insert(id)
+        recordTrainingActivity()
+        triggerHaptic(.success)
     }
 
     public func markAdvantageConverted(_ id: String) {

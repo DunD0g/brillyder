@@ -141,12 +141,17 @@ struct AppStoreReadinessTests {
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: true, usedToday: 99, hasProAccess: false))
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 99, hasProAccess: true))
 
-        // Openings: 2 starter courses free (1 White + 1 Black); all 8 unlocked on Pro
+        // Openings: 2 starter courses free (1 White + 1 Black); all 12 (incl. 4 Pro Gambits) unlocked on Pro
         let courses = try CourseRepository.loadStarterCourses()
+        #expect(courses.count == 12)
         let freeCourses = courses.filter { BrillyEntitlementPolicy.isCourseUnlocked($0.id, hasProAccess: false) }
         #expect(freeCourses.count == 2)
         #expect(freeCourses.contains(where: { $0.side == .white }))
         #expect(freeCourses.contains(where: { $0.side == .black }))
+        #expect(!BrillyEntitlementPolicy.isCourseUnlocked("alien-gambit-core", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isCourseUnlocked("vienna-gambit-core", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isCourseUnlocked("stafford-gambit-core", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isCourseUnlocked("englund-gambit-core", hasProAccess: false))
         #expect(courses.allSatisfy { BrillyEntitlementPolicy.isCourseUnlocked($0.id, hasProAccess: true) })
 
         // Coach durations: 10m free, 15m & 25m Pro

@@ -7,7 +7,12 @@ struct StarterCoursesValidationTests {
     @Test("Every previewMoves, line moves, and wrongMoveTraps punishmentLine in starterCourses.json is 100% legal")
     func validateAllStarterCourses() throws {
         let courses = try CourseRepository.loadStarterCourses()
-        #expect(courses.count >= 8)
+        #expect(courses.count >= 12)
+        let ids = Set(courses.map(\.id))
+        #expect(ids.contains("alien-gambit-core"))
+        #expect(ids.contains("vienna-gambit-core"))
+        #expect(ids.contains("stafford-gambit-core"))
+        #expect(ids.contains("englund-gambit-core"))
 
         var totalPliesValidated = 0
         var totalTrapsValidated = 0
@@ -67,6 +72,36 @@ struct StarterCoursesValidationTests {
             var board = try ChessBoard(fen: flash.fen)
             let applied = try board.apply(uci: flash.expectedUci)
             #expect(applied.san == flash.expectedSan)
+        }
+    }
+
+    @Test("All 10 Never Give Up escape puzzles have legal FENs and genuinely force stalemate or perpetual check")
+    func validateNeverGiveUpEscapePuzzles() throws {
+        let puzzles = EscapeLibrary.allPuzzles
+        #expect(puzzles.count == 10)
+        #expect(Set(puzzles.map(\.id)).count == puzzles.count)
+
+        for puzzle in puzzles {
+            var board = try ChessBoard(fen: puzzle.fen)
+            #expect(board.turn == puzzle.userColor)
+            #expect(!board.isInCheck(board.turn.opposite))
+            #expect(puzzle.solutionUcis.count == puzzle.solutionSans.count)
+            #expect(!puzzle.solutionUcis.isEmpty)
+
+            for (idx, uci) in puzzle.solutionUcis.enumerated() {
+                let applied = try board.apply(uci: uci)
+                #expect(applied.san == puzzle.solutionSans[idx], "SAN mismatch in \(puzzle.id) step \(idx)")
+            }
+
+            switch puzzle.theme {
+            case .stalemateSac, .desperadoRook:
+                #expect(board.legalMoves().isEmpty, "Expected zero legal moves (stalemate) in \(puzzle.id)")
+                #expect(!board.isInCheck(board.turn), "Expected NOT in check (stalemate, not mate) in \(puzzle.id)")
+                #expect(board.outcome == .stalemate, "Expected .stalemate outcome in \(puzzle.id)")
+            case .perpetualSave:
+                #expect(board.isInCheck(board.turn), "Expected final perpetual move to deliver check in \(puzzle.id)")
+                #expect(!board.legalMoves().isEmpty, "Expected opponent to have forced escape reply in \(puzzle.id)")
+            }
         }
     }
 }

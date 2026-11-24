@@ -145,8 +145,8 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "book.closed.fill",
                 tint: BrillyPalette.warpPurpleText,
-                title: "All 8 FSRS Opening Courses + Unlimited Custom PGN Imports",
-                subtitle: "Spaced-repetition drills graded on recall speed across your own repertoires"
+                title: "All 12 Opening Courses (incl. Alien & Stafford Gambits) + Custom PGNs",
+                subtitle: "Spaced-repetition FSRS drills graded on recall speed across 12 repertoires & your own PGNs"
             )
             benefitRow(
                 "infinity",
@@ -157,8 +157,8 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "crown.fill",
                 tint: BrillyPalette.blunderRose,
-                title: "Endgame & Vision Labs, 4 Retina Piece Sets & Pro Share Studio",
-                subtitle: "12 Syzygy endgames, Board Vision, Puzzle Rush, Pro Emoji Packs 🔥/💀, 👍/🤡, 👑/🫠 & Custom Share Card Captions"
+                title: "Endgame, Never Give Up & Vision Labs, 4 Piece Sets & Pro Share Studio",
+                subtitle: "12 Syzygy endgames, 10 Stalemate Escapes, Board Vision, Puzzle Rush, Pro Emoji Packs 🔥/💀, 👍/🤡, 👑/🫠 & Custom Share Card Captions"
             )
         }
         .padding(16)

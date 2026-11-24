@@ -6,13 +6,16 @@ public struct TrainLabsView: View {
 
     enum LabKind: String, CaseIterable {
         case endgame = "Endgames"
+        case escape = "Escape"
         case vision = "Vision"
-        case rush = "Puzzle Rush"
+        case rush = "Rush"
     }
 
     @State private var activeLab: LabKind = .endgame
     @State private var selectedCategory: EndgameCategory? = nil
     @State private var activeDrill: EndgameDrill? = nil
+    @State private var selectedEscapeTheme: EscapeTheme? = nil
+    @State private var activeEscape: EscapePuzzle? = nil
 
     public var body: some View {
         VStack(spacing: 14) {
@@ -26,6 +29,8 @@ public struct TrainLabsView: View {
             switch activeLab {
             case .endgame:
                 endgameLabBody
+            case .escape:
+                neverGiveUpLabBody
             case .vision:
                 BoardVisionPanel()
             case .rush:
@@ -38,6 +43,12 @@ public struct TrainLabsView: View {
         }
         .sheet(item: $activeDrill) { drill in
             EndgameDrillPlaySheet(drill: drill).environment(store)
+        }
+        .sheet(item: $activeEscape) { puzzle in
+            EscapePuzzlePlaySheet(puzzle: puzzle) { nextPuzzle in
+                activeEscape = nextPuzzle
+            }
+            .environment(store)
         }
     }
 
@@ -123,6 +134,119 @@ public struct TrainLabsView: View {
         .padding(.vertical, 6)
         .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Never Give Up Stalemate & Escape Lab
+
+    private var neverGiveUpLabBody: some View {
+        let all = EscapeLibrary.allPuzzles
+        let filtered = all.filter { selectedEscapeTheme == nil || $0.theme == selectedEscapeTheme }
+        let solvedCount = all.filter { store.solvedEscapeIds.contains($0.id) }.count
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Never Give Up · Escape Lab")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                    Text("Find desperado stalemate sacs & clutch perpetual checks from dead-lost positions.")
+                        .font(.caption2)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+                Spacer(minLength: 4)
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                    Text("\(solvedCount)/\(all.count)")
+                        .font(.caption.monospacedDigit().weight(.black))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(BrillyPalette.goldAmber.opacity(0.16)))
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: BrillyPalette.goldAmber)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    escapeThemeChip("All", theme: nil)
+                    ForEach(EscapeTheme.allCases) { theme in
+                        escapeThemeChip(theme.rawValue, theme: theme)
+                    }
+                }
+            }
+
+            LazyVStack(spacing: 10) {
+                ForEach(filtered) { puzzle in
+                    let solved = store.solvedEscapeIds.contains(puzzle.id)
+                    Button {
+                        activeEscape = puzzle
+                    } label: {
+                        HStack(spacing: 12) {
+                            InteractiveChessBoardView(
+                                board: (try? ChessBoard(fen: puzzle.fen)) ?? ChessBoard(),
+                                orientation: puzzle.userColor,
+                                theme: store.boardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: false
+                            )
+                            .frame(width: 66, height: 66)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Label(puzzle.theme.rawValue, systemImage: puzzle.theme.badgeSymbol)
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(escapeThemeTint(puzzle.theme))
+                                    Text("· \(puzzle.userColor == .white ? "White" : "Black") to save")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                    Spacer()
+                                    if solved {
+                                        Image(systemName: "star.fill")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.goldAmber)
+                                    }
+                                }
+                                Text(puzzle.title)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .lineLimit(1)
+                                Text(puzzle.coachingTip)
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(12)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 16, interactive: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func escapeThemeChip(_ label: String, theme: EscapeTheme?) -> some View {
+        let sel = selectedEscapeTheme == theme
+        return Button(label) {
+            selectedEscapeTheme = theme
+        }
+        .font(.caption.weight(.bold))
+        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(sel ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
+        .buttonStyle(.plain)
+    }
+
+    private func escapeThemeTint(_ theme: EscapeTheme) -> Color {
+        switch theme {
+        case .stalemateSac: return BrillyPalette.brillyTeal
+        case .desperadoRook: return BrillyPalette.warpPurpleText
+        case .perpetualSave: return BrillyPalette.goldAmber
+        }
     }
 }
 
@@ -671,5 +795,215 @@ private struct PuzzleRushPanel: View {
         running = false
         store.recordPuzzleRushScore(score, survival: mode == .survival)
         feedback = "Run finished! Final score: \(score)."
+    }
+}
+
+// MARK: - Interactive "Never Give Up" Stalemate & Escape Sheet
+
+private struct EscapePuzzlePlaySheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    let puzzle: EscapePuzzle
+    let onSelectNext: (EscapePuzzle) -> Void
+
+    @State private var board: ChessBoard = ChessBoard()
+    @State private var stepIndex: Int = 0
+    @State private var isOpponentAnimating: Bool = false
+    @State private var isSolved: Bool = false
+    @State private var showHint: Bool = false
+    @State private var feedback: String = ""
+    @State private var feedbackIsError: Bool = false
+    @State private var replyTask: Task<Void, Never>? = nil
+
+    private var nextUnsolvedOrFollowing: EscapePuzzle? {
+        let all = EscapeLibrary.allPuzzles
+        guard let idx = all.firstIndex(where: { $0.id == puzzle.id }) else { return nil }
+        let after = Array(all.dropFirst(idx + 1)) + Array(all.prefix(idx))
+        return after.first(where: { !store.solvedEscapeIds.contains($0.id) }) ?? after.first
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                ScrollView {
+                    VStack(spacing: 14) {
+                        HStack {
+                            Label(puzzle.theme.rawValue, systemImage: puzzle.theme.badgeSymbol)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                            Spacer()
+                            if store.solvedEscapeIds.contains(puzzle.id) || isSolved {
+                                Label("Saved ★", systemImage: "star.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                            } else {
+                                Text("\(puzzle.userColor == .white ? "White" : "Black") to save the draw")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                        }
+
+                        InteractiveChessBoardView(
+                            board: board,
+                            orientation: puzzle.userColor,
+                            theme: store.boardTheme,
+                            surfaceStyle: store.surfaceStyle,
+                            interactive: !isOpponentAnimating && !isSolved && board.turn == puzzle.userColor && board.outcome == .ongoing
+                        ) { move in
+                            handleUserMove(move)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            if isSolved {
+                                Text(puzzle.theme == .perpetualSave ? "Perpetual Saved!! Never Give Up!" : "Stalemate Saved!! Never Give Up!")
+                                    .font(.headline.weight(.black))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                Text(puzzle.coachingTip)
+                                    .font(.subheadline)
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                            } else if !feedback.isEmpty {
+                                Text(feedback)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(feedbackIsError ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
+                            } else {
+                                Text("You're down heavy material — don't resign! Find the forcing escape.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                            }
+
+                            if showHint && !isSolved {
+                                let hintSan = stepIndex < puzzle.solutionSans.count ? puzzle.solutionSans[stepIndex] : puzzle.solutionSans.first ?? ""
+                                Text("Hint: Try \(hintSan) — \(puzzle.coachingTip)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .brillySurface(
+                            store.surfaceStyle,
+                            cornerRadius: 16,
+                            tint: isSolved ? BrillyPalette.brillyTeal : (feedbackIsError ? BrillyPalette.blunderRose : nil)
+                        )
+
+                        HStack(spacing: 10) {
+                            if isSolved, let next = nextUnsolvedOrFollowing {
+                                Button {
+                                    onSelectNext(next)
+                                } label: {
+                                    Label("Next Escape", systemImage: "arrow.right")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                }
+                                .buttonStyle(BrillyPressScaleStyle())
+                            } else {
+                                Button("Hint") {
+                                    showHint = true
+                                    store.triggerHaptic(.move)
+                                }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                .buttonStyle(.plain)
+                            }
+
+                            Button("Reset") { resetPuzzle() }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle(puzzle.title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onAppear { resetPuzzle() }
+            .onChange(of: puzzle.id) { _, _ in resetPuzzle() }
+            .onDisappear { replyTask?.cancel() }
+        }
+    }
+
+    private func resetPuzzle() {
+        replyTask?.cancel()
+        board = (try? ChessBoard(fen: puzzle.fen)) ?? ChessBoard()
+        stepIndex = 0
+        isOpponentAnimating = false
+        isSolved = false
+        showHint = false
+        feedback = ""
+        feedbackIsError = false
+    }
+
+    private func handleUserMove(_ move: ChessMove) {
+        guard stepIndex < puzzle.solutionUcis.count else { return }
+        let expected = puzzle.solutionUcis[stepIndex]
+        if move.uci == expected {
+            var nextBoard = board
+            guard (try? nextBoard.apply(move)) != nil else { return }
+            board = nextBoard
+            feedbackIsError = false
+            stepIndex += 1
+            store.triggerHaptic(.move)
+
+            // Check if this completed the puzzle (e.g. 3-ply perpetual save's final check)
+            if stepIndex >= puzzle.solutionUcis.count {
+                completeEscape()
+                return
+            }
+
+            // Auto-play the opponent's forced capture/reply
+            let oppUci = puzzle.solutionUcis[stepIndex]
+            let oppSan = stepIndex < puzzle.solutionSans.count ? puzzle.solutionSans[stepIndex] : oppUci
+            feedback = "Opponent is forced to play \(oppSan)…"
+            isOpponentAnimating = true
+            replyTask?.cancel()
+            replyTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(420))
+                guard !Task.isCancelled else { return }
+                var replyBoard = board
+                if (try? replyBoard.apply(uci: oppUci)) != nil {
+                    board = replyBoard
+                    stepIndex += 1
+                    isOpponentAnimating = false
+                    if stepIndex >= puzzle.solutionUcis.count {
+                        completeEscape()
+                    } else {
+                        feedback = "Nice! Now deliver the follow-up check to seal the perpetual."
+                    }
+                } else {
+                    isOpponentAnimating = false
+                }
+            }
+        } else {
+            feedbackIsError = true
+            feedback = "Not quite — look for a forcing check or sacrifice that traps your own king in stalemate!"
+            store.triggerHaptic(.error)
+        }
+    }
+
+    private func completeEscape() {
+        isSolved = true
+        isOpponentAnimating = false
+        feedbackIsError = false
+        store.markEscapeSolved(puzzle.id)
     }
 }

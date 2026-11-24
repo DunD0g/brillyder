@@ -272,9 +272,9 @@ describe('Pass 2 — Stats, Vault, Tablebase, Sync, Daily Coach & Streak integri
       })
     ).not.toThrow();
 
-    // Playing 1. e4 e5 as Black when starter repertoire has Caro-Kann (1. e4 c6) should NOT flag move 1!
+    // Playing 1. e4 b6 (Owen's Defense) as Black when starter repertoire has other 1. e4 defenses should NOT flag move 1!
     const blackMove1 = detectRepertoireDeviation({
-      sanHistory: ['e4', 'e5', 'Nf3', 'Nc6'],
+      sanHistory: ['e4', 'b6', 'd4', 'Bb7'],
       userColor: 'b',
       courses,
     });

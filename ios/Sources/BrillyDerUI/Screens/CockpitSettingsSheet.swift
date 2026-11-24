@@ -798,7 +798,7 @@ public struct CockpitSettingsSheet: View {
                                             .foregroundStyle(BrillyPalette.inkSecondary)
                                     }
                                 } else {
-                                    Text("Free Plan · \(store.remainingFreeAnalysesToday) of \(BrillyEntitlementPolicy.freeDailyAnalysisLimit) daily game analyses left today. Upgrade for unlimited batch analysis, all 8 openings, Woodpecker, Labs & all 4 piece sets.")
+                                    Text("Free Plan · \(store.remainingFreeAnalysesToday) of \(BrillyEntitlementPolicy.freeDailyAnalysisLimit) daily game analyses left today. Upgrade for unlimited batch analysis, all 12 opening courses (incl. Alien & Stafford Gambits), Woodpecker, Never Give Up & Endgame Labs, and all 4 piece sets.")
                                         .font(.caption)
                                         .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
