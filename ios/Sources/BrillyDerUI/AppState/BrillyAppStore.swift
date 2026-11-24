@@ -162,6 +162,12 @@ public final class BrillyAppStore {
             UserDefaults.standard.set(hasConfiguredDailyOpenings, forKey: "brilly_daily_opening_configured")
         }
     }
+    public var hasCompletedOnboarding: Bool {
+        didSet {
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: "brilly_has_completed_onboarding")
+        }
+    }
+    public var showingWelcomeGuide: Bool = false
     public var activeCelebration: CelebrationEvent? = nil
 
     // MARK: - Sync & Scout State
@@ -420,7 +426,7 @@ public final class BrillyAppStore {
         self.dailyAnalysisQuotaCount = defaults.integer(forKey: "brilly_free_analyses_count")
         self.dailyDuration = edition == .founderAdmin ? .fifteen : .ten
         self.surfaceStyle = SurfaceStyle(rawValue: defaults.string(forKey: "brilly_surface_style") ?? "") ?? .liquidGlass
-        self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .cosmic
+        self.vibeMode = VibeMode(rawValue: defaults.string(forKey: "brilly_vibe_mode") ?? "") ?? .classic
         self.calloutStyle = CalloutStyle(rawValue: defaults.string(forKey: "brilly_callout_style") ?? "") ?? .brillyDer
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
         self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
@@ -429,6 +435,9 @@ public final class BrillyAppStore {
         self.soundEnabled = defaults.object(forKey: "brilly_sound_enabled") as? Bool ?? true
         self.celebrationsEnabled = defaults.object(forKey: "brilly_celebrations_enabled") as? Bool ?? true
         self.hasConfiguredDailyOpenings = defaults.bool(forKey: "brilly_daily_opening_configured")
+        let completedOnboarding = defaults.bool(forKey: "brilly_has_completed_onboarding")
+        self.hasCompletedOnboarding = completedOnboarding
+        self.showingWelcomeGuide = !completedOnboarding
         let savedIds = defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? []
         self.dailyOpeningCourseIds = Set(savedIds)
 
@@ -446,9 +455,14 @@ public final class BrillyAppStore {
         vibeMode == .cosmic ? cosmic : classic
     }
 
-    /// Resolves effective callout style: Classic vibe always enforces clean standard chess labels.
+    /// Returns the user's selected mascot & move callout style independently of Coach Copy Vibe.
     public var effectiveCalloutStyle: CalloutStyle {
-        vibeMode == .classic ? .standard : calloutStyle
+        calloutStyle
+    }
+
+    public func completeOnboarding() {
+        hasCompletedOnboarding = true
+        showingWelcomeGuide = false
     }
 
     public func classificationLabel(_ classification: MoveClassification) -> String {

@@ -476,3 +476,20 @@
 ### Verified
 - `npm test && npm run build`: Web PWA tests & Vite production build clean (including `public/terms.html`).
 - `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded + passed `verify_app_bundle()`.
+
+---
+
+## v2.10.0 (Ghibli-Style Thumbs-Up Default Theme, Decoupled Mascots & First-Install Welcome Guide)
+**Status:** Completed & Verified
+
+### Built
+- **Studio Ghibli-Style Thumbs-Up & Blun-DER Mascots (`BrillyGhibliBuddyView.swift`, `Resources/Mascots/brilly_buddy_thumbsup.png`, `brilly_buddy_blunder.png`):**
+  - Bundled custom 320x320 Retina hand-painted Ghibli-style chess-buddy sticker portraits (cheerful thumbs-up buddy with golden knight pin for positive moves; comical facepalm buddy for blunders) with glowing themed rim and instant static image caching.
+- **Approachable Default Theme & Decoupled Mascot Picker (`BrillyTheme.swift`, `AlienCelebrationOverlay.swift`, `BrillyAlienUFOView.swift`, `ShareCardRenderer.swift`, `BrillyAppStore.swift`, `CockpitSettingsSheet.swift`):**
+  - Switched fresh-install defaults away from the Alien space theme to **`Classic` Coach Copy** + **`Brilly/Der` Ghibli Thumbs-Up Buddy** (*"Very nice, Brilly!!"* / *"Blun-DER!!"*).
+  - Decoupled `calloutStyle` from `vibeMode` so users can freely mix **`Brilly/Der` (Ghibli Thumbs-Up)**, **`Standard` (Glowing Diamond)**, and **`Alien UFO` (Cosmic Probe)** in Settings, live celebrations, and Share Cards.
+- **First-Install Welcome Guide & Interactive Theme Picker (`BrillyWelcomeGuideSheet.swift`, `BrillyDerRootView.swift`, `CockpitSettingsSheet.swift`):**
+  - Added a 3-step first-launch sheet (1. Quick App Guide, 2. Live Mascot / Vibe / Board Theme Picker with Settings pointer tip, 3. Optional Lichess/Chess.com quick connect with 1-tap Skip), persisted via `brilly_has_completed_onboarding` and re-openable anytime from **Settings → Quick Start & Theme Guide**.
+
+### Verified
+- `cd ios && ./scripts/build-ipa.sh --unsigned --edition both`: `starterCourses.json` parity clean, `swift test` **6 suites, 36 tests passed**, BOTH `BrillyDer` (`com.brillyder.app`) and `BrillyDerAdmin` (`com.brillyder.admin`) Release `arm64` builds succeeded and verified `brilly_buddy_thumbsup.png` & `brilly_buddy_blunder.png` bundled.

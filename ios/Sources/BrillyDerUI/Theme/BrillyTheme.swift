@@ -38,24 +38,24 @@ public enum VibeMode: String, Codable, CaseIterable, Sendable, Identifiable {
 
 public enum CalloutStyle: String, Codable, CaseIterable, Sendable, Identifiable {
     case brillyDer = "brillyDer"
-    case cosmicAlien = "cosmicAlien"
     case standard = "standard"
+    case cosmicAlien = "cosmicAlien"
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
         case .brillyDer: return "Brilly/Der"
-        case .cosmicAlien: return "Alien Probe"
         case .standard: return "Standard"
+        case .cosmicAlien: return "Alien UFO"
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .brillyDer: return "Shouts BRILLY!! & BLUN-DER!! alongside the Alien UFO"
-        case .cosmicAlien: return "Space-probe alerts alongside the Alien UFO"
-        case .standard: return "Clean classic chess move callouts"
+        case .brillyDer: return "Cartoony thumbs-up buddy shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
+        case .standard: return "Clean diamond & classic tournament chess callouts"
+        case .cosmicAlien: return "Cosmic Alien UFO mascot & space-probe alerts"
         }
     }
 }

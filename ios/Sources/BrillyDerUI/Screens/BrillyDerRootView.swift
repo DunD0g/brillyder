@@ -106,6 +106,16 @@ public struct BrillyDerRootView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $bindableStore.showingWelcomeGuide, onDismiss: {
+            if !store.hasCompletedOnboarding {
+                store.completeOnboarding()
+            }
+        }) {
+            BrillyWelcomeGuideSheet()
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var globalBatchPill: some View {

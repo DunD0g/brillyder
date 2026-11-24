@@ -19,37 +19,36 @@ public struct CelebrationEvent: Equatable, Identifiable, Sendable {
         self.id = UUID()
         self.kind = kind
         self.vibe = vibe
-        let effective: CalloutStyle = (vibe == .classic) ? .standard : calloutStyle
-        self.calloutStyle = effective
+        self.calloutStyle = calloutStyle
         let mood: BrillyAlienMood = (kind == .brilliant) ? .brilliant : .blunder
-        let pool = BrillyShareQuips.pool(for: mood, vibe: vibe, calloutStyle: effective)
+        let pool = BrillyShareQuips.pool(for: mood, vibe: vibe, calloutStyle: calloutStyle)
 
-        switch (kind, effective) {
+        switch (kind, calloutStyle) {
         case (.brilliant, .brillyDer):
             let shouts: [(String, String)] = [
+                ("VERY NICE, ", "BRILLY!!"),
                 ("BRILLY!!", " MOVE!"),
                 ("PURE ", "BRILLY!!"),
-                ("THAT'S SO ", "BRILLY!!"),
-                ("CERTIFIED ", "BRILLY!!"),
+                ("OH THAT'S ", "BRILLY!!"),
             ]
-            let chosen = shouts.randomElement() ?? ("BRILLY!!", " MOVE!")
+            let chosen = shouts.randomElement() ?? ("VERY NICE, ", "BRILLY!!")
             self.shoutPrefix = chosen.0
             self.shoutAccent = chosen.1
-            self.tag = "!! BRILLY SIGNAL"
-            self.message = pool.randomElement() ?? "OH THAT'S BRILLY!!"
+            self.tag = "!! VERY NICE"
+            self.message = pool.randomElement() ?? "Very nice, Brilly!! That sacrifice is pure chess art!"
 
         case (.blunder, .brillyDer):
             let shouts: [(String, String)] = [
                 ("BLUN-", "DER!!"),
                 ("OH ", "DERRR!!"),
                 ("MAJOR BLUN-", "DER!!"),
-                ("CERTIFIED ", "DERRR!!"),
+                ("OOPS, ", "DERRR!!"),
             ]
             let chosen = shouts.randomElement() ?? ("BLUN-", "DER!!")
             self.shoutPrefix = chosen.0
             self.shoutAccent = chosen.1
-            self.tag = "?? DERRR ALERT"
-            self.message = pool.randomElement() ?? "Big DERRR energy — Houston, we dropped a piece!"
+            self.tag = "?? BLUN-DER"
+            self.message = pool.randomElement() ?? "Blun-DER!! Big derrr energy — we've all been there!"
 
         case (.brilliant, .cosmicAlien):
             self.shoutPrefix = "BRILLIANT "
@@ -78,8 +77,9 @@ public struct CelebrationEvent: Equatable, Identifiable, Sendable {
     }
 }
 
-/// Non-blocking floating toast banner for Brilliant (`BRILLY!!`) & Blunder (`BLUN-DER!!`) moments,
-/// featuring BrillyDer's expressive Alien UFO mascot and bold shout typography.
+/// Non-blocking floating toast banner for Brilliant & Blunder moments,
+/// supporting the Ghibli Thumbs-Up Buddy (`Brilly/Der`), glowing Diamond (`Standard`),
+/// and Cosmic Alien UFO (`Alien UFO`) themes.
 public struct AlienCelebrationBanner: View {
     public let event: CelebrationEvent
     public let surfaceStyle: SurfaceStyle
@@ -94,11 +94,10 @@ public struct AlienCelebrationBanner: View {
     public var body: some View {
         let isBril = event.kind == .brilliant
         let accent = isBril ? BrillyPalette.brillyTeal : BrillyPalette.blunderRose
-        let showAlien = event.calloutStyle != .standard && event.vibe == .cosmic
 
         Button(action: onDismiss) {
             ZStack(alignment: .trailing) {
-                // Subtle oversized !! / ?? cosmic watermark shimmer on right edge
+                // Subtle oversized !! / ?? watermark shimmer on right edge
                 Text(isBril ? "!!" : "??")
                     .font(.system(size: 56, weight: .black, design: .rounded))
                     .foregroundStyle(accent.opacity(0.11))
@@ -106,15 +105,18 @@ public struct AlienCelebrationBanner: View {
                     .allowsHitTesting(false)
 
                 HStack(spacing: 12) {
-                    if showAlien {
+                    switch event.calloutStyle {
+                    case .brillyDer:
+                        BrillyGhibliBuddyView(mood: isBril ? .brilliant : .blunder, size: 62)
+                    case .cosmicAlien:
                         BrillyAlienUFOView(mood: isBril ? .brilliant : .blunder, size: 66, showBeam: true)
-                    } else {
+                    case .standard:
                         ZStack {
                             Circle()
                                 .fill(accent.opacity(0.22))
-                                .frame(width: 46, height: 46)
+                                .frame(width: 48, height: 48)
                             if isBril {
-                                BrillyGemIcon(size: 24, color: BrillyPalette.brillyTeal)
+                                BrillyGemIcon(size: 26, color: BrillyPalette.brillyTeal)
                             } else {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.title3.weight(.bold))

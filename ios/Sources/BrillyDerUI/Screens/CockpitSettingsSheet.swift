@@ -111,21 +111,19 @@ public struct CockpitSettingsSheet: View {
                                 .pickerStyle(.segmented)
                             }
 
-                            if store.vibeMode == .cosmic {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Move Callouts")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(BrillyPalette.inkPrimary)
-                                    Picker("Move Callouts", selection: $bindableStore.calloutStyle) {
-                                        ForEach(CalloutStyle.allCases) { style in
-                                            Text(style.title).tag(style)
-                                        }
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Mascot & Move Callouts")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                Picker("Move Callouts", selection: $bindableStore.calloutStyle) {
+                                    ForEach(CalloutStyle.allCases) { style in
+                                        Text(style.title).tag(style)
                                     }
-                                    .pickerStyle(.segmented)
-                                    Text(store.calloutStyle.subtitle)
-                                        .font(.caption2)
-                                        .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
+                                .pickerStyle(.segmented)
+                                Text(store.calloutStyle.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
                             }
 
                             Divider().overlay(Color.white.opacity(0.1))
@@ -159,7 +157,7 @@ public struct CockpitSettingsSheet: View {
                             .tint(BrillyPalette.brillyTeal)
 
                             Toggle(isOn: $bindableStore.celebrationsEnabled) {
-                                Text(store.copy(cosmic: "Brilly/Der & UFO Celebrations", classic: "Move Celebrations"))
+                                Text("Move Celebrations")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                             }
@@ -625,6 +623,21 @@ public struct CockpitSettingsSheet: View {
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.inkSecondary)
 
+                            Button {
+                                dismiss()
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(350))
+                                    store.showingWelcomeGuide = true
+                                }
+                            } label: {
+                                Label("Quick Start & Theme Guide", systemImage: "sparkles.rectangle.stack")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .frame(maxWidth: .infinity, minHeight: 40)
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.brillyTeal.opacity(0.12)))
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
+
                             HStack(spacing: 8) {
                                 Button {
                                     showingPrivacySheet = true
@@ -737,8 +750,8 @@ public struct CockpitSettingsSheet: View {
     }
 
     private var appVersionString: String {
-        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.9.0"
-        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "12"
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.10.0"
+        let bld = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "13"
         return "v\(ver) (\(bld))"
     }
 }

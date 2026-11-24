@@ -99,7 +99,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     }
 
     public var effectiveCalloutStyle: CalloutStyle {
-        vibe == .classic ? .standard : calloutStyle
+        calloutStyle
     }
 
     public func withOverrides(vibe: VibeMode, calloutStyle: CalloutStyle, showMoveArrow: Bool, quipIndex: Int) -> BrillyShareCardPayload {
@@ -331,8 +331,8 @@ public struct BrillyShareCardView: View {
                 endRadius: 210
             )
 
-            // Deterministic Crisp Starfield
-            if payload.vibe == .cosmic {
+            // Deterministic Crisp Starfield (Cosmic / Alien themes)
+            if payload.calloutStyle == .cosmicAlien || payload.vibe == .cosmic {
                 Canvas { ctx, size in
                     let stars: [(CGFloat, CGFloat, CGFloat, Double)] = [
                         (0.06, 0.02, 1.2, 0.65), (0.39, 0.03, 1.0, 0.50), (0.48, 0.06, 1.3, 0.60),
@@ -424,8 +424,8 @@ public struct BrillyShareCardView: View {
                     }
                 }
 
-                // Witty Alien Reaction or Classic Assessment
-                Text(payload.vibe == .cosmic ? "“\(heroQuip)”" : heroQuip)
+                // Witty Brilly/Der, Alien, or Classic Reaction Quote
+                Text(payload.calloutStyle == .standard ? heroQuip : "“\(heroQuip)”")
                     .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color(hex: 0xE2E8F0))
                     .lineSpacing(1.5)
@@ -461,11 +461,14 @@ public struct BrillyShareCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Expressive Alien UFO Mascot (Cosmic) or Faceted Medallion (Classic)
-            if payload.vibe == .cosmic {
+            // Theme-matched Mascot: Ghibli Thumbs-Up Buddy (Brilly/Der), Diamond Medallion (Standard), or Alien UFO
+            switch payload.calloutStyle {
+            case .brillyDer:
+                BrillyGhibliBuddyView(mood: mood, size: 84)
+            case .cosmicAlien:
                 BrillyAlienUFOView(mood: mood, size: 86, showBeam: true)
                     .shadow(color: accentColor.opacity(0.42), radius: 10, y: 2)
-            } else {
+            case .standard:
                 classicHeroMedallion
             }
         }
@@ -903,27 +906,32 @@ public struct BrillyShareCardSheet: View {
                         // Quick Customizers Row
                         HStack(spacing: 8) {
                             Button {
-                                if vibe == .classic {
-                                    vibe = .cosmic
-                                    calloutStyle = .brillyDer
-                                } else if calloutStyle == .brillyDer {
-                                    calloutStyle = .cosmicAlien
-                                } else {
-                                    vibe = .classic
+                                switch calloutStyle {
+                                case .brillyDer:
                                     calloutStyle = .standard
+                                    vibe = .classic
+                                case .standard:
+                                    calloutStyle = .cosmicAlien
+                                    vibe = .cosmic
+                                case .cosmicAlien:
+                                    calloutStyle = .brillyDer
+                                    vibe = .classic
                                 }
                             } label: {
-                                let styleTitle: String = {
-                                    if vibe == .classic { return "Classic" }
-                                    return calloutStyle == .brillyDer ? "Brilly/Der" : "Alien Probe"
+                                let styleTitle: String = calloutStyle.title
+                                let styleIcon: String = {
+                                    switch calloutStyle {
+                                    case .brillyDer: return "hand.thumbsup.fill"
+                                    case .standard: return "diamond.fill"
+                                    case .cosmicAlien: return "sparkles"
+                                    }
                                 }()
-                                let styleIcon: String = vibe == .classic ? "crown.fill" : "sparkles"
                                 Label(styleTitle, systemImage: styleIcon)
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(vibe == .cosmic ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                                    .foregroundStyle(calloutStyle == .standard ? BrillyPalette.inkPrimary : BrillyPalette.brillyTeal)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .brillyGlassPill(surfaceStyle, tint: vibe == .cosmic ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
+                                    .brillyGlassPill(surfaceStyle, tint: calloutStyle == .cosmicAlien ? BrillyPalette.warpPurple : (calloutStyle == .brillyDer ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber))
                             }
                             .buttonStyle(.plain)
 

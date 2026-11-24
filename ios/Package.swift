@@ -32,6 +32,7 @@ let package = Package(
             path: "Sources/BrillyDerUI",
             resources: [
                 .process("Resources/Pieces"),
+                .process("Resources/Mascots"),
             ]
         ),
         .testTarget(
