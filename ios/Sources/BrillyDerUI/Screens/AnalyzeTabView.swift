@@ -219,6 +219,7 @@ public struct AnalyzeTabView: View {
                         .font(.headline.weight(.bold))
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .lineLimit(1)
+                        .blur(radius: store.effectiveCreatorNameMask == .blurred ? 5 : 0)
                 }
                 Text("\(store.analysisStatusText) · \(pct)%")
                     .font(.subheadline.monospacedDigit().weight(.bold))

@@ -15,6 +15,8 @@ public struct GamesTabView: View {
     @State private var pgnError: String? = nil
     @State private var scoutDraft: String = ""
     @State private var scoutPlatform: GameSource = .lichess
+    @State private var handleSavedNotice: String? = nil
+    @State private var noticeTask: Task<Void, Never>? = nil
 
     private var filteredGames: [GameRecord] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -49,45 +51,111 @@ public struct GamesTabView: View {
                         }
                         .pickerStyle(.segmented)
 
-                        HStack(spacing: 10) {
-                            TextField(
-                                store.syncPlatform == .chesscom ? "Chess.com username" : "Lichess username",
-                                text: store.syncPlatform == .chesscom ? $bindableStore.chessComUsername : $bindableStore.lichessUsername
-                            )
-                            .textFieldStyle(.plain)
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.go)
-                            #endif
-                            .onSubmit {
-                                store.persistToDisk()
-                                Task { await store.syncRecentGames() }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        if store.isActivePlatformHandleLocked {
+                            // Compact read-only "Set & Forget" username pill + Sync button
+                            let masked = store.maskedProfileUsername(store.activeHandleForSelectedPlatform)
+                            HStack(spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.crop.circle.fill")
+                                        .font(.subheadline)
+                                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.75))
 
-                            Button {
-                                store.persistToDisk()
-                                Task { await store.syncRecentGames() }
-                            } label: {
-                                if store.isSyncing {
-                                    ProgressView()
-                                        .tint(BrillyPalette.voidBg)
-                                        .frame(width: 72, height: 40)
-                                        .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
-                                } else {
-                                    Text("Sync")
-                                        .font(.subheadline.weight(.bold))
-                                        .foregroundStyle(BrillyPalette.voidBg)
-                                        .frame(width: 72, height: 40)
-                                        .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                    Text(masked.text)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                        .lineLimit(1)
+                                        .blur(radius: masked.isBlurred ? 5 : 0)
+
+                                    Spacer(minLength: 4)
+
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.5))
                                 }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(Color.white.opacity(0.05))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                                        )
+                                )
+                                .accessibilityLabel("Saved \(store.syncPlatform == .chesscom ? "Chess.com" : "Lichess") username")
+
+                                Button {
+                                    Task { await store.syncRecentGames() }
+                                } label: {
+                                    if store.isSyncing {
+                                        ProgressView()
+                                            .tint(BrillyPalette.voidBg)
+                                            .frame(width: 72, height: 38)
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                    } else {
+                                        Text("Sync")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.voidBg)
+                                            .frame(width: 72, height: 38)
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(store.isSyncing)
                             }
-                            .buttonStyle(.plain)
-                            .disabled(store.isSyncing)
+                        } else {
+                            // First-time setup: editable field + Set & Sync
+                            HStack(spacing: 10) {
+                                TextField(
+                                    store.syncPlatform == .chesscom ? "Chess.com username" : "Lichess username",
+                                    text: store.syncPlatform == .chesscom ? $bindableStore.chessComUsername : $bindableStore.lichessUsername
+                                )
+                                .textFieldStyle(.plain)
+                                #if os(iOS)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.go)
+                                #endif
+                                .onSubmit {
+                                    commitAndSyncHandle()
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+
+                                Button {
+                                    commitAndSyncHandle()
+                                } label: {
+                                    if store.isSyncing {
+                                        ProgressView()
+                                            .tint(BrillyPalette.voidBg)
+                                            .frame(width: 96, height: 40)
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                    } else {
+                                        Text("Set & Sync")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.voidBg)
+                                            .frame(width: 96, height: 40)
+                                            .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(store.isSyncing || store.activeHandleForSelectedPlatform.isEmpty)
+                            }
+                        }
+
+                        if let notice = handleSavedNotice {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                Text(notice)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                Spacer()
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
                         // Compact Tools Row: Paste PGN | Board Editor | Scout
@@ -574,5 +642,24 @@ public struct GamesTabView: View {
                 Label("Copy PGN", systemImage: "doc.on.doc")
             }
         }
+    }
+
+    private func commitAndSyncHandle() {
+        let clean = store.activeHandleForSelectedPlatform
+        guard !clean.isEmpty else { return }
+        withAnimation(.snappy(duration: 0.24)) {
+            store.lockHandle(for: store.syncPlatform)
+            handleSavedNotice = "Username saved — change anytime in Settings"
+        }
+        store.triggerHaptic(.success)
+        noticeTask?.cancel()
+        noticeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                handleSavedNotice = nil
+            }
+        }
+        Task { await store.syncRecentGames() }
     }
 }

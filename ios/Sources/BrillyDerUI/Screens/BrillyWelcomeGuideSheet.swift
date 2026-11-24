@@ -467,6 +467,7 @@ public struct BrillyWelcomeGuideSheet: View {
             } else {
                 store.chessComUsername = cleaned
             }
+            store.lockHandle(for: store.syncPlatform)
             store.selectedTab = .games
             Task {
                 await store.syncRecentGames()

@@ -331,11 +331,21 @@ public struct InsightsTabView: View {
     }
 
     private func scoutGameplanCard(_ plan: ScoutGameplan) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let maskedOpp = store.maskedPlayerName(plan.opponentName, side: .black)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("How to Beat \(plan.opponentName)", systemImage: "binoculars.fill")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(BrillyPalette.warpPurple)
+                HStack(spacing: 6) {
+                    Image(systemName: "binoculars.fill")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.warpPurple)
+                    Text("How to Beat")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.warpPurple)
+                    Text(maskedOpp.text)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(BrillyPalette.warpPurple)
+                        .blur(radius: maskedOpp.isBlurred ? 5 : 0)
+                }
                 Spacer()
                 Button("Exit Scout") { store.clearScout() }
                     .font(.caption.weight(.bold))

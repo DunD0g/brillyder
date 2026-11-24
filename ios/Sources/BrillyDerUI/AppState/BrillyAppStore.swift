@@ -179,6 +179,20 @@ public final class BrillyAppStore {
         )
     }
 
+    /// Applies Founder Admin Creator Name Masking to the user's own profile handle (Games tab / headers).
+    /// Always returns `(rawHandle, false)` on the App Store edition.
+    public func maskedProfileUsername(_ rawHandle: String) -> (text: String, isBlurred: Bool) {
+        let mode = effectiveCreatorNameMask
+        guard mode != .off else { return (rawHandle, false) }
+        return CreatorNameMasker.mask(
+            rawName: rawHandle,
+            opponentRawName: nil,
+            side: .white,
+            mode: mode,
+            userHandles: userHandles
+        )
+    }
+
     public func resolvedBroadcastRibbon(forPgn pgn: String? = nil) -> String? {
         let theme = effectiveExhibitionTheme
         guard theme != .none else { return nil }
@@ -258,6 +272,46 @@ public final class BrillyAppStore {
                 derivedCacheKeyVersion &+= 1
             }
         }
+    }
+    public var isLichessHandleLocked: Bool {
+        didSet { UserDefaults.standard.set(isLichessHandleLocked, forKey: "brilly_lichess_handle_locked") }
+    }
+    public var isChessComHandleLocked: Bool {
+        didSet { UserDefaults.standard.set(isChessComHandleLocked, forKey: "brilly_chesscom_handle_locked") }
+    }
+
+    public var activeHandleForSelectedPlatform: String {
+        (syncPlatform == .chesscom ? chessComUsername : lichessUsername)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var isActivePlatformHandleLocked: Bool {
+        let locked = syncPlatform == .chesscom ? isChessComHandleLocked : isLichessHandleLocked
+        return locked && !activeHandleForSelectedPlatform.isEmpty
+    }
+
+    public func lockHandle(for platform: GameSource) {
+        if platform == .chesscom {
+            let clean = chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            chessComUsername = clean
+            isChessComHandleLocked = !clean.isEmpty
+        } else {
+            let clean = lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            lichessUsername = clean
+            isLichessHandleLocked = !clean.isEmpty
+        }
+        persistToDisk()
+    }
+
+    public func clearHandle(for platform: GameSource) {
+        if platform == .chesscom {
+            chessComUsername = ""
+            isChessComHandleLocked = false
+        } else {
+            lichessUsername = ""
+            isLichessHandleLocked = false
+        }
+        persistToDisk()
     }
     public var recentGames: [GameRecord] = []
     public var isSyncing: Bool = false
@@ -533,6 +587,8 @@ public final class BrillyAppStore {
         self.dailyOpeningCourseIds = Set(savedIds)
         let savedEscapeIds = defaults.stringArray(forKey: "brilly_solved_escape_ids") ?? []
         self.solvedEscapeIds = Set(savedEscapeIds)
+        self.isLichessHandleLocked = defaults.bool(forKey: "brilly_lichess_handle_locked")
+        self.isChessComHandleLocked = defaults.bool(forKey: "brilly_chesscom_handle_locked")
 
         self.starterCourses = (try? CourseRepository.loadStarterCourses()) ?? []
         self.recentGames = LichessClient.sampleGames()
@@ -673,6 +729,15 @@ public final class BrillyAppStore {
         self.lastDailyCompletedDate = snap.lastDailyCompletedDate
         self.lichessUsername = snap.lichessUsername
         self.chessComUsername = snap.chessComUsername
+        // Auto-lock already-saved handles for upgrading users unless they explicitly cleared them
+        if !snap.lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           UserDefaults.standard.object(forKey: "brilly_lichess_handle_locked") == nil {
+            self.isLichessHandleLocked = true
+        }
+        if !snap.chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           UserDefaults.standard.object(forKey: "brilly_chesscom_handle_locked") == nil {
+            self.isChessComHandleLocked = true
+        }
         self.woodpeckerCycle = snap.woodpeckerCycle
         self.masteredEndgameIds = Set(snap.masteredEndgameIds)
         self.convertedAdvantageIds = Set(snap.convertedAdvantageIds)
@@ -1201,7 +1266,9 @@ public final class BrillyAppStore {
 
         isAnalyzing = true
         analysisProgress = 0
-        analyzingMatchupTitle = "\(game.white.name) vs \(game.black.name)"
+        let wName = maskedPlayerName(game.white.name, opponent: game.black.name, side: .white).text
+        let bName = maskedPlayerName(game.black.name, opponent: game.white.name, side: .black).text
+        analyzingMatchupTitle = "\(wName) vs \(bName)"
         analysisStatusText = copy(cosmic: "Scanning trajectory…", classic: "Analyzing game…")
         if switchToAnalyze {
             selectedTab = .analyze

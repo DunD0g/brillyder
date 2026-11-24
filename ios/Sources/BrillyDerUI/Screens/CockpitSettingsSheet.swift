@@ -38,6 +38,7 @@ public struct CockpitSettingsSheet: View {
     @State private var showingLocalProSheet = false
     @State private var localProFeature: String? = nil
     @State private var showingPrivacySheet = false
+    @State private var accountStatusMessage: String? = nil
     @State private var showingTermsSheet = false
     @State private var showingLicensesSheet = false
 
@@ -199,6 +200,126 @@ public struct CockpitSettingsSheet: View {
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+
+                        // MARK: - 1c. Chess Accounts (Lichess & Chess.com)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("CHESS ACCOUNTS")
+                                .font(.caption.weight(.bold))
+                                .tracking(1.0)
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Lichess Username")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                HStack(spacing: 8) {
+                                    TextField("Enter Lichess handle", text: $bindableStore.lichessUsername)
+                                        .textFieldStyle(.plain)
+                                        #if os(iOS)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .submitLabel(.done)
+                                        #endif
+                                        .onSubmit {
+                                            store.lockHandle(for: .lichess)
+                                            accountStatusMessage = "Lichess handle saved"
+                                            store.triggerHaptic(.success)
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+
+                                    Button("Save") {
+                                        store.lockHandle(for: .lichess)
+                                        accountStatusMessage = "Lichess handle saved"
+                                        store.triggerHaptic(.success)
+                                    }
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
+                                    .buttonStyle(.plain)
+
+                                    if !store.lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Button("Clear") {
+                                            store.clearHandle(for: .lichess)
+                                            accountStatusMessage = "Lichess handle cleared"
+                                            store.triggerHaptic(.move)
+                                        }
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 8)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Chess.com Username")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                HStack(spacing: 8) {
+                                    TextField("Enter Chess.com handle", text: $bindableStore.chessComUsername)
+                                        .textFieldStyle(.plain)
+                                        #if os(iOS)
+                                        .textInputAutocapitalization(.never)
+                                        .autocorrectionDisabled()
+                                        .submitLabel(.done)
+                                        #endif
+                                        .onSubmit {
+                                            store.lockHandle(for: .chesscom)
+                                            accountStatusMessage = "Chess.com handle saved"
+                                            store.triggerHaptic(.success)
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 8)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+
+                                    Button("Save") {
+                                        store.lockHandle(for: .chesscom)
+                                        accountStatusMessage = "Chess.com handle saved"
+                                        store.triggerHaptic(.success)
+                                    }
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
+                                    .buttonStyle(.plain)
+
+                                    if !store.chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        Button("Clear") {
+                                            store.clearHandle(for: .chesscom)
+                                            accountStatusMessage = "Chess.com handle cleared"
+                                            store.triggerHaptic(.move)
+                                        }
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 8)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            if let msg = accountStatusMessage {
+                                Text(msg)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                            } else {
+                                Text("Saved handles stay locked as a clean pill on the Games tab. Edit or clear them here anytime.")
+                                    .font(.caption2)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                        }
+                        .padding(16)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
                         // MARK: - 2. Copy Vibe, Engine Depth, Sound, Haptics & Celebrations
                         VStack(alignment: .leading, spacing: 14) {
