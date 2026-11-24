@@ -1,21 +1,25 @@
 import SwiftUI
 import BrillyDerCore
 
+public enum VaultTab: String, CaseIterable, Identifiable, Sendable {
+    case brilliant = "!! Brilliant"
+    case clutch = "Clutch"
+    case traps = "Traps"
+    case sweeps = "Sweeps"
+    case saved = "Saved"
+    public var id: String { rawValue }
+}
+
 public struct BrillyVaultSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    enum VaultTab: String, CaseIterable, Identifiable {
-        case brilliant = "!! Brilliant"
-        case clutch = "Clutch"
-        case traps = "Traps"
-        case sweeps = "Sweeps"
-        case saved = "Saved"
-        var id: String { rawValue }
-    }
-
-    @State private var selectedTab: VaultTab = .brilliant
+    @State private var selectedTab: VaultTab
     @State private var activeShareCard: BrillyShareCardPayload? = nil
+
+    public init(initialTab: VaultTab = .brilliant) {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     public var body: some View {
         let vault = store.vaultCollection
@@ -259,8 +263,12 @@ public struct BrillyVaultSheet: View {
             ForEach(store.bookmarks) { bm in
                 HStack(spacing: 10) {
                     Button {
-                        if store.analyzedGames.contains(where: { $0.id == bm.gameId }) {
-                            store.openGameAtPly(gameId: bm.gameId, ply: bm.ply)
+                        if let ag = store.analyzedGames.first(where: { $0.id == bm.gameId }) {
+                            dismiss()
+                            store.startAnalysis(for: ag.game, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
+                        } else if let rec = store.recentGames.first(where: { $0.id == bm.gameId }) {
+                            dismiss()
+                            store.startAnalysis(for: rec, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
                         } else {
                             dismiss()
                             store.openCustomFEN(bm.fen)

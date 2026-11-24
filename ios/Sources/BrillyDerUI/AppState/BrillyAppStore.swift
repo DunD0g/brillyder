@@ -54,6 +54,12 @@ public final class BrillyAppStore {
     public var selectedTrainMode: TrainSubMode = .daily
     public var showingSettings: Bool = false
     public var showingVault: Bool = false
+    public var vaultInitialTab: VaultTab = .brilliant
+
+    public func openVault(tab: VaultTab = .brilliant) {
+        vaultInitialTab = tab
+        showingVault = true
+    }
     // MARK: - Edition, StoreKit 2 & Entitlements
     public let edition: BrillyAppEdition
     public let storeKit: BrillyStoreKitManager
@@ -988,6 +994,35 @@ public final class BrillyAppStore {
         }
     }
 
+    /// Ensures imported PGNs & Broadcasts (which often have date-only headers without UTCTime)
+    /// always sort cleanly at the top of the Games list instead of getting buried under games played later today.
+    private func stampImportedGame(_ record: GameRecord) -> GameRecord {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000.0)
+        let stampedAt = max(record.createdAt, nowMs)
+        guard stampedAt != record.createdAt else { return record }
+        return GameRecord(
+            id: record.id,
+            source: record.source,
+            rated: record.rated,
+            variant: record.variant,
+            speed: record.speed,
+            perf: record.perf,
+            createdAt: stampedAt,
+            status: record.status,
+            winner: record.winner,
+            resultString: record.resultString,
+            timeControlLabel: record.timeControlLabel,
+            pgn: record.pgn,
+            openingName: record.openingName,
+            openingEco: record.openingEco,
+            openingPly: record.openingPly,
+            white: record.white,
+            black: record.black,
+            userColor: record.userColor,
+            url: record.url
+        )
+    }
+
     public func importLichessGameURL(_ urlOrId: String) async {
         syncTask?.cancel()
         syncGeneration &+= 1
@@ -1002,15 +1037,15 @@ public final class BrillyAppStore {
                 if self.syncGeneration == gen { self.isSyncing = false }
             }
             do {
-                let record = try await LichessClient.fetchSingleGame(
+                let rawRecord = try await LichessClient.fetchSingleGame(
                     urlOrId: urlOrId,
                     preferredUsername: active,
                     preferredUsernames: handles
                 )
                 guard self.syncGeneration == gen, !Task.isCancelled else { return }
-                if !self.recentGames.contains(where: { $0.id == record.id }) {
-                    self.recentGames.insert(record, at: 0)
-                }
+                let record = self.stampImportedGame(rawRecord)
+                self.recentGames.removeAll { $0.id == record.id }
+                self.recentGames.insert(record, at: 0)
                 self.startAnalysis(for: record)
             } catch is CancellationError {
                 return
@@ -1049,11 +1084,15 @@ public final class BrillyAppStore {
                 }
                 guard self.syncGeneration == gen, !Task.isCancelled else { return }
                 if !fetched.isEmpty {
-                    // Preserve pasted PGNs, analyzed games, and other-platform synced games while deduplicating by id
+                    // Preserve pasted PGNs, broadcast/imported games, analyzed games, bookmarked games, and other-platform games
                     let fetchedIds = Set(fetched.map(\.id))
+                    let bookmarkedGameIds = Set(self.bookmarks.map(\.gameId))
                     let preserved = self.recentGames.filter { rec in
                         rec.source != .sample && !fetchedIds.contains(rec.id) &&
-                        (rec.source != platform || self.analyzedGames.contains(where: { ag in ag.id == rec.id }))
+                        (rec.source == .pgn ||
+                         rec.source != platform ||
+                         self.analyzedGames.contains(where: { ag in ag.id == rec.id }) ||
+                         bookmarkedGameIds.contains(rec.id))
                     }
                     self.recentGames = (fetched + preserved).sorted { $0.createdAt > $1.createdAt }
                     self.triggerHaptic(.success)
@@ -1114,9 +1153,13 @@ public final class BrillyAppStore {
             guard !Task.isCancelled else { return }
             if !fetched.isEmpty {
                 let fetchedIds = Set(fetched.map(\.id))
+                let bookmarkedGameIds = Set(self.bookmarks.map(\.gameId))
                 let preserved = self.recentGames.filter { rec in
                     rec.source != .sample && !fetchedIds.contains(rec.id) &&
-                    (rec.source != resolvedPlatform || self.analyzedGames.contains(where: { ag in ag.id == rec.id }))
+                    (rec.source == .pgn ||
+                     rec.source != resolvedPlatform ||
+                     self.analyzedGames.contains(where: { ag in ag.id == rec.id }) ||
+                     bookmarkedGameIds.contains(rec.id))
                 }
                 self.recentGames = (fetched + preserved).sorted { $0.createdAt > $1.createdAt }
                 self.persistToDisk()
@@ -1208,14 +1251,14 @@ public final class BrillyAppStore {
     @discardableResult
     public func importAndAnalyzePGN(_ pgn: String) -> Bool {
         do {
-            let record = try LichessClient.parsePastedPGN(
+            let rawRecord = try LichessClient.parsePastedPGN(
                 pgn,
                 preferredUsername: activeUsername,
                 preferredUsernames: userHandles
             )
-            if !recentGames.contains(where: { $0.id == record.id }) {
-                recentGames.insert(record, at: 0)
-            }
+            let record = stampImportedGame(rawRecord)
+            recentGames.removeAll { $0.id == record.id }
+            recentGames.insert(record, at: 0)
             syncErrorMessage = nil
             startAnalysis(for: record)
             return true

@@ -116,7 +116,7 @@ public struct BrillyDerRootView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $bindableStore.showingVault) {
-            BrillyVaultSheet()
+            BrillyVaultSheet(initialTab: store.vaultInitialTab)
                 .environment(store)
                 .environment(\.brillyPieceSet, store.effectivePieceSet)
                 .presentationDetents([.large])
@@ -265,7 +265,7 @@ public struct BrillyDerRootView: View {
 
         ToolbarItem(placement: .automatic) {
             Button {
-                store.showingVault = true
+                store.openVault(tab: .brilliant)
             } label: {
                 HStack(spacing: 4) {
                     Text("!!")

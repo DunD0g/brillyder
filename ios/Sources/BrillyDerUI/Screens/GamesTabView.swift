@@ -21,8 +21,17 @@ public struct GamesTabView: View {
     private var filteredGames: [GameRecord] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let analyzedIds = Set(store.analyzedGames.map(\.id))
+        let bookmarkedGameIds = Set(store.bookmarks.map(\.gameId))
         let handles = store.userHandles
         return store.recentGames.filter { g in
+            if resultFilter == "Imported" {
+                let isImported = g.source == .pgn
+                    || g.pgn.contains("[Broadcast")
+                    || (g.url?.contains("/broadcast/") == true)
+                    || (g.url?.contains("/study/") == true)
+                if !isImported { return false }
+            }
+            if resultFilter == "Saved" && !bookmarkedGameIds.contains(g.id) { return false }
             if resultFilter == "Unanalyzed" && analyzedIds.contains(g.id) { return false }
             if ["W", "D", "L"].contains(resultFilter) && g.userResult(handles: handles) != resultFilter {
                 return false
@@ -220,7 +229,7 @@ public struct GamesTabView: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(["All", "Unanalyzed", "W", "D", "L"], id: \.self) { f in
+                            ForEach(["All", "Imported", "Saved", "Unanalyzed", "W", "D", "L"], id: \.self) { f in
                                 let sel = resultFilter == f
                                 Button(f == "W" ? "Wins" : (f == "D" ? "Draws" : (f == "L" ? "Losses" : f))) {
                                     resultFilter = f
@@ -484,7 +493,10 @@ public struct GamesTabView: View {
             .navigationTitle("Paste PGN / Lichess URL")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showingPgnSheet = false }
+                    Button("Cancel") {
+                        store.syncErrorMessage = nil
+                        showingPgnSheet = false
+                    }
                 }
             }
         }

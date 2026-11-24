@@ -307,30 +307,56 @@ public struct TrainTabView: View {
         .padding(16)
         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
 
-        // MARK: - 3. Quick Status Row (Replaces `0 Bookmarks` with Dynamic Daily Streak!)
+        // MARK: - 3. Quick Status Row (Tappable navigation cards)
         HStack(spacing: 12) {
-            statCard(
-                label: "Analyzed Games",
-                value: "\(store.analyzedGames.count)",
-                tint: BrillyPalette.brillyTeal
-            )
-            statCard(
-                label: "Mistake Deck",
-                value: "\(store.mistakeDeck.count)",
-                tint: BrillyPalette.blunderRose
-            )
+            Button {
+                store.selectedTab = .games
+                store.triggerHaptic(.move)
+            } label: {
+                statCard(
+                    label: "Analyzed Games",
+                    value: "\(store.analyzedGames.count)",
+                    tint: BrillyPalette.brillyTeal
+                )
+            }
+            .buttonStyle(BrillyPressScaleStyle())
+
+            Button {
+                store.selectedTrainMode = .mistakes
+                store.triggerHaptic(.move)
+            } label: {
+                statCard(
+                    label: "Mistake Deck",
+                    value: "\(store.mistakeDeck.count)",
+                    tint: BrillyPalette.blunderRose
+                )
+            }
+            .buttonStyle(BrillyPressScaleStyle())
+
             if store.bookmarks.isEmpty {
-                statCard(
-                    label: "Daily Streak",
-                    value: store.dailyStreakDays > 0 ? "🔥 \(store.dailyStreakDays)d" : "🔥 Start",
-                    tint: BrillyPalette.goldAmber
-                )
+                Button {
+                    store.selectedTrainMode = .daily
+                    store.triggerHaptic(.move)
+                } label: {
+                    statCard(
+                        label: "Daily Streak",
+                        value: store.dailyStreakDays > 0 ? "🔥 \(store.dailyStreakDays)d" : "🔥 Start",
+                        tint: BrillyPalette.goldAmber
+                    )
+                }
+                .buttonStyle(BrillyPressScaleStyle())
             } else {
-                statCard(
-                    label: "Bookmarks",
-                    value: "\(store.bookmarks.count)",
-                    tint: BrillyPalette.goldAmber
-                )
+                Button {
+                    store.openVault(tab: .saved)
+                    store.triggerHaptic(.move)
+                } label: {
+                    statCard(
+                        label: "Bookmarks",
+                        value: "\(store.bookmarks.count)",
+                        tint: BrillyPalette.goldAmber
+                    )
+                }
+                .buttonStyle(BrillyPressScaleStyle())
             }
         }
     }
