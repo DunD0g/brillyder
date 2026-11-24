@@ -293,16 +293,35 @@ public struct AnalyzeTabView: View {
             return (from: pair.0, to: pair.1)
         }()
 
+        let sandboxMaterial = sandboxBoard.materialBalance
         return ScrollView {
             VStack(spacing: 12) {
-                HStack {
+                HStack(spacing: 8) {
                     Label(
                         store.activeAnalyzedGame != nil ? "Explore Variation" : "Position Explorer",
                         systemImage: "arrow.triangle.branch"
                     )
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(BrillyPalette.brillyTeal)
-                    Spacer()
+                    .lineLimit(1)
+
+                    if let wBadge = sandboxMaterial.compactBadgeText(for: .white) {
+                        Text("W \(wBadge)")
+                            .font(.caption2.monospacedDigit().weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.white.opacity(0.12)))
+                    } else if let bBadge = sandboxMaterial.compactBadgeText(for: .black) {
+                        Text("B \(bBadge)")
+                            .font(.caption2.monospacedDigit().weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.white.opacity(0.12)))
+                    }
+
+                    Spacer(minLength: 4)
                     Button(store.activeAnalyzedGame != nil ? "Back to Game" : "Exit Explore") {
                         cancelLiveTasks()
                         botActive = false
@@ -692,10 +711,23 @@ public struct AnalyzeTabView: View {
                     }
                 }
 
-                // 1. Accuracy Summary Strip
+                // 1. Accuracy & Live Material Summary Strip
+                let material = board.materialBalance
                 HStack(spacing: 10) {
-                    playerSummaryPill(name: ag.game.white.name, acc: ag.whiteSummary.accuracy, elo: ag.whiteSummary.estimatedElo, isWhite: true)
-                    playerSummaryPill(name: ag.game.black.name, acc: ag.blackSummary.accuracy, elo: ag.blackSummary.estimatedElo, isWhite: false)
+                    playerSummaryPill(
+                        name: ag.game.white.name,
+                        acc: ag.whiteSummary.accuracy,
+                        elo: ag.whiteSummary.estimatedElo,
+                        isWhite: true,
+                        materialBadge: material.compactBadgeText(for: .white)
+                    )
+                    playerSummaryPill(
+                        name: ag.game.black.name,
+                        acc: ag.blackSummary.accuracy,
+                        elo: ag.blackSummary.estimatedElo,
+                        isWhite: false,
+                        materialBadge: material.compactBadgeText(for: .black)
+                    )
                 }
 
                 // 2. Live Eval Bar
@@ -1230,14 +1262,20 @@ public struct AnalyzeTabView: View {
         }
     }
 
-    private func playerSummaryPill(name: String, acc: Double, elo: Int, isWhite: Bool) -> some View {
+    private func playerSummaryPill(
+        name: String,
+        acc: Double,
+        elo: Int,
+        isWhite: Bool,
+        materialBadge: String? = nil
+    ) -> some View {
         let targetSide: PieceColor = isWhite ? .white : .black
         let isFocused = orientation == targetSide
-        return HStack(spacing: 8) {
+        return HStack(spacing: 7) {
             Circle()
                 .fill(isWhite ? Color.white : Color(hex: 0x1E293B))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
-                .frame(width: 14, height: 14)
+                .frame(width: 13, height: 13)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .font(.caption.weight(.semibold))
@@ -1246,12 +1284,26 @@ public struct AnalyzeTabView: View {
                 Text("\(String(format: "%.1f", acc))% · ~\(elo)")
                     .font(.caption2.monospacedDigit())
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.78)
                     .foregroundStyle(BrillyPalette.brillyTeal)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 2)
+            if let materialBadge {
+                Text(materialBadge)
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.11))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
+                    )
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: isFocused ? BrillyPalette.brillyTeal : nil)
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1264,7 +1316,7 @@ public struct AnalyzeTabView: View {
         .onLongPressGesture(minimumDuration: 0.4) {
             copyText(name, label: "Copied \(name)")
         }
-        .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy. Tap to view from \(isWhite ? "White" : "Black") side.")
+        .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy\(materialBadge.map { ", up \($0)" } ?? ""). Tap to view from \(isWhite ? "White" : "Black") side.")
     }
 
     private func headerIconBtn(

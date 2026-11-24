@@ -163,4 +163,27 @@ struct AppStoreReadinessTests {
         #expect(!BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: false))
         #expect(BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: true))
     }
+
+    @Test("ChessBoard.materialBalance computes exact piece & point differences cleanly")
+    func materialBalanceComputation() throws {
+        // Equal starting position
+        let start = ChessBoard().materialBalance
+        #expect(start.advantage(for: .white) == 0)
+        #expect(start.advantage(for: .black) == 0)
+        #expect(start.compactBadgeText(for: .white) == nil)
+        #expect(start.compactBadgeText(for: .black) == nil)
+
+        // Black up a Bishop (+3)
+        let blackUpBishop = try ChessBoard(fen: "r2q1rk1/pQp2pbp/3B2p1/5b2/8/2P5/PP4PP/3R1RK1 b - - 0 20").materialBalance
+        #expect(blackUpBishop.advantage(for: .black) == 3)
+        #expect(blackUpBishop.advantage(for: .white) == 0)
+        #expect(blackUpBishop.blackExtraPieces == [.bishop])
+        #expect(blackUpBishop.compactBadgeText(for: .black)?.contains("+3") == true)
+
+        // White up a Queen (+9)
+        let whiteUpQueen = try ChessBoard(fen: "4k3/8/8/8/8/8/3Q4/4K3 w - - 0 1").materialBalance
+        #expect(whiteUpQueen.advantage(for: .white) == 9)
+        #expect(whiteUpQueen.whiteExtraPieces == [.queen])
+        #expect(whiteUpQueen.compactBadgeText(for: .white)?.contains("+9") == true)
+    }
 }

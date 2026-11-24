@@ -44,9 +44,56 @@ public struct EngineScore: Codable, Hashable, Sendable {
 }
 
 public struct MaterialBalance: Hashable, Sendable {
+    /// Signed material score from White's perspective (`whitePoints - blackPoints`).
     public let whiteAdvantage: Int
     public let capturedByWhite: [PieceType]
     public let capturedByBlack: [PieceType]
+    public let whiteExtraPieces: [PieceType]
+    public let blackExtraPieces: [PieceType]
+
+    public init(
+        whiteAdvantage: Int,
+        capturedByWhite: [PieceType],
+        capturedByBlack: [PieceType],
+        whiteExtraPieces: [PieceType] = [],
+        blackExtraPieces: [PieceType] = []
+    ) {
+        self.whiteAdvantage = whiteAdvantage
+        self.capturedByWhite = capturedByWhite
+        self.capturedByBlack = capturedByBlack
+        self.whiteExtraPieces = whiteExtraPieces
+        self.blackExtraPieces = blackExtraPieces
+    }
+
+    /// Non-negative material lead for `color` (0 if equal or behind).
+    public func advantage(for color: PieceColor) -> Int {
+        color == .white ? max(0, whiteAdvantage) : max(0, -whiteAdvantage)
+    }
+
+    /// Net extra piece types held by `color` compared to opponent (ordered Q, R, B, N, P).
+    public func extraPieces(for color: PieceColor) -> [PieceType] {
+        color == .white ? whiteExtraPieces : blackExtraPieces
+    }
+
+    /// Compact monochrome chess glyphs + point lead (e.g. `"♝ +3"`), using U+FE0E so iOS never renders pawn as an emoji.
+    public func compactBadgeText(for color: PieceColor, maxIcons: Int = 2) -> String? {
+        let adv = advantage(for: color)
+        guard adv > 0 else { return nil }
+        let pieces = extraPieces(for: color)
+        let glyphs = pieces.prefix(maxIcons).map { Self.textGlyph(for: $0) }.joined()
+        return glyphs.isEmpty ? "+\(adv)" : "\(glyphs) +\(adv)"
+    }
+
+    private static func textGlyph(for type: PieceType) -> String {
+        switch type {
+        case .queen:  return "♛\u{FE0E}"
+        case .rook:   return "♜\u{FE0E}"
+        case .bishop: return "♝\u{FE0E}"
+        case .knight: return "♞\u{FE0E}"
+        case .pawn:   return "♟\u{FE0E}"
+        case .king:   return ""
+        }
+    }
 }
 
 public enum ChessMath {
@@ -202,18 +249,27 @@ public enum ChessMath {
         let order: [PieceType] = [.queen, .rook, .bishop, .knight, .pawn]
         var capByWhite: [PieceType] = []
         var capByBlack: [PieceType] = []
+        var wExtra: [PieceType] = []
+        var bExtra: [PieceType] = []
 
         for t in order {
-            let missingBlack = max(0, (startCounts[t] ?? 0) - (curB[t] ?? 0))
-            let missingWhite = max(0, (startCounts[t] ?? 0) - (curW[t] ?? 0))
+            let wCnt = curW[t] ?? 0
+            let bCnt = curB[t] ?? 0
+            let missingBlack = max(0, (startCounts[t] ?? 0) - bCnt)
+            let missingWhite = max(0, (startCounts[t] ?? 0) - wCnt)
             if missingBlack > 0 { capByWhite.append(contentsOf: repeatElement(t, count: missingBlack)) }
             if missingWhite > 0 { capByBlack.append(contentsOf: repeatElement(t, count: missingWhite)) }
+            let net = wCnt - bCnt
+            if net > 0 { wExtra.append(contentsOf: repeatElement(t, count: net)) }
+            else if net < 0 { bExtra.append(contentsOf: repeatElement(t, count: -net)) }
         }
 
         return MaterialBalance(
             whiteAdvantage: wPts - bPts,
             capturedByWhite: capByWhite,
-            capturedByBlack: capByBlack
+            capturedByBlack: capByBlack,
+            whiteExtraPieces: wExtra,
+            blackExtraPieces: bExtra
         )
     }
 

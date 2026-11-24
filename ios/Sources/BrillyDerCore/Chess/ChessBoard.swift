@@ -859,4 +859,8 @@ public struct ChessBoard: Hashable, Sendable {
         (1, 0), (-1, 0), (0, 1), (0, -1),
         (1, 1), (1, -1), (-1, 1), (-1, -1),
     ]
+
+    public var materialBalance: MaterialBalance {
+        ChessMath.materialBalance(in: self)
+    }
 }
