@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Crisp, native emoji-style reaction medallion for the default `Brilly/Der` theme:
-/// - Positive / Brilliant / Great / Best moves: glowing thumbs-up (`👍`) with painterly sparkles ("Very nice, Brilly!!")
-/// - Mistake / Blunder moves: comical facepalm (`🤦`) with comic shock lines & sweat drop ("Blun-DER!!")
+/// - Brilliant moves: mind-blown exploding head (`🤯`) with glowing sparkles ("Very nice, Brilly!!")
+/// - Blunder moves: comical facepalm (`🤦`) with comic shock lines & sweat drop ("Blun-DER!!")
 public struct BrillyGhibliBuddyView: View {
     public let mood: BrillyAlienMood
     public let size: CGFloat
@@ -22,7 +22,11 @@ public struct BrillyGhibliBuddyView: View {
 
     private var emojiGlyph: String {
         switch mood {
-        case .brilliant, .great, .best:
+        case .brilliant:
+            return "🤯"
+        case .great:
+            return "🔥"
+        case .best:
             return "👍"
         case .book:
             return "📖"
@@ -87,8 +91,8 @@ public struct BrillyGhibliBuddyView: View {
 
             // Crisp native Apple emoji
             Text(emojiGlyph)
-                .font(.system(size: size * 0.54))
-                .rotationEffect(.degrees(isBlunder ? 5 : (isNegativeMood ? 0 : -6)))
+                .font(.system(size: size * 0.56))
+                .rotationEffect(.degrees(isBlunder ? 5 : (mood == .best ? -6 : 0)))
                 .shadow(color: Color.black.opacity(0.35), radius: 3, y: 2)
 
             // Expressive vector sparkles (positive) or comic sweat/shock accents (negative)

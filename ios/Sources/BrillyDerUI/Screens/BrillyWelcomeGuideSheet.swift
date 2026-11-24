@@ -200,8 +200,8 @@ public struct BrillyWelcomeGuideSheet: View {
                 mascotOptionRow(
                     style: .brillyDer,
                     badge: "DEFAULT",
-                    title: "Brilly/Der (Thumbs-Up & Facepalm)",
-                    subtitle: "Playful 👍 & 🤦 badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
+                    title: "Brilly/Der (Mind-Blown & Facepalm)",
+                    subtitle: "Playful 🤯 & 🤦 badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
                 ) {
                     BrillyGhibliBuddyView(mood: .brilliant, size: 46)
                 }
