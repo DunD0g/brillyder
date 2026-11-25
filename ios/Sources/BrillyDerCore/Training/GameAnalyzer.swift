@@ -27,24 +27,40 @@ public enum GameAnalyzer {
         let tcInc = PGNParser.parseTimeControl(parsed.headers["TimeControl"])?.incrementSeconds ?? 0.0
         onProgress?(0, max(1, totalPlies))
 
-        let initialEvalResult = try await engine.analyze(
-            fen: parsed.startFen,
-            depth: preset.rawValue,
-            multiPV: 2,
-            maxTimeMs: preset.maxTimeMs
-        )
+        var cloudEnabled = preset.usesCloudEval
+        var consecutiveCloudMisses = 0
+
+        func evaluatePosition(_ fen: String) async throws -> EngineEval {
+            if cloudEnabled {
+                switch await LichessCloudEvalClient.probe(fen: fen, multiPV: 2) {
+                case .hit(let cloudEval):
+                    consecutiveCloudMisses = 0
+                    return cloudEval
+                case .rateLimited:
+                    cloudEnabled = false
+                case .miss:
+                    consecutiveCloudMisses += 1
+                    if consecutiveCloudMisses >= 4 {
+                        cloudEnabled = false
+                    }
+                }
+            }
+            return try await engine.analyze(
+                fen: fen,
+                depth: preset.searchDepth,
+                multiPV: 2,
+                maxTimeMs: preset.maxTimeMs
+            )
+        }
+
+        let initialEvalResult = try await evaluatePosition(parsed.startFen)
 
         var evalByPlyIndex: [EngineEval] = [initialEvalResult]
         evalByPlyIndex.reserveCapacity(totalPlies + 1)
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
             try Task.checkCancellation()
-            let eval = try await engine.analyze(
-                fen: pgnMove.applied.afterFen,
-                depth: preset.rawValue,
-                multiPV: 2,
-                maxTimeMs: preset.maxTimeMs
-            )
+            let eval = try await evaluatePosition(pgnMove.applied.afterFen)
             evalByPlyIndex.append(eval)
             onProgress?(idx + 1, max(1, totalPlies))
         }

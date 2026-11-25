@@ -1376,6 +1376,10 @@ public final class BrillyAppStore {
     }
 
     public func reanalyzeActiveGame(preset: AnalysisDepthPreset, currentPly: Int? = nil) {
+        if preset.isSingleGameOnly && !hasProAccess {
+            openProPaywall(feature: "Ultra & Stockfish 16 Cloud Review")
+            return
+        }
         analysisPreset = preset
         guard let ag = activeAnalyzedGame else { return }
         startAnalysis(
@@ -1414,7 +1418,7 @@ public final class BrillyAppStore {
         batchCurrentLabel = "Game 1 of \(targets.count) · Preparing…"
         triggerHaptic(.move)
 
-        let preset: AnalysisDepthPreset = analysisPreset
+        let preset: AnalysisDepthPreset = analysisPreset.isSingleGameOnly ? .deep : analysisPreset
         let engineRef = engine
         let totalGames = targets.count
 

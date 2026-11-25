@@ -331,4 +331,37 @@ struct AppStoreReadinessTests {
                 == .game(id: "AbCdEfGh")
         )
     }
+
+    @Test("Ultra & Cloud SF presets stay single-game-only and LichessCloudEvalClient decodes SF16 cloud responses cleanly")
+    func ultraAndCloudEvalSupport() throws {
+        #expect(AnalysisDepthPreset.batchPresets == [.fast, .balanced, .deep])
+        #expect(AnalysisDepthPreset.ultra.isSingleGameOnly)
+        #expect(!AnalysisDepthPreset.ultra.usesCloudEval)
+        #expect(AnalysisDepthPreset.cloudUltra.isSingleGameOnly)
+        #expect(AnalysisDepthPreset.cloudUltra.usesCloudEval)
+        #expect(AnalysisDepthPreset.cloudUltra.sfSymbol == "cloud.bolt.fill")
+
+        let sampleJSON = """
+        {
+          "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          "knodes": 482000,
+          "depth": 44,
+          "pvs": [
+            { "moves": "c7c5 g1f3 d7d6 d2d4", "cp": 28 },
+            { "moves": "e7e5 g1f3 b8c6", "cp": 34 }
+          ]
+        }
+        """
+        let decoded = try #require(
+            LichessCloudEvalClient.decodeCloudEval(
+                data: Data(sampleJSON.utf8),
+                fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+            )
+        )
+        #expect(decoded.depth == 44)
+        #expect(decoded.bestMoveUci == "c7c5")
+        #expect(decoded.score.cpWhite == 28)
+        #expect(decoded.lines.count == 2)
+        #expect(decoded.lines[1].bestMoveUci == "e7e5")
+    }
 }

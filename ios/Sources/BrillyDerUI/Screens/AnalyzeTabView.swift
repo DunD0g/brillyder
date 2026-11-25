@@ -695,37 +695,57 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .lineLimit(1)
 
+                    let activePreset = store.analysisPreset
+                    let depthPillTint: Color = activePreset.usesCloudEval
+                        ? BrillyPalette.warpPurpleText
+                        : (activePreset == .ultra ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
+
                     Menu {
-                        ForEach(AnalysisDepthPreset.allCases) { preset in
+                        ForEach(AnalysisDepthPreset.batchPresets) { preset in
                             Button {
                                 store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
                                 store.triggerHaptic(.move)
                             } label: {
                                 Label(
-                                    preset.title,
-                                    systemImage: store.analysisPreset == preset ? "checkmark" : "cpu"
+                                    "\(preset.title) · \(preset.eloEstimate)",
+                                    systemImage: activePreset == preset ? "checkmark" : preset.sfSymbol
+                                )
+                            }
+                        }
+                        Divider()
+                        ForEach([AnalysisDepthPreset.ultra, .cloudUltra]) { preset in
+                            Button {
+                                store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
+                                store.triggerHaptic(.move)
+                            } label: {
+                                let labelText = store.hasProAccess
+                                    ? "\(preset.title) · \(preset.eloEstimate)"
+                                    : "\(preset.title) · \(preset.eloEstimate) (Pro)"
+                                Label(
+                                    labelText,
+                                    systemImage: !store.hasProAccess ? "lock.fill" : (activePreset == preset ? "checkmark" : preset.sfSymbol)
                                 )
                             }
                         }
                     } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 9.5, weight: .bold))
-                            Text(store.analysisPreset.title)
+                        HStack(spacing: 4) {
+                            Image(systemName: activePreset.sfSymbol)
+                                .font(.system(size: 10, weight: .bold))
+                            Text(activePreset.title)
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
                         }
-                        .foregroundStyle(BrillyPalette.brillyTeal)
-                        .padding(.horizontal, 8)
+                        .foregroundStyle(depthPillTint)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .background(
                             Capsule()
-                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
-                                .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.36), lineWidth: 0.9))
+                                .fill(depthPillTint.opacity(0.15))
+                                .overlay(Capsule().strokeBorder(depthPillTint.opacity(0.40), lineWidth: 0.9))
                         )
                     }
-                    .accessibilityLabel("Engine preset \(store.analysisPreset.title). Tap to change depth and re-analyze.")
+                    .accessibilityLabel("Engine preset \(activePreset.title), \(activePreset.eloEstimate). Tap to change depth and re-analyze.")
 
                     Spacer(minLength: 4)
 
@@ -736,12 +756,17 @@ public struct AnalyzeTabView: View {
                             onTap: { goToPly(0, maxPly: ag.plies.count) },
                             onHold: { jumpToKeyMoment(in: ag, forward: false) }
                         )
+                        .opacity(clampedPly == 0 ? 0.35 : 1.0)
+                        .disabled(clampedPly == 0)
+
                         headerIconBtn(
                             "forward.end.fill",
                             label: "Last move (hold for next key moment)",
                             onTap: { goToPly(ag.plies.count, maxPly: ag.plies.count) },
                             onHold: { jumpToKeyMoment(in: ag, forward: true) }
                         )
+                        .opacity(clampedPly >= ag.plies.count ? 0.35 : 1.0)
+                        .disabled(clampedPly >= ag.plies.count)
                         headerIconBtn("arrow.up.arrow.down", label: "Flip board", onTap: {
                             orientation = orientation.opposite
                         })
@@ -960,6 +985,8 @@ public struct AnalyzeTabView: View {
                 }
 
                 // 4. Spacious Un-Squished Transport Bar (< Hold-Turbo | AUTO/PAUSE | > Hold-Turbo | 1x/2x/3x)
+                let atStartOfGame = clampedPly <= 0
+                let atEndOfGame = clampedPly >= ag.plies.count
                 BrillyGlassCluster(style: store.surfaceStyle, spacing: 8) {
                     HStack(spacing: 8) {
                         turboTransportBtn(
@@ -969,6 +996,8 @@ public struct AnalyzeTabView: View {
                             delta: -1,
                             maxPly: ag.plies.count
                         )
+                        .opacity(atStartOfGame ? 0.30 : 1.0)
+                        .allowsHitTesting(!atStartOfGame)
 
                         Button {
                             if !isAutoPlaying {
@@ -1011,10 +1040,12 @@ public struct AnalyzeTabView: View {
                         turboTransportBtn(
                             icon: "chevron.right",
                             turboIcon: "chevron.right.2",
-                            label: "Next move (hold to turbo forward)",
+                            label: atEndOfGame ? "End of game" : "Next move (hold to turbo forward)",
                             delta: 1,
                             maxPly: ag.plies.count
                         )
+                        .opacity(atEndOfGame ? 0.30 : 1.0)
+                        .allowsHitTesting(!atEndOfGame)
 
                         Text("\(autoPlaySpeed)x")
                             .font(.subheadline.monospacedDigit().weight(.black))
@@ -1124,6 +1155,36 @@ public struct AnalyzeTabView: View {
                         Text(ap.coaching.detail)
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.inkSecondary)
+
+                        if clampedPly == ag.plies.count && !retryMode {
+                            let endBannerText: String = {
+                                switch ag.game.resultString {
+                                case "1-0": return "Final Move · White Wins (1–0)"
+                                case "0-1": return "Final Move · Black Wins (0–1)"
+                                case "1/2-1/2": return "Final Move · Game Drawn (½–½)"
+                                default: return "Final Move · End of Recorded Game"
+                                }
+                            }()
+                            HStack(spacing: 6) {
+                                Image(systemName: "flag.checkered")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                Text(endBannerText)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(BrillyPalette.goldAmber.opacity(0.13))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(BrillyPalette.goldAmber.opacity(0.32), lineWidth: 0.8)
+                                    )
+                            )
+                        }
 
                         if let lines = ap.topLines, !lines.isEmpty, !retryMode {
                             VStack(alignment: .leading, spacing: 4) {

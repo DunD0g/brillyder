@@ -420,16 +420,68 @@ public struct CockpitSettingsSheet: View {
 
                             Divider().overlay(Color.white.opacity(0.1))
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Analysis Depth")
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Default & Batch Engine Depth")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
-                                Picker("Depth", selection: $bindableStore.analysisPreset) {
-                                    ForEach(AnalysisDepthPreset.allCases) { p in
+
+                                let batchSelectionBinding = Binding<AnalysisDepthPreset>(
+                                    get: { store.analysisPreset.isSingleGameOnly ? .deep : store.analysisPreset },
+                                    set: { store.analysisPreset = $0 }
+                                )
+                                Picker("Depth", selection: batchSelectionBinding) {
+                                    ForEach(AnalysisDepthPreset.batchPresets) { p in
                                         Text(p.title).tag(p)
                                     }
                                 }
                                 .pickerStyle(.segmented)
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("ENGINE STRENGTH GUIDE")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .tracking(0.8)
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+
+                                    ForEach(AnalysisDepthPreset.allCases) { preset in
+                                        HStack(alignment: .top, spacing: 7) {
+                                            Image(systemName: preset.sfSymbol)
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(
+                                                    preset.usesCloudEval ? BrillyPalette.warpPurpleText :
+                                                    (preset == .ultra ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
+                                                )
+                                                .frame(width: 14)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                HStack(spacing: 5) {
+                                                    Text(preset.title)
+                                                        .font(.caption2.weight(.bold))
+                                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                                    Text("· \(preset.eloEstimate)")
+                                                        .font(.caption2.monospacedDigit().weight(.semibold))
+                                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                                    if preset.isSingleGameOnly {
+                                                        Text("PRO")
+                                                            .font(.system(size: 8.5, weight: .black, design: .rounded))
+                                                            .foregroundStyle(BrillyPalette.voidBg)
+                                                            .padding(.horizontal, 5)
+                                                            .padding(.vertical, 1)
+                                                            .background(Capsule().fill(BrillyPalette.warpPurpleText))
+                                                    }
+                                                }
+                                                Text(preset.detailSummary)
+                                                    .font(.system(size: 10.5))
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                            }
+                                        }
+                                    }
+
+                                    Text("*Cloud SF queries Lichess's free Stockfish 16 cloud cache when online (marked with ☁️) and falls back to Ultra on-device when offline. Switch anytime via the depth pill next to Analyze.")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
+                                        .padding(.top, 2)
+                                }
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05)))
                             }
 
                             Divider().overlay(Color.white.opacity(0.1))

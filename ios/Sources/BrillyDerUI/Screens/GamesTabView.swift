@@ -383,19 +383,22 @@ public struct GamesTabView: View {
                     }
                     Spacer(minLength: 4)
                     Menu {
-                        ForEach(AnalysisDepthPreset.allCases) { preset in
+                        ForEach(AnalysisDepthPreset.batchPresets) { preset in
                             Button {
                                 store.analysisPreset = preset
                                 store.triggerHaptic(.move)
                             } label: {
-                                Label(preset.title, systemImage: store.analysisPreset == preset ? "checkmark" : "cpu")
+                                Label(
+                                    "\(preset.title) · \(preset.eloEstimate)",
+                                    systemImage: (store.analysisPreset == preset || (store.analysisPreset.isSingleGameOnly && preset == .deep)) ? "checkmark" : "cpu"
+                                )
                             }
                         }
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "cpu")
                                 .font(.system(size: 10, weight: .bold))
-                            Text(store.analysisPreset.title)
+                            Text(store.analysisPreset.isSingleGameOnly ? "Deep" : store.analysisPreset.title)
                                 .font(.caption2.weight(.bold))
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.system(size: 8.5, weight: .bold))
