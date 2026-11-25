@@ -58,44 +58,54 @@ public struct TrainTabView: View {
                     }
                     .padding(.top, 2)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TrainSubMode.allCases) { mode in
-                                let sel = store.selectedTrainMode == mode
-                                let isProMode = (mode == .woodpecker || mode == .conversion || mode == .labs)
-                                let locked = isProMode && !store.hasProAccess
-                                let title = mode == .daily ? "\(store.effectiveDailyDuration.label) Coach" : mode.rawValue
-                                Button {
-                                    if locked {
-                                        let feat: String = switch mode {
-                                        case .woodpecker: "Woodpecker Cycles"
-                                        case .conversion: "Advantage Conversion Drills"
-                                        case .labs: "Endgame & Vision Labs"
-                                        default: "Brilly/Der Pro"
-                                        }
-                                        store.openProPaywall(feature: feat)
-                                        return
-                                    }
-                                    withAnimation(.snappy) {
-                                        store.selectedTrainMode = mode
-                                    }
-                                    store.triggerHaptic(.move)
-                                } label: {
-                                    HStack(spacing: 4) {
-                                        Text(title)
-                                        if locked {
-                                            Image(systemName: "lock.fill")
-                                                .font(.system(size: 9, weight: .bold))
-                                        }
-                                    }
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                    .padding(.horizontal, 13)
-                                    .padding(.vertical, 8)
-                                    .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                    // Compact zero-scroll 5-mode segmented pill bar
+                    HStack(spacing: 5) {
+                        ForEach(TrainSubMode.allCases) { mode in
+                            let sel = store.selectedTrainMode == mode
+                            let isProMode = (mode == .woodpecker || mode == .conversion || mode == .labs)
+                            let locked = isProMode && !store.hasProAccess
+                            let title: String = {
+                                switch mode {
+                                case .daily: return "FSRS"
+                                case .woodpecker: return "Cycles"
+                                case .conversion: return "Convert"
+                                case .mistakes: return "Mistakes"
+                                case .labs: return "Labs"
                                 }
-                                .buttonStyle(.plain)
+                            }()
+                            Button {
+                                if locked {
+                                    let feat: String = switch mode {
+                                    case .woodpecker: "Woodpecker Cycles"
+                                    case .conversion: "Advantage Conversion Drills"
+                                    case .labs: "Endgame, Escape & Vision Labs"
+                                    default: "Brilly/Der Pro"
+                                    }
+                                    store.openProPaywall(feature: feat)
+                                    return
+                                }
+                                withAnimation(.snappy) {
+                                    store.selectedTrainMode = mode
+                                }
+                                store.triggerHaptic(.move)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(title)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.78)
+                                    if locked {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 8.5, weight: .bold))
+                                    }
+                                }
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 

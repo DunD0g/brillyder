@@ -104,10 +104,12 @@ public struct TrainLabsView: View {
                                             .foregroundStyle(BrillyPalette.brillyTeal)
                                     }
                                 }
-                                Text(drill.title)
+                                let displayTitle = maskedEndgameTitle(drill.title)
+                                Text(displayTitle.text)
                                     .font(.subheadline.weight(.bold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                                     .lineLimit(1)
+                                    .blur(radius: displayTitle.isBlurred ? 5 : 0)
                                 Text(drill.keyIdea)
                                     .font(.caption2)
                                     .foregroundStyle(BrillyPalette.inkSecondary)
@@ -247,6 +249,19 @@ public struct TrainLabsView: View {
         case .desperadoRook: return BrillyPalette.warpPurpleText
         case .perpetualSave: return BrillyPalette.goldAmber
         }
+    }
+
+    private func maskedEndgameTitle(_ rawTitle: String) -> (text: String, isBlurred: Bool) {
+        guard store.effectiveCreatorNameMask != .off,
+              rawTitle.hasPrefix("vs ") else {
+            return (rawTitle, false)
+        }
+        let body = String(rawTitle.dropFirst(3))
+        let parts = body.components(separatedBy: " · ")
+        let rawOpp = parts.first ?? body
+        let suffix = parts.count > 1 ? " · " + parts.dropFirst().joined(separator: " · ") : ""
+        let masked = store.maskedPlayerName(rawOpp, opponent: nil, side: .black)
+        return ("vs \(masked.text)\(suffix)", masked.isBlurred)
     }
 }
 

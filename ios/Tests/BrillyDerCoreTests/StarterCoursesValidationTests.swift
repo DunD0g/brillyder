@@ -91,6 +91,25 @@ struct StarterCoursesValidationTests {
             for (idx, uci) in puzzle.solutionUcis.enumerated() {
                 let applied = try board.apply(uci: uci)
                 #expect(applied.san == puzzle.solutionSans[idx], "SAN mismatch in \(puzzle.id) step \(idx)")
+
+                // After user's first move (idx == 0), verify EVERY legal opponent reply is strictly forced!
+                if idx == 0 {
+                    let oppReplies = board.legalMoves()
+                    #expect(!oppReplies.isEmpty, "Expected opponent replies in \(puzzle.id)")
+                    switch puzzle.theme {
+                    case .stalemateSac, .desperadoRook:
+                        for reply in oppReplies {
+                            var testBoard = board
+                            _ = try testBoard.apply(reply)
+                            #expect(
+                                testBoard.outcome == .stalemate,
+                                "Opponent reply \(reply.uci) escapes stalemate in \(puzzle.id)!"
+                            )
+                        }
+                    case .perpetualSave:
+                        #expect(oppReplies.count == 1, "Expected 100% forced reply to check 1 in \(puzzle.id)")
+                    }
+                }
             }
 
             switch puzzle.theme {
@@ -100,7 +119,17 @@ struct StarterCoursesValidationTests {
                 #expect(board.outcome == .stalemate, "Expected .stalemate outcome in \(puzzle.id)")
             case .perpetualSave:
                 #expect(board.isInCheck(board.turn), "Expected final perpetual move to deliver check in \(puzzle.id)")
-                #expect(!board.legalMoves().isEmpty, "Expected opponent to have forced escape reply in \(puzzle.id)")
+                let replies2 = board.legalMoves()
+                #expect(replies2.count == 1, "Expected 100% forced reply to check 2 in \(puzzle.id)")
+                // Verify the perpetual shuttle repeats cleanly
+                if let forcedReply = replies2.first {
+                    var repeatBoard = board
+                    _ = try repeatBoard.apply(forcedReply)
+                    let repeatFrom = String(puzzle.solutionUcis[2].suffix(2))
+                    let repeatTo = String(puzzle.solutionUcis[0].suffix(2))
+                    _ = try repeatBoard.apply(uci: repeatFrom + repeatTo)
+                    #expect(repeatBoard.isInCheck(repeatBoard.turn), "Expected perpetual check to repeat in \(puzzle.id)")
+                }
             }
         }
     }
