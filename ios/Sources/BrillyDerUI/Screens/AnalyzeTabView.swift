@@ -746,8 +746,11 @@ public struct AnalyzeTabView: View {
                     )
                 }
 
-                // 1. Accuracy & Live Material Summary Strip
+                // 1. Accuracy, Live Clock & Live Material Summary Strip
                 let material = board.materialBalance
+                let whiteClock = latestClock(in: ag, upToPly: clampedPly, for: .white)
+                let blackClock = latestClock(in: ag, upToPly: clampedPly, for: .black)
+                let gameOngoingAtPly = clampedPly < ag.plies.count
                 HStack(spacing: 10) {
                     playerSummaryPill(
                         name: maskedWhite.text,
@@ -757,6 +760,9 @@ public struct AnalyzeTabView: View {
                         elo: ag.whiteSummary.estimatedElo,
                         isWhite: true,
                         materialBadge: material.compactBadgeText(for: .white),
+                        clockDisplay: whiteClock?.display,
+                        clockSeconds: whiteClock?.seconds,
+                        isClockActive: gameOngoingAtPly && board.turn == .white,
                         exhibitionTheme: exhibitionTheme
                     )
                     playerSummaryPill(
@@ -767,6 +773,9 @@ public struct AnalyzeTabView: View {
                         elo: ag.blackSummary.estimatedElo,
                         isWhite: false,
                         materialBadge: material.compactBadgeText(for: .black),
+                        clockDisplay: blackClock?.display,
+                        clockSeconds: blackClock?.seconds,
+                        isClockActive: gameOngoingAtPly && board.turn == .black,
                         exhibitionTheme: exhibitionTheme
                     )
                 }
@@ -912,6 +921,31 @@ public struct AnalyzeTabView: View {
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(BrillyPalette.color(for: ap.classification)))
+
+                            if let spent = ap.timeSpentSeconds {
+                                let spentText = formatMoveDuration(spent)
+                                let isImpulse = ap.clockTag == "impulse"
+                                let isTimeTrouble = ap.clockTag == "time-trouble"
+                                let pillText = isImpulse
+                                    ? "⚡ \(spentText) · Impulse"
+                                    : (isTimeTrouble ? "⏱ \(spentText) · Time Trouble" : "⏱ \(spentText)")
+                                let pillColor: Color = isTimeTrouble
+                                    ? BrillyPalette.blunderRose
+                                    : (isImpulse ? BrillyPalette.goldAmber : BrillyPalette.inkSecondary)
+
+                                Text(pillText)
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                    .foregroundStyle(pillColor)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        Capsule()
+                                            .fill(pillColor.opacity(isTimeTrouble || isImpulse ? 0.16 : 0.10))
+                                            .overlay(Capsule().strokeBorder(pillColor.opacity(0.28), lineWidth: 0.7))
+                                    )
+                            }
                             Spacer(minLength: 4)
                             if ap.classification == .blunder || ap.classification == .mistake {
                                 Button(retryMode ? "Exit Retry" : "Retry") {
@@ -1311,6 +1345,9 @@ public struct AnalyzeTabView: View {
         elo: Int,
         isWhite: Bool,
         materialBadge: String? = nil,
+        clockDisplay: String? = nil,
+        clockSeconds: Double? = nil,
+        isClockActive: Bool = false,
         exhibitionTheme: CreatorExhibitionTheme = .none
     ) -> some View {
         let targetSide: PieceColor = isWhite ? .white : .black
@@ -1320,6 +1357,13 @@ public struct AnalyzeTabView: View {
                 return exhibitionTheme.accentColor
             }
             return isFocused ? BrillyPalette.brillyTeal : nil
+        }()
+        let clockTint: Color = {
+            if let secs = clockSeconds {
+                if secs < 30 { return BrillyPalette.blunderRose }
+                if secs < 60 { return BrillyPalette.goldAmber }
+            }
+            return isClockActive ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary
         }()
         return HStack(spacing: 7) {
             Circle()
@@ -1339,19 +1383,44 @@ public struct AnalyzeTabView: View {
                     .foregroundStyle(exhibitionTheme != .none ? exhibitionTheme.accentColor : BrillyPalette.brillyTeal)
             }
             Spacer(minLength: 2)
-            if let materialBadge {
-                Text(materialBadge)
-                    .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .foregroundStyle(BrillyPalette.inkPrimary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(Color.white.opacity(0.11))
-                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
-                    )
+            if clockDisplay != nil || materialBadge != nil {
+                VStack(alignment: .trailing, spacing: 3) {
+                    if let clockDisplay {
+                        let isLowTime = (clockSeconds ?? 999) < 60
+                        Text(clockDisplay)
+                            .font(.system(size: 11, weight: .black, design: .monospaced))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .foregroundStyle(clockTint)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(isLowTime || isClockActive ? clockTint.opacity(0.16) : Color.white.opacity(0.08))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .strokeBorder(
+                                                isLowTime || isClockActive ? clockTint.opacity(0.45) : Color.white.opacity(0.12),
+                                                lineWidth: isClockActive || isLowTime ? 0.9 : 0.6
+                                            )
+                                    )
+                            )
+                    }
+                    if let materialBadge {
+                        Text(materialBadge)
+                            .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                            .padding(.horizontal, 5.5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.white.opacity(0.11))
+                                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7))
+                            )
+                    }
+                }
             }
         }
         .padding(.horizontal, 10)
@@ -1435,5 +1504,70 @@ public struct AnalyzeTabView: View {
                 .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: isTurbo ? BrillyPalette.brillyTeal : nil, interactive: true)
         }
         .accessibilityLabel(label)
+    }
+
+    // MARK: - Live Chess Clock Helpers
+
+    private func latestClock(
+        in ag: AnalyzedGame,
+        upToPly: Int,
+        for color: PieceColor
+    ) -> (seconds: Double?, display: String)? {
+        let hasAnyClock = ag.plies.contains { $0.clockSeconds != nil || $0.clockText != nil }
+        guard hasAnyClock else { return nil }
+
+        let clamped = max(0, min(upToPly, ag.plies.count))
+        for ply in ag.plies.prefix(clamped).reversed() where ply.color == color {
+            if let secs = ply.clockSeconds {
+                return (secs, formatChessClock(secs))
+            }
+            if let txt = ply.clockText, !txt.isEmpty {
+                return (nil, txt)
+            }
+        }
+
+        // Before this side's first move (ply 0 or ply 1 for Black), show initial time control or first recorded clock
+        if let firstSidePly = ag.plies.first(where: { $0.color == color && ($0.clockSeconds != nil || $0.clockText != nil) }) {
+            if let secs = firstSidePly.clockSeconds {
+                return (secs, formatChessClock(secs))
+            }
+            if let txt = firstSidePly.clockText, !txt.isEmpty {
+                return (nil, txt)
+            }
+        }
+        return nil
+    }
+
+    private func formatChessClock(_ seconds: Double) -> String {
+        let clamped = max(0, seconds)
+        if clamped >= 3600 {
+            let total = Int(clamped.rounded(.down))
+            let h = total / 3600
+            let m = (total % 3600) / 60
+            let s = total % 60
+            return String(format: "%d:%02d:%02d", h, m, s)
+        } else if clamped < 20 {
+            let totalTenths = Int((clamped * 10).rounded(.down))
+            let s = totalTenths / 10
+            let d = totalTenths % 10
+            return String(format: "0:%02d.%d", s, d)
+        } else {
+            let total = Int(clamped.rounded(.down))
+            let m = total / 60
+            let s = total % 60
+            return String(format: "%d:%02d", m, s)
+        }
+    }
+
+    private func formatMoveDuration(_ seconds: Double) -> String {
+        let clamped = max(0, seconds)
+        if clamped < 60 {
+            let rounded = Int(clamped.rounded())
+            return "\(rounded)s"
+        }
+        let total = Int(clamped.rounded())
+        let m = total / 60
+        let s = total % 60
+        return s == 0 ? "\(m)m" : "\(m)m \(s)s"
     }
 }
