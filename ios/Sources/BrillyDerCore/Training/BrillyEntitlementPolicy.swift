@@ -61,6 +61,11 @@ public enum BrillyEntitlementPolicy {
     /// Default Mind-Blown (`🤯 / 🤦`) emoji pair is Free; extra emoji packs & custom Share Card captions require Pro.
     public static let freeEmojiPackRawValue: String = "mindBlown"
 
+    /// Classic 4 board themes are Free; premium themes (Obsidian, Championship Gold, Cyber Violet) require Pro.
+    public static let freeBoardThemeRawValues: Set<String> = [
+        "slate", "emerald", "walnut", "neon"
+    ]
+
     /// Minimum interval between automatic background game syncs on foreground resume (90 seconds).
     public static let autoSyncThrottleSeconds: TimeInterval = 90
 
@@ -78,6 +83,10 @@ public enum BrillyEntitlementPolicy {
 
     public static func isEmojiPackUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
         hasProAccess || rawValue == freeEmojiPackRawValue
+    }
+
+    public static func isBoardThemeUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
+        hasProAccess || freeBoardThemeRawValues.contains(rawValue)
     }
 
     /// Automatic sync on app launch / foreground resume is a Pro convenience perk; manual sync is always unlimited & free.

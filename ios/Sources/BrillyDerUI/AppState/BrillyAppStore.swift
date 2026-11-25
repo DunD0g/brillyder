@@ -5,6 +5,9 @@ import BrillyDerCore
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 public enum BrillyTab: String, CaseIterable, Hashable, Identifiable {
     case train
@@ -210,6 +213,15 @@ public final class BrillyAppStore {
     }
     public var boardTheme: BoardThemeID {
         didSet { UserDefaults.standard.set(boardTheme.rawValue, forKey: "brilly_board_theme") }
+    }
+    public var effectiveBoardTheme: BoardThemeID {
+        isBoardThemeUnlocked(boardTheme) ? boardTheme : .slate
+    }
+    public func isBoardThemeUnlocked(_ theme: BoardThemeID) -> Bool {
+        BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: theme.rawValue, hasProAccess: hasProAccess)
+    }
+    public var showBoardCoordinates: Bool {
+        didSet { UserDefaults.standard.set(showBoardCoordinates, forKey: "brilly_show_board_coordinates") }
     }
     public var pieceSet: PieceSetID {
         didSet { UserDefaults.standard.set(pieceSet.rawValue, forKey: "brilly_piece_set") }
@@ -572,6 +584,7 @@ public final class BrillyAppStore {
         self.creatorEventRibbonText = defaults.string(forKey: "brilly_creator_event_ribbon") ?? "WORLD CHAMPIONSHIP 2026"
         self.creatorShowHandleOnCards = defaults.bool(forKey: "brilly_creator_show_handle")
         self.boardTheme = BoardThemeID(rawValue: defaults.string(forKey: "brilly_board_theme") ?? "") ?? .slate
+        self.showBoardCoordinates = defaults.object(forKey: "brilly_show_board_coordinates") as? Bool ?? true
         self.pieceSet = PieceSetID(rawValue: defaults.string(forKey: "brilly_piece_set") ?? "") ?? .cburnett
         self.analysisPreset = AnalysisDepthPreset(rawValue: defaults.integer(forKey: "brilly_analysis_preset")) ?? .balanced
         self.hapticsEnabled = defaults.object(forKey: "brilly_haptics_enabled") as? Bool ?? true
@@ -1282,13 +1295,14 @@ public final class BrillyAppStore {
         for game: GameRecord,
         jumpToPly: Int? = nil,
         isManualSelection: Bool = true,
-        switchToAnalyze: Bool = true
+        switchToAnalyze: Bool = true,
+        forceReanalyze: Bool = false
     ) {
         if isManualSelection {
             hasPinnedManualGameSelection = true
         }
         activeSandboxFen = nil
-        if let cached = analyzedGames.first(where: { $0.id == game.id }) {
+        if !forceReanalyze, let cached = analyzedGames.first(where: { $0.id == game.id }) {
             activeAnalyzedGame = cached
             pendingAnalyzePly = jumpToPly
             if switchToAnalyze {
@@ -1297,7 +1311,7 @@ public final class BrillyAppStore {
             return
         }
 
-        if !canAnalyzeGame(game.id) {
+        if !forceReanalyze && !canAnalyzeGame(game.id) {
             openProPaywall(feature: "Unlimited Game Analysis (2/day Free limit reached)")
             return
         }
@@ -1361,6 +1375,18 @@ public final class BrillyAppStore {
         }
     }
 
+    public func reanalyzeActiveGame(preset: AnalysisDepthPreset, currentPly: Int? = nil) {
+        analysisPreset = preset
+        guard let ag = activeAnalyzedGame else { return }
+        startAnalysis(
+            for: ag.game,
+            jumpToPly: currentPly,
+            isManualSelection: true,
+            switchToAnalyze: true,
+            forceReanalyze: true
+        )
+    }
+
     public func cancelAnalysis() {
         analysisGeneration &+= 1
         analysisTask?.cancel()
@@ -1388,9 +1414,22 @@ public final class BrillyAppStore {
         batchCurrentLabel = "Game 1 of \(targets.count) · Preparing…"
         triggerHaptic(.move)
 
-        let preset: AnalysisDepthPreset = .fast
+        let preset: AnalysisDepthPreset = analysisPreset
         let engineRef = engine
         let totalGames = targets.count
+
+        #if canImport(UserNotifications) && os(iOS)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        #endif
+
+        #if canImport(UIKit) && os(iOS)
+        endBatchBackgroundTask()
+        batchBackgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "BrillyDerBatchAnalysis") { [weak self] in
+            Task { @MainActor in
+                self?.endBatchBackgroundTask()
+            }
+        }
+        #endif
 
         batchTask = Task.detached(priority: .userInitiated) {
             for (idx, game) in targets.enumerated() {
@@ -1398,7 +1437,7 @@ public final class BrillyAppStore {
                 let matchup = "\(game.white.name) vs \(game.black.name)"
                 await MainActor.run {
                     guard self.batchGeneration == gen else { return }
-                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(matchup)"
+                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(preset.title) · \(matchup)"
                 }
                 do {
                     let result = try await GameAnalyzer.analyze(
@@ -1411,7 +1450,7 @@ public final class BrillyAppStore {
                         Task { @MainActor in
                             guard self.batchGeneration == gen else { return }
                             self.batchProgress = overall
-                            self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · Ply \(donePlies)/\(totalPlies)"
+                            self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) (\(preset.title)) · Ply \(donePlies)/\(totalPlies)"
                         }
                     }
                     if Task.isCancelled { break }
@@ -1435,14 +1474,42 @@ public final class BrillyAppStore {
             let cancelled = Task.isCancelled
             await MainActor.run {
                 guard self.batchGeneration == gen else { return }
+                let doneCount = self.batchCompletedGames
                 self.isBatchAnalyzing = false
                 self.batchCurrentLabel = ""
                 if !cancelled {
                     self.batchProgress = 1.0
                     self.triggerHaptic(.success)
+                    self.postBatchCompletionNotification(count: doneCount, preset: preset)
                 }
+                self.endBatchBackgroundTask()
             }
         }
+    }
+
+    #if canImport(UIKit) && os(iOS)
+    @ObservationIgnored private var batchBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    #endif
+
+    private func endBatchBackgroundTask() {
+        #if canImport(UIKit) && os(iOS)
+        if batchBackgroundTaskId != .invalid {
+            UIApplication.shared.endBackgroundTask(batchBackgroundTaskId)
+            batchBackgroundTaskId = .invalid
+        }
+        #endif
+    }
+
+    private func postBatchCompletionNotification(count: Int, preset: AnalysisDepthPreset) {
+        #if canImport(UserNotifications) && os(iOS)
+        guard count > 0, UIApplication.shared.applicationState != .active else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "BrillyDer Batch Scan Complete"
+        content.body = "Analyzed \(count) game\(count == 1 ? "" : "s") at \(preset.title) depth. Tap to review your mistakes & !! moves."
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: "brillyder.batch.\(UUID().uuidString)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+        #endif
     }
 
     public func cancelBatchAnalysis() {
@@ -1452,6 +1519,7 @@ public final class BrillyAppStore {
         isBatchAnalyzing = false
         batchProgress = 0
         batchCurrentLabel = ""
+        endBatchBackgroundTask()
     }
 
     public func openGameAtPly(gameId: String, ply: Int) {

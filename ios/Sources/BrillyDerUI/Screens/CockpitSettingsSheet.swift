@@ -602,17 +602,31 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
 
-                        // MARK: - 4. Board Theme Swatches
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("BOARD THEME")
-                                .font(.caption.weight(.bold))
-                                .tracking(1.0)
-                                .foregroundStyle(BrillyPalette.inkSecondary)
+                        // MARK: - 4. Board Theme Swatches & Coordinates
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("BOARD THEME")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(1.0)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                Spacer()
+                                if !store.hasProAccess {
+                                    Text("3 Extra · PRO")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                                }
+                            }
 
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                                 ForEach(BoardThemeID.allCases) { theme in
-                                    let selected = store.boardTheme == theme
+                                    let unlocked = store.isBoardThemeUnlocked(theme)
+                                    let selected = store.effectiveBoardTheme == theme
                                     Button {
+                                        if !unlocked {
+                                            localProFeature = "Premium Board Themes (Obsidian, Gold & Violet)"
+                                            showingLocalProSheet = true
+                                            return
+                                        }
                                         store.boardTheme = theme
                                         store.triggerHaptic(.move)
                                     } label: {
@@ -626,8 +640,13 @@ public struct CockpitSettingsSheet: View {
                                             Text(theme.title)
                                                 .font(.subheadline.weight(.semibold))
                                                 .foregroundStyle(BrillyPalette.inkPrimary)
+                                                .lineLimit(1)
                                             Spacer()
-                                            if selected {
+                                            if !unlocked {
+                                                Image(systemName: "lock.fill")
+                                                    .font(.caption2.weight(.bold))
+                                                    .foregroundStyle(BrillyPalette.warpPurpleText)
+                                            } else if selected {
                                                 Image(systemName: "checkmark")
                                                     .font(.caption.weight(.bold))
                                                     .foregroundStyle(theme.accent)
@@ -646,6 +665,20 @@ public struct CockpitSettingsSheet: View {
                                     .buttonStyle(.plain)
                                 }
                             }
+
+                            Divider().overlay(Color.white.opacity(0.08))
+
+                            Toggle(isOn: $bindableStore.showBoardCoordinates) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Show Board Coordinates")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    Text("Hide a–h / 1–8 labels for clean blindfold-style visualization.")
+                                        .font(.caption2)
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                }
+                            }
+                            .tint(BrillyPalette.brillyTeal)
                         }
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)

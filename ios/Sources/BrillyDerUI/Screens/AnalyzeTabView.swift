@@ -35,6 +35,17 @@ public struct AnalyzeTabView: View {
     @State private var isAutoPlaying: Bool = false
     @State private var autoPlaySpeed: Int = 1 // 1 = 1x, 2 = 2x, 3 = 3x
     @State private var isTurboScrubbing: Bool = false
+    @State private var showThreatArrow: Bool = false
+    @State private var threatArrow: BoardArrow? = nil
+    @State private var showingMoveListSheet: Bool = false
+    @State private var showingMistakeReview: Bool = false
+    @State private var opponentProfileTarget: OpponentProfileTarget? = nil
+
+    private struct OpponentProfileTarget: Identifiable {
+        let id = UUID()
+        let username: String
+        let platform: GameSource
+    }
 
     public var body: some View {
         ZStack {
@@ -132,6 +143,61 @@ public struct AnalyzeTabView: View {
                 }
             }
         }
+        .sheet(item: $opponentProfileTarget) { target in
+            OpponentProfileSheet(username: target.username, initialPlatform: target.platform)
+                .environment(store)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingMoveListSheet) {
+            if let ag = store.activeAnalyzedGame {
+                AnalyzeMoveListSheet(ag: ag, currentPly: currentPlyIndex) { chosenPly in
+                    goToPly(chosenPly, maxPly: ag.plies.count)
+                    showingMoveListSheet = false
+                }
+                .environment(store)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .sheet(isPresented: $showingMistakeReview) {
+            if let ag = store.activeAnalyzedGame {
+                GuidedMistakeReviewSheet(ag: ag)
+                    .environment(store)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+        .task(id: "\(showThreatArrow)::\(store.activeAnalyzedGame?.id ?? "")::\(currentPlyIndex)") {
+            guard showThreatArrow, store.hasProAccess, let ag = store.activeAnalyzedGame else {
+                threatArrow = nil
+                return
+            }
+            let clamped = max(0, min(currentPlyIndex, ag.plies.count))
+            let fen = clamped == 0 ? ChessBoard.initialFEN : ag.plies[clamped - 1].afterFen
+            guard let flipped = flippedTurnFENIfSafe(fen) else {
+                threatArrow = nil
+                return
+            }
+            if let threatMove = await store.computeBotReply(fen: flipped, depth: 4), !Task.isCancelled {
+                threatArrow = BoardArrow(from: threatMove.from.algebraic, to: threatMove.to.algebraic, color: .threat)
+            } else {
+                threatArrow = nil
+            }
+        }
+    }
+
+    /// Flips side-to-move in a FEN to probe what the opponent threatens if the mover passes.
+    /// Returns `nil` if the mover is currently in check (passing is illegal).
+    private func flippedTurnFENIfSafe(_ fen: String) -> String? {
+        guard let b = try? ChessBoard(fen: fen), !b.isInCheck(b.turn) else { return nil }
+        var parts = fen.split(separator: " ").map(String.init)
+        guard parts.count >= 4 else { return nil }
+        parts[1] = (parts[1] == "w") ? "b" : "w"
+        parts[3] = "-" // Clear en passant when passing turn
+        let candidate = parts.joined(separator: " ")
+        guard (try? ChessBoard(fen: candidate)) != nil else { return nil }
+        return candidate
     }
 
     private func cancelLiveTasks() {
@@ -622,12 +688,48 @@ public struct AnalyzeTabView: View {
 
         ScrollView {
             VStack(spacing: 10) {
-                // 0. Compact Analyze Header + Moved Jump/Flip/Menu Controls (frees up bottom AUTO bar!)
+                // 0. Compact Analyze Header + Depth Pill + Jump/Flip/Menu Controls
                 HStack(spacing: 8) {
                     Text("Analyze")
                         .font(.title2.weight(.black))
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .lineLimit(1)
+
+                    Menu {
+                        ForEach(AnalysisDepthPreset.allCases) { preset in
+                            Button {
+                                if preset == store.analysisPreset {
+                                    store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
+                                } else {
+                                    store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
+                                }
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label(
+                                    "\(preset.title) (D\(preset.rawValue))",
+                                    systemImage: store.analysisPreset == preset ? "checkmark" : "cpu"
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 9.5, weight: .bold))
+                            Text("D\(store.analysisPreset.rawValue)")
+                                .font(.system(size: 11, weight: .black, design: .rounded).monospacedDigit())
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                        }
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                                .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.36), lineWidth: 0.9))
+                        )
+                    }
+                    .accessibilityLabel("Engine depth \(store.analysisPreset.title). Tap to change depth and re-analyze.")
 
                     Spacer(minLength: 4)
 
@@ -662,6 +764,40 @@ public struct AnalyzeTabView: View {
                                 activeShareCard = sharePayload()
                             } label: {
                                 Label("Share Move Card", systemImage: "square.and.arrow.up")
+                            }
+                            Button {
+                                showingMoveListSheet = true
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label("Move List (\(ag.plies.count) plies)", systemImage: "list.number")
+                            }
+                            Divider()
+                            Button {
+                                if !store.hasProAccess {
+                                    store.openProPaywall(feature: "Guided Mistake Review")
+                                    return
+                                }
+                                showingMistakeReview = true
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label(
+                                    store.hasProAccess ? "Review My Mistakes" : "Review My Mistakes (Pro)",
+                                    systemImage: store.hasProAccess ? "target" : "lock.fill"
+                                )
+                            }
+                            Button {
+                                if !store.hasProAccess {
+                                    store.openProPaywall(feature: "Live Engine Threat Arrow")
+                                    return
+                                }
+                                showThreatArrow.toggle()
+                                if !showThreatArrow { threatArrow = nil }
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label(
+                                    showThreatArrow ? "Hide Threat Arrow" : (store.hasProAccess ? "Show Threat Arrow" : "Show Threat Arrow (Pro)"),
+                                    systemImage: showThreatArrow ? "exclamationmark.triangle.fill" : (store.hasProAccess ? "exclamationmark.triangle" : "lock.fill")
+                                )
                             }
                             Divider()
                             Button {
@@ -784,14 +920,21 @@ public struct AnalyzeTabView: View {
                 EvalBarView(score: score, orientation: orientation)
 
                 // 3. Interactive Board
+                let combinedArrows: [BoardArrow] = {
+                    var list = bestArrow
+                    if showThreatArrow, let threat = threatArrow, !retryMode && !botActive {
+                        list.append(threat)
+                    }
+                    return list
+                }()
                 InteractiveChessBoardView(
                     board: board,
                     orientation: orientation,
-                    theme: store.boardTheme,
+                    theme: store.effectiveBoardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: retryMode || (botActive && !botThinking && sandboxBoard.outcome == .ongoing),
                     lastMove: lastMovePair,
-                    arrows: bestArrow,
+                    arrows: combinedArrows,
                     moveBadge: badge
                 ) { move in
                     if botActive {
@@ -909,10 +1052,22 @@ public struct AnalyzeTabView: View {
                 if let ap = activePly {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
-                                .font(.headline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                .lineLimit(1)
+                            Button {
+                                showingMoveListSheet = true
+                                store.triggerHaptic(.move)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("\(ap.moveNumber)\(ap.color == .white ? "." : "...") \(ap.san)")
+                                        .font(.headline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                        .lineLimit(1)
+                                    Image(systemName: "list.bullet")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.75))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open move list at move \(ap.moveNumber) \(ap.san)")
                             Text(store.classificationLabel(ap.classification))
                                 .font(.caption.weight(.bold))
                                 .lineLimit(1)
@@ -1435,7 +1590,26 @@ public struct AnalyzeTabView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
-            if orientation != targetSide {
+            let cleanRaw = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowerHandles = Set(store.userHandles.map { $0.lowercased() })
+            let isOwnHandle = lowerHandles.contains(cleanRaw.lowercased())
+            let isLookupEligible = !isOwnHandle
+                && !cleanRaw.isEmpty
+                && cleanRaw.lowercased() != "white"
+                && cleanRaw.lowercased() != "black"
+                && cleanRaw.lowercased() != "anonymous"
+                && !cleanRaw.contains(" ")
+
+            if isLookupEligible {
+                if !store.hasProAccess {
+                    store.openProPaywall(feature: "Quick Opponent Profile & Recent Games")
+                    return
+                }
+                let src = store.activeAnalyzedGame?.game.source ?? store.syncPlatform
+                let resolvedPlatform: GameSource = (src == .chesscom) ? .chesscom : .lichess
+                opponentProfileTarget = OpponentProfileTarget(username: cleanRaw, platform: resolvedPlatform)
+                store.triggerHaptic(.move)
+            } else if orientation != targetSide {
                 orientation = targetSide
                 store.triggerHaptic(.move)
             }
@@ -1569,5 +1743,334 @@ public struct AnalyzeTabView: View {
         let m = total / 60
         let s = total % 60
         return s == 0 ? "\(m)m" : "\(m)m \(s)s"
+    }
+}
+
+// MARK: - Tappable 2-Column Move List Sheet
+
+private struct AnalyzeMoveListSheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    let ag: AnalyzedGame
+    let currentPly: Int
+    let onSelectPly: (Int) -> Void
+
+    private var moveRows: [(moveNumber: Int, white: AnalyzedPly?, black: AnalyzedPly?)] {
+        var rows: [(Int, AnalyzedPly?, AnalyzedPly?)] = []
+        var idx = 0
+        while idx < ag.plies.count {
+            let p = ag.plies[idx]
+            if p.color == .white {
+                let nextBlack = (idx + 1 < ag.plies.count && ag.plies[idx + 1].color == .black) ? ag.plies[idx + 1] : nil
+                rows.append((p.moveNumber, p, nextBlack))
+                idx += (nextBlack != nil) ? 2 : 1
+            } else {
+                rows.append((p.moveNumber, nil, p))
+                idx += 1
+            }
+        }
+        return rows
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            ForEach(moveRows, id: \.moveNumber) { row in
+                                HStack(spacing: 8) {
+                                    Text("\(row.moveNumber).")
+                                        .font(.caption.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                        .frame(width: 30, alignment: .trailing)
+
+                                    moveCell(row.white)
+                                    moveCell(row.black)
+                                }
+                                .id(row.moveNumber)
+                            }
+                        }
+                        .padding(14)
+                    }
+                    .onAppear {
+                        if currentPly > 0, currentPly <= ag.plies.count {
+                            let moveNum = ag.plies[currentPly - 1].moveNumber
+                            proxy.scrollTo(moveNum, anchor: .center)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Move List")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func moveCell(_ ply: AnalyzedPly?) -> some View {
+        if let ply {
+            let isSelected = ply.ply == currentPly
+            let clsColor = BrillyPalette.color(for: ply.classification)
+            let isNotable = ply.classification == .brilliant || ply.classification == .great
+                || ply.classification == .blunder || ply.classification == .mistake || ply.classification == .inaccuracy
+            Button {
+                onSelectPly(ply.ply)
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(isNotable ? clsColor : Color.white.opacity(0.20))
+                        .frame(width: 7, height: 7)
+                    Text(ply.san)
+                        .font(.subheadline.monospaced().weight(isSelected ? .black : .semibold))
+                        .foregroundStyle(isSelected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
+                    Text(ply.evalAfter.display)
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(isSelected ? BrillyPalette.voidBg.opacity(0.85) : BrillyPalette.inkSecondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isSelected ? BrillyPalette.brillyTeal : Color.white.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(isSelected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08), lineWidth: 0.8)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 34)
+        }
+    }
+}
+
+// MARK: - Guided "Review My Mistakes" Mode (Pro)
+
+private struct GuidedMistakeReviewSheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    let ag: AnalyzedGame
+
+    @State private var index: Int = 0
+    @State private var board: ChessBoard = ChessBoard()
+    @State private var solvedCurrent: Bool = false
+    @State private var revealedCurrent: Bool = false
+    @State private var nailedCount: Int = 0
+    @State private var totalEvalSavedCp: Int = 0
+    @State private var feedback: String = ""
+    @State private var feedbackIsError: Bool = false
+    @State private var finished: Bool = false
+
+    private var userSide: PieceColor? {
+        ag.game.resolvedUserColor(handles: store.userHandles)
+    }
+
+    private var mistakes: [AnalyzedPly] {
+        ag.plies.filter { ap in
+            let isMistakeOrBlunder = ap.classification == .blunder || ap.classification == .mistake
+            if let side = userSide {
+                return isMistakeOrBlunder && ap.color == side
+            }
+            return isMistakeOrBlunder
+        }
+    }
+
+    private var currentMistake: AnalyzedPly? {
+        guard index >= 0 && index < mistakes.count else { return nil }
+        return mistakes[index]
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                if mistakes.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 46))
+                            .foregroundStyle(BrillyPalette.brillyTeal)
+                        Text("Zero Mistakes to Review!")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Text("Clean game — no blunders or mistakes detected for your side.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(28)
+                } else if finished {
+                    VStack(spacing: 16) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 50))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                        Text("Mistake Review Complete!")
+                            .font(.title2.weight(.black))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Text("You nailed \(nailedCount) of \(mistakes.count) critical moment\(mistakes.count == 1 ? "" : "s") and saved +\(String(format: "%.1f", Double(totalEvalSavedCp) / 100.0)) pawns of eval.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                        Button("Done") { dismiss() }
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .buttonStyle(BrillyPressScaleStyle())
+                            .padding(.top, 6)
+                    }
+                    .padding(24)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
+                    .padding(20)
+                } else if let ap = currentMistake {
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            HStack {
+                                Text("Mistake \(index + 1) of \(mistakes.count)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                Spacer()
+                                Text("Nailed \(nailedCount)")
+                                    .font(.caption.monospacedDigit().weight(.black))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                            }
+
+                            InteractiveChessBoardView(
+                                board: board,
+                                orientation: ap.color,
+                                theme: store.effectiveBoardTheme,
+                                surfaceStyle: store.surfaceStyle,
+                                interactive: !solvedCurrent && !revealedCurrent,
+                                arrows: (solvedCurrent || revealedCurrent) ? bestArrowFor(ap) : []
+                            ) { move in
+                                handleMove(move, for: ap)
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Move \(ap.moveNumber): You played \(ap.san) (\(store.classificationLabel(ap.classification)))")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.color(for: ap.classification))
+
+                                if !feedback.isEmpty {
+                                    Text(feedback)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(feedbackIsError ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
+                                } else {
+                                    Text("Find the stronger move on the board!")
+                                        .font(.subheadline)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 16)
+
+                            HStack(spacing: 10) {
+                                if solvedCurrent || revealedCurrent {
+                                    Button {
+                                        advanceToNext()
+                                    } label: {
+                                        Text(index + 1 < mistakes.count ? "Next Mistake →" : "Finish Review")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.voidBg)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                    }
+                                    .buttonStyle(BrillyPressScaleStyle())
+                                } else {
+                                    Button("Reveal Best Move") {
+                                        revealedCurrent = true
+                                        feedbackIsError = false
+                                        feedback = "Best was \(ap.bestMoveSan). \(ap.coaching.headline)"
+                                        store.triggerHaptic(.move)
+                                    }
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("Review My Mistakes")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .onAppear { loadCurrentMistake() }
+        }
+    }
+
+    private func bestArrowFor(_ ap: AnalyzedPly) -> [BoardArrow] {
+        guard let m = ChessMove(uci: ap.bestMoveUci) else { return [] }
+        return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
+    }
+
+    private func loadCurrentMistake() {
+        guard let ap = currentMistake else { return }
+        board = (try? ChessBoard(fen: ap.beforeFen)) ?? ChessBoard()
+        solvedCurrent = false
+        revealedCurrent = false
+        feedback = ""
+        feedbackIsError = false
+    }
+
+    private func handleMove(_ move: ChessMove, for ap: AnalyzedPly) {
+        if move.uci == ap.bestMoveUci {
+            var next = board
+            if (try? next.apply(move)) != nil {
+                board = next
+            }
+            solvedCurrent = true
+            feedbackIsError = false
+            nailedCount += 1
+            let saved = max(50, abs(ap.evalBefore.cpWhite - ap.evalAfter.cpWhite))
+            totalEvalSavedCp += min(saved, 600)
+            feedback = "Nailed it! \(ap.bestMoveSan) was the top engine move."
+            store.recordTrainingActivity()
+            store.triggerHaptic(.success)
+        } else {
+            feedbackIsError = true
+            feedback = "Not \(move.uci) — try looking for a sharper tactic or stronger defense!"
+            store.triggerHaptic(.error)
+        }
+    }
+
+    private func advanceToNext() {
+        if index + 1 < mistakes.count {
+            index += 1
+            loadCurrentMistake()
+        } else {
+            finished = true
+            store.triggerHaptic(.success)
+        }
     }
 }

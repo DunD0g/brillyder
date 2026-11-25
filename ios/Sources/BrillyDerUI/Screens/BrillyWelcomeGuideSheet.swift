@@ -301,7 +301,7 @@ public struct BrillyWelcomeGuideSheet: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(BrillyPalette.inkPrimary)
                     HStack(spacing: 10) {
-                        ForEach(BoardThemeID.allCases) { theme in
+                        ForEach(BoardThemeID.allCases.filter { store.isBoardThemeUnlocked($0) }) { theme in
                             let selected = store.boardTheme == theme
                             Button {
                                 withAnimation(.snappy(duration: 0.2)) {

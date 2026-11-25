@@ -108,10 +108,12 @@ public struct BrillyDerRootView: View {
             }
         }
         .environment(\.brillyPieceSet, store.effectivePieceSet)
+        .environment(\.brillyShowCoordinates, store.showBoardCoordinates)
         .sheet(isPresented: $bindableStore.showingSettings) {
             CockpitSettingsSheet()
                 .environment(store)
                 .environment(\.brillyPieceSet, store.effectivePieceSet)
+                .environment(\.brillyShowCoordinates, store.showBoardCoordinates)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -119,6 +121,7 @@ public struct BrillyDerRootView: View {
             BrillyVaultSheet(initialTab: store.vaultInitialTab)
                 .environment(store)
                 .environment(\.brillyPieceSet, store.effectivePieceSet)
+                .environment(\.brillyShowCoordinates, store.showBoardCoordinates)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }

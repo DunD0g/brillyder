@@ -377,11 +377,38 @@ public struct GamesTabView: View {
                         Text("Batch Analyze")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                        Text("\(pending) unanalyzed game\(pending == 1 ? "" : "s") ready to feed Insights, Mistakes & Vault.")
+                        Text("\(pending) unanalyzed game\(pending == 1 ? "" : "s") · runs in background & notifies on finish.")
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.inkSecondary)
                     }
-                    Spacer()
+                    Spacer(minLength: 4)
+                    Menu {
+                        ForEach(AnalysisDepthPreset.allCases) { preset in
+                            Button {
+                                store.analysisPreset = preset
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Label(preset.title, systemImage: store.analysisPreset == preset ? "checkmark" : "cpu")
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(store.analysisPreset.title)
+                                .font(.caption2.weight(.bold))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8.5, weight: .bold))
+                        }
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(BrillyPalette.brillyTeal.opacity(0.14))
+                                .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.35), lineWidth: 0.9))
+                        )
+                    }
                 }
                 HStack(spacing: 8) {
                     batchButton("Analyze \(min(5, pending))", count: 5)

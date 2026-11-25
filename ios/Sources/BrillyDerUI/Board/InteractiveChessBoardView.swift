@@ -31,6 +31,7 @@ public struct InteractiveChessBoardView: View {
     let onMove: ((ChessMove) -> Void)?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.brillyShowCoordinates) private var showBoardCoordinates
     @State private var selectedSquare: Square? = nil
     @GestureState private var dragState = BoardDragState()
     @State private var pendingPromotion: (from: Square, to: Square, color: PieceColor)? = nil
@@ -251,7 +252,7 @@ public struct InteractiveChessBoardView: View {
         let isLegalDest = legalTargets.contains(sq)
         let piece = board[sq]
         let isHiddenByDrag = dragState.fromSquare == sq
-        let showCoords = sqSize >= 22
+        let showCoords = showBoardCoordinates && sqSize >= 22
 
         ZStack {
             (isLight ? theme.lightSquare : theme.darkSquare)

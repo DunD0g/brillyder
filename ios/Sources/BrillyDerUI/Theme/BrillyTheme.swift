@@ -271,69 +271,101 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
     case emerald
     case walnut
     case neon
+    case obsidian
+    case championshipGold
+    case cyberViolet
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
-        case .slate: return "Slate"
-        case .emerald: return "Emerald"
-        case .walnut: return "Walnut"
-        case .neon: return "Neon"
+        case .slate:            return "Slate"
+        case .emerald:          return "Emerald"
+        case .walnut:           return "Walnut"
+        case .neon:             return "Neon"
+        case .obsidian:         return "Obsidian"
+        case .championshipGold: return "Gold"
+        case .cyberViolet:      return "Violet"
         }
     }
 
     public var lightSquare: Color {
         switch self {
-        case .slate:   return Color(hex: 0x9CB0C7)
-        case .emerald: return Color(hex: 0xE7EFDC)
-        case .walnut:  return Color(hex: 0xECD7B6)
-        case .neon:    return Color(hex: 0x2B3550)
+        case .slate:            return Color(hex: 0x9CB0C7)
+        case .emerald:          return Color(hex: 0xE7EFDC)
+        case .walnut:           return Color(hex: 0xECD7B6)
+        case .neon:             return Color(hex: 0x2B3550)
+        case .obsidian:         return Color(hex: 0x475569)
+        case .championshipGold: return Color(hex: 0xE4E9DA)
+        case .cyberViolet:      return Color(hex: 0xC4B5FD)
         }
     }
 
     public var darkSquare: Color {
         switch self {
-        case .slate:   return Color(hex: 0x4C647D)
-        case .emerald: return Color(hex: 0x527D58)
-        case .walnut:  return Color(hex: 0x8B5D3D)
-        case .neon:    return Color(hex: 0x111827)
+        case .slate:            return Color(hex: 0x4C647D)
+        case .emerald:          return Color(hex: 0x527D58)
+        case .walnut:           return Color(hex: 0x8B5D3D)
+        case .neon:             return Color(hex: 0x111827)
+        case .obsidian:         return Color(hex: 0x1E293B)
+        case .championshipGold: return Color(hex: 0x2F5239)
+        case .cyberViolet:      return Color(hex: 0x4C2A85)
         }
     }
 
     public var lastMove: Color {
         switch self {
-        case .slate:   return Color(hex: 0x22D3EE).opacity(0.38)
-        case .emerald: return Color(hex: 0xFACC15).opacity(0.48)
-        case .walnut:  return Color(hex: 0xFB923C).opacity(0.50)
-        case .neon:    return Color(hex: 0xA855F7).opacity(0.55)
+        case .slate:            return Color(hex: 0x22D3EE).opacity(0.38)
+        case .emerald:          return Color(hex: 0xFACC15).opacity(0.48)
+        case .walnut:           return Color(hex: 0xFB923C).opacity(0.50)
+        case .neon:             return Color(hex: 0xA855F7).opacity(0.55)
+        case .obsidian:         return Color(hex: 0x2DD4BF).opacity(0.44)
+        case .championshipGold: return Color(hex: 0xF59E0B).opacity(0.48)
+        case .cyberViolet:      return Color(hex: 0x38BDF8).opacity(0.45)
         }
     }
 
     public var selected: Color {
         switch self {
-        case .slate:   return Color(hex: 0x10B981).opacity(0.52)
-        case .emerald: return Color(hex: 0x10B981).opacity(0.52)
-        case .walnut:  return Color(hex: 0xB45309).opacity(0.55)
-        case .neon:    return Color(hex: 0x22D3EE).opacity(0.45)
+        case .slate:            return Color(hex: 0x10B981).opacity(0.52)
+        case .emerald:          return Color(hex: 0x10B981).opacity(0.52)
+        case .walnut:           return Color(hex: 0xB45309).opacity(0.55)
+        case .neon:             return Color(hex: 0x22D3EE).opacity(0.45)
+        case .obsidian:         return Color(hex: 0x2DD4BF).opacity(0.55)
+        case .championshipGold: return Color(hex: 0xFBBF24).opacity(0.55)
+        case .cyberViolet:      return Color(hex: 0xE879F9).opacity(0.52)
         }
     }
 
     public var accent: Color {
         switch self {
-        case .slate:   return Color(hex: 0x2DD4BF)
-        case .emerald: return Color(hex: 0x34D399)
-        case .walnut:  return Color(hex: 0xF59E0B)
-        case .neon:    return Color(hex: 0xE879F9)
+        case .slate:            return Color(hex: 0x2DD4BF)
+        case .emerald:          return Color(hex: 0x34D399)
+        case .walnut:           return Color(hex: 0xF59E0B)
+        case .neon:             return Color(hex: 0xE879F9)
+        case .obsidian:         return Color(hex: 0x2DD4BF)
+        case .championshipGold: return Color(hex: 0xFBBF24)
+        case .cyberViolet:      return Color(hex: 0xC084FC)
         }
     }
 
-    /// High-contrast coordinate label ink on both light and dark squares (especially Neon).
+    /// High-contrast coordinate label ink on both light and dark squares (especially dark themes).
     public func coordColor(isLightSquare: Bool) -> Color {
-        if self == .neon {
-            return isLightSquare ? Color(hex: 0xCBD5E1).opacity(0.85) : Color(hex: 0x94A3B8).opacity(0.88)
+        if self == .neon || self == .obsidian {
+            return isLightSquare ? Color(hex: 0xE2E8F0).opacity(0.88) : Color(hex: 0x94A3B8).opacity(0.88)
         }
         return (isLightSquare ? darkSquare : lightSquare).opacity(0.90)
+    }
+}
+
+private struct BrillyShowCoordinatesKey: EnvironmentKey {
+    static let defaultValue: Bool = true
+}
+
+public extension EnvironmentValues {
+    var brillyShowCoordinates: Bool {
+        get { self[BrillyShowCoordinatesKey.self] }
+        set { self[BrillyShowCoordinatesKey.self] = newValue }
     }
 }
 

@@ -167,6 +167,14 @@ struct AppStoreReadinessTests {
         #expect(BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "mindBlown", hasProAccess: false))
         #expect(!BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: false))
         #expect(BrillyEntitlementPolicy.isEmojiPackUnlocked(rawValue: "fireSkull", hasProAccess: true))
+
+        // Board themes: 4 classic themes free, Obsidian/Gold/Violet Pro
+        #expect(BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "slate", hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "walnut", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "obsidian", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "championshipGold", hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "cyberViolet", hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isBoardThemeUnlocked(rawValue: "obsidian", hasProAccess: true))
     }
 
     @Test("ChessBoard.materialBalance computes exact piece & point differences cleanly")
