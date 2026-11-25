@@ -698,15 +698,11 @@ public struct AnalyzeTabView: View {
                     Menu {
                         ForEach(AnalysisDepthPreset.allCases) { preset in
                             Button {
-                                if preset == store.analysisPreset {
-                                    store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
-                                } else {
-                                    store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
-                                }
+                                store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
                                 store.triggerHaptic(.move)
                             } label: {
                                 Label(
-                                    "\(preset.title) (D\(preset.rawValue))",
+                                    preset.title,
                                     systemImage: store.analysisPreset == preset ? "checkmark" : "cpu"
                                 )
                             }
@@ -715,8 +711,8 @@ public struct AnalyzeTabView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "cpu")
                                 .font(.system(size: 9.5, weight: .bold))
-                            Text("D\(store.analysisPreset.rawValue)")
-                                .font(.system(size: 11, weight: .black, design: .rounded).monospacedDigit())
+                            Text(store.analysisPreset.title)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
                         }
@@ -729,7 +725,7 @@ public struct AnalyzeTabView: View {
                                 .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.36), lineWidth: 0.9))
                         )
                     }
-                    .accessibilityLabel("Engine depth \(store.analysisPreset.title). Tap to change depth and re-analyze.")
+                    .accessibilityLabel("Engine preset \(store.analysisPreset.title). Tap to change depth and re-analyze.")
 
                     Spacer(minLength: 4)
 
