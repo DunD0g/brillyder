@@ -682,6 +682,7 @@ public final class BrillyAppStore {
                 BrillySoundEngine.shared.resumeIfNeeded()
             }
             validateDailyStreakLiveness()
+            resumePausedBatchIfNeeded()
             Task {
                 await storeKit.refreshEntitlements()
                 await runQuietAutoSyncIfEligible(isColdLaunch: false)
@@ -1412,12 +1413,20 @@ public final class BrillyAppStore {
         }
         let targets = Array(unanalyzedRecentGames.prefix(maxCount))
         guard !targets.isEmpty else { return }
+        let preset: AnalysisDepthPreset = analysisPreset.isSingleGameOnly ? .deep : analysisPreset
+        runBatchAnalysis(targets: targets, preset: preset)
+    }
+
+    private func runBatchAnalysis(targets: [GameRecord], preset: AnalysisDepthPreset) {
+        guard !targets.isEmpty else { return }
 
         cancelAnalysis()
         batchTask?.cancel()
         batchGeneration &+= 1
         let gen = batchGeneration
 
+        pendingBatchTargets = targets
+        pendingBatchPreset = preset
         isBatchAnalyzing = true
         batchCompletedGames = 0
         batchTotalGames = targets.count
@@ -1425,20 +1434,19 @@ public final class BrillyAppStore {
         batchCurrentLabel = "Game 1 of \(targets.count) · Preparing…"
         triggerHaptic(.move)
 
-        let preset: AnalysisDepthPreset = analysisPreset.isSingleGameOnly ? .deep : analysisPreset
         let engineRef = engine
         let totalGames = targets.count
 
         #if canImport(UserNotifications) && os(iOS)
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         #endif
 
         #if canImport(UIKit) && os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = true
         endBatchBackgroundTask()
         batchBackgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "BrillyDerBatchAnalysis") { [weak self] in
             Task { @MainActor in
-                self?.cancelBatchAnalysis()
-                self?.endBatchBackgroundTask()
+                await self?.pauseBatchForBackgroundExpiry()
             }
         }
         #endif
@@ -1474,6 +1482,7 @@ public final class BrillyAppStore {
                         if self.activeAnalyzedGame == nil {
                             self.activeAnalyzedGame = result
                         }
+                        self.pendingBatchTargets.removeAll { $0.id == result.id }
                         self.batchCompletedGames = idx + 1
                         self.batchProgress = Double(idx + 1) / Double(max(1, totalGames))
                         self.persistToDisk()
@@ -1491,18 +1500,67 @@ public final class BrillyAppStore {
                 self.isBatchAnalyzing = false
                 self.batchCurrentLabel = ""
                 if !cancelled {
+                    self.pendingBatchTargets = []
+                    self.pendingBatchPreset = nil
                     self.batchProgress = 1.0
                     self.triggerHaptic(.success)
-                    self.postBatchCompletionNotification(count: doneCount, preset: preset)
                 }
-                self.endBatchBackgroundTask()
+                #if canImport(UIKit) && os(iOS)
+                UIApplication.shared.isIdleTimerDisabled = false
+                #endif
+                Task { @MainActor in
+                    if !cancelled {
+                        await self.postBatchNotification(
+                            title: "BrillyDer Batch Scan Complete",
+                            body: "Analyzed \(doneCount) game\(doneCount == 1 ? "" : "s") at \(preset.title) depth. Tap to review your mistakes & !! moves."
+                        )
+                    }
+                    self.endBatchBackgroundTask()
+                }
             }
         }
     }
 
+    @ObservationIgnored private var pendingBatchTargets: [GameRecord] = []
+    @ObservationIgnored private var pendingBatchPreset: AnalysisDepthPreset? = nil
     #if canImport(UIKit) && os(iOS)
     @ObservationIgnored private var batchBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     #endif
+
+    private func pauseBatchForBackgroundExpiry() async {
+        let remaining = pendingBatchTargets.count
+        let done = batchCompletedGames
+        let total = batchTotalGames
+        batchGeneration &+= 1
+        batchTask?.cancel()
+        batchTask = nil
+        isBatchAnalyzing = false
+        batchCurrentLabel = ""
+        #if canImport(UIKit) && os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
+        flushToDiskNow()
+        if remaining > 0 {
+            await postBatchNotification(
+                title: "BrillyDer Batch Paused (\(done)/\(total) Done)",
+                body: "iOS paused background time. Open BrillyDer to auto-resume the remaining \(remaining) game\(remaining == 1 ? "" : "s")."
+            )
+        }
+        endBatchBackgroundTask()
+    }
+
+    private func resumePausedBatchIfNeeded() {
+        guard !isBatchAnalyzing, !pendingBatchTargets.isEmpty else { return }
+        let analyzedIds = Set(analyzedGames.map(\.id))
+        let remaining = pendingBatchTargets.filter { !analyzedIds.contains($0.id) }
+        guard !remaining.isEmpty else {
+            pendingBatchTargets = []
+            pendingBatchPreset = nil
+            return
+        }
+        let preset = pendingBatchPreset ?? (analysisPreset.isSingleGameOnly ? .deep : analysisPreset)
+        runBatchAnalysis(targets: remaining, preset: preset)
+    }
 
     private func endBatchBackgroundTask() {
         #if canImport(UIKit) && os(iOS)
@@ -1513,15 +1571,18 @@ public final class BrillyAppStore {
         #endif
     }
 
-    private func postBatchCompletionNotification(count: Int, preset: AnalysisDepthPreset) {
+    private func postBatchNotification(title: String, body: String) async {
         #if canImport(UserNotifications) && os(iOS)
-        guard count > 0, UIApplication.shared.applicationState != .active else { return }
+        guard UIApplication.shared.applicationState != .active else { return }
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let content = UNMutableNotificationContent()
-        content.title = "BrillyDer Batch Scan Complete"
-        content.body = "Analyzed \(count) game\(count == 1 ? "" : "s") at \(preset.title) depth. Tap to review your mistakes & !! moves."
+        content.title = title
+        content.body = body
         content.sound = .default
         let req = UNNotificationRequest(identifier: "brillyder.batch.\(UUID().uuidString)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(req)
+        try? await center.add(req)
         #endif
     }
 
@@ -1529,9 +1590,14 @@ public final class BrillyAppStore {
         batchGeneration &+= 1
         batchTask?.cancel()
         batchTask = nil
+        pendingBatchTargets = []
+        pendingBatchPreset = nil
         isBatchAnalyzing = false
         batchProgress = 0
         batchCurrentLabel = ""
+        #if canImport(UIKit) && os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #endif
         endBatchBackgroundTask()
     }
 
