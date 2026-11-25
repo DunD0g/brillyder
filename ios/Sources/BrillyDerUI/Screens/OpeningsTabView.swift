@@ -477,7 +477,7 @@ private struct CourseDetailSheet: View {
             InteractiveChessBoardView(
                 board: board,
                 orientation: course.side.pieceColor,
-                theme: store.boardTheme,
+                theme: store.effectiveBoardTheme,
                 surfaceStyle: store.surfaceStyle,
                 interactive: false,
                 arrows: course.mothershipSetup.arrows,
@@ -538,7 +538,7 @@ private struct CourseDetailSheet: View {
             InteractiveChessBoardView(
                 board: previewBoard,
                 orientation: course.side.pieceColor,
-                theme: store.boardTheme,
+                theme: store.effectiveBoardTheme,
                 surfaceStyle: store.surfaceStyle,
                 interactive: false
             )
@@ -597,7 +597,7 @@ private struct CourseDetailSheet: View {
                 InteractiveChessBoardView(
                     board: board,
                     orientation: course.side.pieceColor,
-                    theme: store.boardTheme,
+                    theme: store.effectiveBoardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: false,
                     arrows: activeAnnotation?.arrows ?? [],
@@ -714,7 +714,7 @@ private struct CourseDetailSheet: View {
                     InteractiveChessBoardView(
                         board: drillBoard,
                         orientation: orient,
-                        theme: store.boardTheme,
+                        theme: store.effectiveBoardTheme,
                         surfaceStyle: store.surfaceStyle,
                         interactive: !drillSolved,
                         lastMove: drillLastMove,

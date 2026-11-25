@@ -63,8 +63,11 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
 
     public var searchDepth: Int {
         switch self {
-        case .cloudUltra: return 10
-        default: return rawValue
+        case .fast:       return 6
+        case .balanced:   return 8
+        case .deep:       return 10
+        case .ultra:      return 12
+        case .cloudUltra: return 12
         }
     }
 
@@ -91,27 +94,27 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
         case .fast:       return "Quick"
         case .balanced:   return "Standard"
         case .deep:       return "Deep"
-        case .ultra:      return "Max Local"
+        case .ultra:      return "Master Local"
         case .cloudUltra: return "SF16 Cloud"
         }
     }
 
     public var eloEstimate: String {
         switch self {
-        case .fast:       return "~1500 Elo"
-        case .balanced:   return "~1850 Elo"
-        case .deep:       return "~2050 Elo"
-        case .ultra:      return "~2250 Elo"
+        case .fast:       return "~1800 Elo"
+        case .balanced:   return "~2100 Elo"
+        case .deep:       return "~2350 Elo"
+        case .ultra:      return "~2550 Elo"
         case .cloudUltra: return "~3500 Elo*"
         }
     }
 
     public var detailSummary: String {
         switch self {
-        case .fast:       return "Instant on-device tactical check"
-        case .balanced:   return "Everyday club game review"
-        case .deep:       return "Strong tactical & endgame accuracy"
-        case .ultra:      return "Max offline on-device depth (single-game)"
+        case .fast:       return "Instant on-device tactical check (NMP + LMR)"
+        case .balanced:   return "Strong club & tournament review"
+        case .deep:       return "Expert tactical, pawn-structure & endgame review"
+        case .ultra:      return "Master-grade offline on-device depth (single-game)"
         case .cloudUltra: return "Lichess Stockfish 16 Cloud + Ultra offline fallback"
         }
     }
@@ -121,8 +124,8 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
         case .fast:       return 140
         case .balanced:   return 320
         case .deep:       return 750
-        case .ultra:      return 1150
-        case .cloudUltra: return 1150
+        case .ultra:      return 1250
+        case .cloudUltra: return 1250
         }
     }
 }

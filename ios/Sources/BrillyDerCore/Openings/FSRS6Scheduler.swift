@@ -200,6 +200,8 @@ public enum FSRS6Scheduler {
             ? Int64(ChessMath.clamp(rawMs, min: -9_000_000_000_000_000.0, max: 9_000_000_000_000_000.0))
             : Int64(now.timeIntervalSince1970 * 1000.0)
 
+        let hadPriorReview = (s.last_review != nil && s.stability > 0)
+        let preReviewRecall = hadPriorReview ? recallProbability(for: updated, now: now) : nil
         s.stability = (newStability * 1000.0).rounded() / 1000.0
         s.difficulty = (newDifficulty * 1000.0).rounded() / 1000.0
         s.scheduled_days = nextIntervalDays
@@ -223,11 +225,12 @@ public enum FSRS6Scheduler {
             : ((safePrevAvg * Double(prevAttempts) + clampedMs) / Double(nextAttempts))
         updated.unlocked = true
 
+        let reportedRecall = preReviewRecall ?? recallProbability(for: updated, now: now)
         return OpeningReviewResult(
             card: updated,
             rating: rating,
             nextDueAt: nextDueMs,
-            recallPct: recallProbability(for: updated, now: now)
+            recallPct: reportedRecall
         )
     }
 

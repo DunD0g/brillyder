@@ -23,7 +23,38 @@ public enum LichessCloudEvalClient {
         let pvs: [RawCloudPV]?
     }
 
+    private actor Cache {
+        private var store: [String: EngineEval] = [:]
+        private var order: [String] = []
+        private let maxEntries = 512
+
+        func get(_ key: String) -> EngineEval? {
+            store[key]
+        }
+
+        func set(_ key: String, value: EngineEval) {
+            if store[key] == nil {
+                order.append(key)
+                if order.count > maxEntries, let oldest = order.first {
+                    order.removeFirst()
+                    store.removeValue(forKey: oldest)
+                }
+            }
+            store[key] = value
+        }
+    }
+
+    private static let cache = Cache()
+
+    private static func normalizedKey(for fen: String) -> String {
+        fen.split(separator: " ").prefix(4).joined(separator: " ")
+    }
+
     public static func probe(fen: String, multiPV: Int = 2) async -> ProbeOutcome {
+        let key = normalizedKey(for: fen)
+        if let cached = await cache.get(key) {
+            return .hit(cached)
+        }
         var components = URLComponents(string: "https://lichess.org/api/cloud-eval")
         components?.queryItems = [
             URLQueryItem(name: "fen", value: fen),
@@ -33,7 +64,8 @@ public enum LichessCloudEvalClient {
 
         var req = URLRequest(url: url, timeoutInterval: 2.2)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.13 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.13"
+        req.setValue("BrillyDer-iOS/\(ver) (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
@@ -42,6 +74,7 @@ public enum LichessCloudEvalClient {
                 guard (200..<300).contains(http.statusCode) else { return .miss }
             }
             if let decoded = decodeCloudEval(data: data, fen: fen) {
+                await cache.set(key, value: decoded)
                 return .hit(decoded)
             }
             return .miss

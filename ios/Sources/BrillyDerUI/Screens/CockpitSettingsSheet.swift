@@ -41,6 +41,9 @@ public struct CockpitSettingsSheet: View {
     @State private var accountStatusMessage: String? = nil
     @State private var showingTermsSheet = false
     @State private var showingLicensesSheet = false
+    @State private var previewMoveTick: Int = 0
+
+    private static let previewBoard: ChessBoard = (try? ChessBoard(fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 5")) ?? ChessBoard()
 
     public var body: some View {
         @Bindable var bindableStore = store
@@ -574,6 +577,9 @@ public struct CockpitSettingsSheet: View {
                         .padding(16)
                         .brillySurface(store.surfaceStyle, cornerRadius: 20)
 
+                        // MARK: - 2.5. Live Mini-Board Appearance Preview
+                        liveBoardPreviewSection
+
                         // MARK: - 3. Piece Style Picker (4 Pro Retina Sets)
                         VStack(alignment: .leading, spacing: 10) {
                             Text("CHESS PIECE STYLE")
@@ -600,12 +606,12 @@ public struct CockpitSettingsSheet: View {
                                             HStack(spacing: 8) {
                                                 HStack(spacing: 0) {
                                                     ZStack {
-                                                        store.boardTheme.lightSquare
+                                                        store.effectiveBoardTheme.lightSquare
                                                         ChessPieceView(piece: Piece(color: .white, type: .knight), squareSize: 34, pieceSet: set)
                                                     }
                                                     .frame(width: 38, height: 38)
                                                     ZStack {
-                                                        store.boardTheme.darkSquare
+                                                        store.effectiveBoardTheme.darkSquare
                                                         ChessPieceView(piece: Piece(color: .black, type: .queen), squareSize: 34, pieceSet: set)
                                                     }
                                                     .frame(width: 38, height: 38)
@@ -1208,6 +1214,7 @@ public struct CockpitSettingsSheet: View {
             .sheet(isPresented: $showingLicensesSheet) {
                 BrillyLicensesSheet(surfaceStyle: store.surfaceStyle)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(store.copy(cosmic: "Cockpit Settings", classic: "Settings"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -1252,6 +1259,56 @@ public struct CockpitSettingsSheet: View {
                 }
             }
         }
+    }
+
+    private var liveBoardPreviewSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("LIVE BOARD PREVIEW")
+                    .font(.caption.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                Spacer()
+                if store.effectiveBoardTheme == .prismChaos {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            previewMoveTick += 1
+                        }
+                        store.triggerHaptic(.move)
+                    } label: {
+                        Label("Shift Color", systemImage: "sparkles")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("\(store.effectiveBoardTheme.title) · \(store.effectivePieceSet.title)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+            }
+
+            HStack {
+                Spacer()
+                let previewFen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - \(previewMoveTick % 12) \(5 + previewMoveTick)"
+                let previewBoard = (try? ChessBoard(fen: previewFen)) ?? Self.previewBoard
+                InteractiveChessBoardView(
+                    board: previewBoard,
+                    orientation: .white,
+                    theme: store.effectiveBoardTheme,
+                    surfaceStyle: store.surfaceStyle,
+                    interactive: false,
+                    lastMove: (Square(unchecked: 5), Square(unchecked: 26))
+                )
+                .frame(width: 210, height: 210)
+                Spacer()
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20)
     }
 
     private var appVersionString: String {

@@ -345,7 +345,7 @@ public struct TrainTabView: View {
 
             if store.bookmarks.isEmpty {
                 Button {
-                    store.selectedTrainMode = .daily
+                    showingDailySession = true
                     store.triggerHaptic(.move)
                 } label: {
                     statCard(
@@ -673,7 +673,7 @@ private struct DailySessionSheet: View {
                             InteractiveChessBoardView(
                                 board: board,
                                 orientation: current.orientation,
-                                theme: store.boardTheme,
+                                theme: store.effectiveBoardTheme,
                                 surfaceStyle: store.surfaceStyle,
                                 interactive: !isSolved,
                                 lastMove: lastMove,
@@ -942,7 +942,7 @@ private struct GravityCheckSheet: View {
                             InteractiveChessBoardView(
                                 board: board,
                                 orientation: cur.orientation,
-                                theme: store.boardTheme,
+                                theme: store.effectiveBoardTheme,
                                 surfaceStyle: store.surfaceStyle,
                                 interactive: !awaitingNext,
                                 lastMove: lastMove

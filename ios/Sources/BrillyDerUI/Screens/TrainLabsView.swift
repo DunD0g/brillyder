@@ -84,7 +84,7 @@ public struct TrainLabsView: View {
                             InteractiveChessBoardView(
                                 board: (try? ChessBoard(fen: drill.fen)) ?? ChessBoard(),
                                 orientation: drill.userColor,
-                                theme: store.boardTheme,
+                                theme: store.effectiveBoardTheme,
                                 surfaceStyle: store.surfaceStyle,
                                 interactive: false
                             )
@@ -190,7 +190,7 @@ public struct TrainLabsView: View {
                             InteractiveChessBoardView(
                                 board: (try? ChessBoard(fen: puzzle.fen)) ?? ChessBoard(),
                                 orientation: puzzle.userColor,
-                                theme: store.boardTheme,
+                                theme: store.effectiveBoardTheme,
                                 surfaceStyle: store.surfaceStyle,
                                 interactive: false
                             )
@@ -274,6 +274,7 @@ private struct EndgameDrillPlaySheet: View {
     let drill: EndgameDrill
 
     @State private var board: ChessBoard = ChessBoard()
+    @State private var lastMove: (from: Square, to: Square)? = nil
     @State private var status: String = ""
     @State private var syzygy: SyzygyProbeResult? = nil
     @State private var botThinking = false
@@ -302,12 +303,25 @@ private struct EndgameDrillPlaySheet: View {
                             }
                         }
 
+                        let endgameHintArrows: [BoardArrow] = {
+                            guard showHint, board.turn == drill.userColor, board.outcome == .ongoing else { return [] }
+                            if movesPlayed == 0, let m = try? board.parseSAN(drill.firstHintSan) {
+                                return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
+                            }
+                            if let syzUci = syzygy?.moves.first?.uci, let m = ChessMove(uci: syzUci) {
+                                return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
+                            }
+                            return []
+                        }()
+
                         InteractiveChessBoardView(
                             board: board,
                             orientation: drill.userColor,
-                            theme: store.boardTheme,
+                            theme: store.effectiveBoardTheme,
                             surfaceStyle: store.surfaceStyle,
-                            interactive: !botThinking && board.turn == drill.userColor && board.outcome == .ongoing
+                            interactive: !botThinking && board.turn == drill.userColor && board.outcome == .ongoing,
+                            lastMove: lastMove,
+                            arrows: endgameHintArrows
                         ) { move in
                             handleUserMove(move)
                         }
@@ -370,6 +384,7 @@ private struct EndgameDrillPlaySheet: View {
     private func resetDrill() {
         cancelTasks()
         board = (try? ChessBoard(fen: drill.fen)) ?? ChessBoard()
+        lastMove = nil
         status = drill.keyIdea
         showHint = false
         movesPlayed = 0
@@ -416,6 +431,7 @@ private struct EndgameDrillPlaySheet: View {
 
     private func handleUserMove(_ move: ChessMove) {
         guard (try? board.apply(move)) != nil else { return }
+        lastMove = (move.from, move.to)
         movesPlayed += 1
         store.triggerHaptic(.move)
 
@@ -440,10 +456,12 @@ private struct EndgameDrillPlaySheet: View {
 
             if let bestSyz = probe?.moves.first, let m = ChessMove(uci: bestSyz.uci) {
                 _ = try? board.apply(m)
+                lastMove = (m.from, m.to)
                 store.triggerHaptic(.move)
             } else if let reply = await store.computeBotReply(fen: fenAfterUser, depth: 4) {
                 guard !Task.isCancelled && self.generation == gen else { return }
                 _ = try? board.apply(reply)
+                lastMove = (reply.from, reply.to)
                 store.triggerHaptic(.move)
             }
 
@@ -529,11 +547,11 @@ private struct BoardVisionPanel: View {
                                 let file = orientation == .white ? col : (7 - col)
                                 let sq = Square(unchecked: rank * 8 + file)
                                 ZStack {
-                                    sq.isLightSquare ? store.boardTheme.lightSquare : store.boardTheme.darkSquare
+                                    sq.isLightSquare ? store.effectiveBoardTheme.lightSquare : store.effectiveBoardTheme.darkSquare
                                     if !hideCoords {
                                         Text(sq.algebraic)
                                             .font(.system(size: 9, weight: .bold, design: .rounded))
-                                            .foregroundStyle(store.boardTheme.coordColor(isLightSquare: sq.isLightSquare))
+                                            .foregroundStyle(store.effectiveBoardTheme.coordColor(isLightSquare: sq.isLightSquare))
                                     }
                                 }
                                 .frame(width: cell, height: cell)
@@ -735,7 +753,7 @@ private struct PuzzleRushPanel: View {
                 InteractiveChessBoardView(
                     board: board,
                     orientation: item.orientation,
-                    theme: store.boardTheme,
+                    theme: store.effectiveBoardTheme,
                     surfaceStyle: store.surfaceStyle
                 ) { move in
                     if move.uci == item.expectedUci {
@@ -823,6 +841,7 @@ private struct EscapePuzzlePlaySheet: View {
     let onSelectNext: (EscapePuzzle) -> Void
 
     @State private var board: ChessBoard = ChessBoard()
+    @State private var lastMove: (from: Square, to: Square)? = nil
     @State private var stepIndex: Int = 0
     @State private var isOpponentAnimating: Bool = false
     @State private var isSolved: Bool = false
@@ -861,12 +880,20 @@ private struct EscapePuzzlePlaySheet: View {
                             }
                         }
 
+                        let escapeHintArrows: [BoardArrow] = {
+                            guard showHint, !isSolved, stepIndex < puzzle.solutionUcis.count,
+                                  let m = ChessMove(uci: puzzle.solutionUcis[stepIndex]) else { return [] }
+                            return [BoardArrow(from: m.from.algebraic, to: m.to.algebraic, color: .best)]
+                        }()
+
                         InteractiveChessBoardView(
                             board: board,
                             orientation: puzzle.userColor,
-                            theme: store.boardTheme,
+                            theme: store.effectiveBoardTheme,
                             surfaceStyle: store.surfaceStyle,
-                            interactive: !isOpponentAnimating && !isSolved && board.turn == puzzle.userColor && board.outcome == .ongoing
+                            interactive: !isOpponentAnimating && !isSolved && board.turn == puzzle.userColor && board.outcome == .ongoing,
+                            lastMove: lastMove,
+                            arrows: escapeHintArrows
                         ) { move in
                             handleUserMove(move)
                         }
@@ -960,6 +987,7 @@ private struct EscapePuzzlePlaySheet: View {
     private func resetPuzzle() {
         replyTask?.cancel()
         board = (try? ChessBoard(fen: puzzle.fen)) ?? ChessBoard()
+        lastMove = nil
         stepIndex = 0
         isOpponentAnimating = false
         isSolved = false
@@ -975,6 +1003,7 @@ private struct EscapePuzzlePlaySheet: View {
             var nextBoard = board
             guard (try? nextBoard.apply(move)) != nil else { return }
             board = nextBoard
+            lastMove = (move.from, move.to)
             feedbackIsError = false
             stepIndex += 1
             store.triggerHaptic(.move)
@@ -995,8 +1024,9 @@ private struct EscapePuzzlePlaySheet: View {
                 try? await Task.sleep(for: .milliseconds(420))
                 guard !Task.isCancelled else { return }
                 var replyBoard = board
-                if (try? replyBoard.apply(uci: oppUci)) != nil {
+                if let applied = try? replyBoard.apply(uci: oppUci) {
                     board = replyBoard
+                    lastMove = (applied.move.from, applied.move.to)
                     stepIndex += 1
                     isOpponentAnimating = false
                     if stepIndex >= puzzle.solutionUcis.count {

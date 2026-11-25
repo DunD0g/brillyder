@@ -100,7 +100,7 @@ public struct PositionEditorSheet: View {
                                         ForEach(0..<8, id: \.self) { col in
                                             let sq = Square(unchecked: (7 - row) * 8 + col)
                                             ZStack {
-                                                sq.isLightSquare ? store.boardTheme.lightSquare : store.boardTheme.darkSquare
+                                                sq.isLightSquare ? store.effectiveBoardTheme.lightSquare : store.effectiveBoardTheme.darkSquare
                                                 if let piece = squares[sq.rawValue] {
                                                     ChessPieceView(piece: piece, squareSize: sqSize)
                                                 }

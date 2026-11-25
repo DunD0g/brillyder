@@ -3,6 +3,7 @@ import BrillyDerCore
 
 public struct InsightsTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @State private var selectedTrendIndex: Int? = nil
 
     public var body: some View {
         let snap = store.insights
@@ -38,7 +39,18 @@ public struct InsightsTabView: View {
                                 .font(.caption)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                             }
-                            Spacer()
+                            Spacer(minLength: 6)
+                            Button("Warmup") {
+                                store.selectedTrainMode = .daily
+                                store.selectedTab = .train
+                                store.triggerHaptic(.move)
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .buttonStyle(.plain)
                         }
                         .padding(14)
                         .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.blunderRose)
@@ -233,28 +245,54 @@ public struct InsightsTabView: View {
                             .brillySurface(store.surfaceStyle, cornerRadius: 20)
                         }
 
-                        // MARK: - 6. Top Openings
+                        // MARK: - 6. Top Openings (Tappable — jump to matching course or game)
                         if !snap.topOpenings.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Top Openings")
-                                    .font(.headline)
-                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                HStack {
+                                    Text("Top Openings")
+                                        .font(.headline)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    Spacer()
+                                    Text("Tap to drill")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                }
                                 ForEach(snap.topOpenings, id: \.name) { op in
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(op.name)
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                            Text("\(op.games) game\(op.games == 1 ? "" : "s") · \(String(format: "%.0f", op.winRate))% win")
-                                                .font(.caption)
-                                                .foregroundStyle(BrillyPalette.inkSecondary)
+                                    Button {
+                                        let needle = op.name.lowercased()
+                                        if let matchingGame = store.analyzedGames.first(where: {
+                                            let opName = ($0.openingLineDetected ?? $0.game.openingName).lowercased()
+                                            return opName.contains(needle) || needle.contains(opName)
+                                        }) {
+                                            store.activeAnalyzedGame = matchingGame
+                                            store.selectedTab = .analyze
+                                        } else {
+                                            store.selectedTab = .openings
                                         }
-                                        Spacer()
-                                        Text("\(String(format: "%.1f", op.avgAccuracy))%")
-                                            .font(.subheadline.monospacedDigit().weight(.bold))
-                                            .foregroundStyle(BrillyPalette.brillyTeal)
+                                        store.triggerHaptic(.move)
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(op.name)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                                    .lineLimit(1)
+                                                Text("\(op.games) game\(op.games == 1 ? "" : "s") · \(String(format: "%.0f", op.winRate))% win")
+                                                    .font(.caption)
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                            }
+                                            Spacer()
+                                            Text("\(String(format: "%.1f", op.avgAccuracy))%")
+                                                .font(.subheadline.monospacedDigit().weight(.bold))
+                                                .foregroundStyle(BrillyPalette.brillyTeal)
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.6))
+                                        }
+                                        .padding(.vertical, 4)
+                                        .contentShape(Rectangle())
                                     }
-                                    .padding(.vertical, 4)
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .padding(16)
@@ -299,25 +337,94 @@ public struct InsightsTabView: View {
                 .foregroundStyle(BrillyPalette.inkPrimary)
 
             if accPoints.count >= 2 {
-                Canvas { ctx, size in
-                    let pad: CGFloat = 6
-                    let usableW = max(1, size.width - pad * 2)
-                    var path = Path()
-                    for (i, acc) in accPoints.enumerated() {
-                        let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
-                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
-                        if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                        else { path.addLine(to: CGPoint(x: x, y: y)) }
-                    }
-                    ctx.stroke(path, with: .color(BrillyPalette.brillyTeal), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                    for (i, acc) in accPoints.enumerated() {
-                        let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
-                        let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
-                        ctx.fill(Path(ellipseIn: CGRect(x: x - 3, y: y - 3, width: 6, height: 6)), with: .color(BrillyPalette.brillyTeal))
+                let activeIdx: Int? = selectedTrendIndex.flatMap { $0 < recent.count ? $0 : nil }
+                GeometryReader { geo in
+                    ZStack {
+                        Canvas { ctx, size in
+                            let pad: CGFloat = 8
+                            let usableW = max(1, size.width - pad * 2)
+                            var path = Path()
+                            for (i, acc) in accPoints.enumerated() {
+                                let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
+                                let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
+                                if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                                else { path.addLine(to: CGPoint(x: x, y: y)) }
+                            }
+                            ctx.stroke(path, with: .color(BrillyPalette.brillyTeal), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                            for (i, acc) in accPoints.enumerated() {
+                                let x = pad + CGFloat(i) / CGFloat(max(1, accPoints.count - 1)) * usableW
+                                let y = size.height * (1.0 - CGFloat(ChessMath.clamp(acc / 100.0, min: 0.08, max: 0.94)))
+                                let isSel = (activeIdx == i)
+                                let r: CGFloat = isSel ? 5.0 : 3.0
+                                ctx.fill(
+                                    Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)),
+                                    with: .color(isSel ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
+                                )
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { val in
+                                    let pad: CGFloat = 8
+                                    let usableW = max(1, geo.size.width - pad * 2)
+                                    let norm = ChessMath.clamp(Double((val.location.x - pad) / usableW), min: 0.0, max: 1.0)
+                                    let idx = Int((norm * Double(accPoints.count - 1)).rounded())
+                                    if selectedTrendIndex != idx {
+                                        selectedTrendIndex = idx
+                                        store.triggerHaptic(.move)
+                                    }
+                                }
+                        )
                     }
                 }
-                .frame(height: 62)
+                .frame(height: 66)
                 .padding(.vertical, 4)
+
+                if let idx = activeIdx {
+                    let ag = recent[idx]
+                    let userCol = ag.game.resolvedUserColor(handles: handles) ?? .white
+                    let rawOpp = userCol == .white ? ag.game.black.name : ag.game.white.name
+                    let oppMasked = store.maskedPlayerName(rawOpp, side: userCol.opposite)
+                    Button {
+                        store.activeAnalyzedGame = ag
+                        store.selectedTab = .analyze
+                        store.triggerHaptic(.move)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Game #\(idx + 1) vs")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            Text(oppMasked.text)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .lineLimit(1)
+                                .blur(radius: oppMasked.isBlurred ? 4 : 0)
+                            Text("· \(String(format: "%.1f", accPoints[idx]))%")
+                                .font(.caption2.monospacedDigit().weight(.black))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                            Spacer()
+                            Label("Analyze", systemImage: "arrow.right.circle.fill")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrillyPalette.brillyTeal)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(BrillyPalette.goldAmber.opacity(0.35), lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("Tap or scrub any point to inspect that game")
+                        .font(.caption2)
+                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.75))
+                }
             }
 
             HStack(spacing: 8) {

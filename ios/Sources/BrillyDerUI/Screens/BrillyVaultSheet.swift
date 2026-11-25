@@ -140,7 +140,7 @@ public struct BrillyVaultSheet: View {
                         InteractiveChessBoardView(
                             board: board,
                             orientation: item.color,
-                            theme: store.boardTheme,
+                            theme: store.effectiveBoardTheme,
                             surfaceStyle: store.surfaceStyle,
                             interactive: false,
                             lastMove: movePair,
@@ -213,7 +213,7 @@ public struct BrillyVaultSheet: View {
                             activeShareCard = BrillyShareCardPayload(
                                 fen: item.fen,
                                 orientation: item.color,
-                                theme: store.boardTheme,
+                                theme: store.effectiveBoardTheme,
                                 pieceSet: store.effectivePieceSet,
                                 vibe: store.vibeMode,
                                 calloutStyle: store.effectiveCalloutStyle,
@@ -333,7 +333,7 @@ public struct BrillyVaultSheet: View {
                                 InteractiveChessBoardView(
                                     board: (try? ChessBoard(fen: bm.fen)) ?? ChessBoard(),
                                     orientation: bm.color,
-                                    theme: store.boardTheme,
+                                    theme: store.effectiveBoardTheme,
                                     surfaceStyle: store.surfaceStyle,
                                     interactive: false
                                 )

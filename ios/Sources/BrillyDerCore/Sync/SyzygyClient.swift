@@ -101,6 +101,10 @@ public actor SyzygyClient {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: req)
+        } catch is CancellationError {
+            return nil
+        } catch let err as URLError where err.code == .cancelled {
+            return nil
         } catch {
             // Back off briefly on offline/timeout so interactive endgame drills never stall 3.5s on every move
             backoffUntil = Date().addingTimeInterval(45)

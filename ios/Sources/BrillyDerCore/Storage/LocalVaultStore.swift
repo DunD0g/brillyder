@@ -171,6 +171,7 @@ public struct VaultSnapshot: Codable, Sendable {
     public var woodpeckerCycle: WoodpeckerCycleRecord?
     public var masteredEndgameIds: [String]
     public var convertedAdvantageIds: [String]
+    public var solvedEscapeIds: [String]
     public var boardVisionBestScore: Int
     public var puzzleRushBlitzBest: Int
     public var puzzleRushSurvivalBest: Int
@@ -187,6 +188,7 @@ public struct VaultSnapshot: Codable, Sendable {
         woodpeckerCycle: WoodpeckerCycleRecord? = nil,
         masteredEndgameIds: [String] = [],
         convertedAdvantageIds: [String] = [],
+        solvedEscapeIds: [String] = [],
         boardVisionBestScore: Int = 0,
         puzzleRushBlitzBest: Int = 0,
         puzzleRushSurvivalBest: Int = 0
@@ -202,6 +204,7 @@ public struct VaultSnapshot: Codable, Sendable {
         self.woodpeckerCycle = woodpeckerCycle
         self.masteredEndgameIds = masteredEndgameIds
         self.convertedAdvantageIds = convertedAdvantageIds
+        self.solvedEscapeIds = solvedEscapeIds
         self.boardVisionBestScore = boardVisionBestScore
         self.puzzleRushBlitzBest = puzzleRushBlitzBest
         self.puzzleRushSurvivalBest = puzzleRushSurvivalBest
@@ -220,6 +223,7 @@ public struct VaultSnapshot: Codable, Sendable {
         self.woodpeckerCycle = try? c.decode(WoodpeckerCycleRecord.self, forKey: .woodpeckerCycle)
         self.masteredEndgameIds = (try? c.decode([String].self, forKey: .masteredEndgameIds)) ?? []
         self.convertedAdvantageIds = (try? c.decode([String].self, forKey: .convertedAdvantageIds)) ?? []
+        self.solvedEscapeIds = (try? c.decode([String].self, forKey: .solvedEscapeIds)) ?? []
         self.boardVisionBestScore = (try? c.decode(Int.self, forKey: .boardVisionBestScore)) ?? 0
         self.puzzleRushBlitzBest = (try? c.decode(Int.self, forKey: .puzzleRushBlitzBest)) ?? 0
         self.puzzleRushSurvivalBest = (try? c.decode(Int.self, forKey: .puzzleRushSurvivalBest)) ?? 0
@@ -258,7 +262,11 @@ public actor LocalVaultStore {
     public func save(_ snapshot: VaultSnapshot) throws {
         let encoder = JSONEncoder()
         let data = try encoder.encode(snapshot)
+        #if os(iOS)
+        try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #else
         try data.write(to: fileURL, options: [.atomic])
+        #endif
     }
 
     public static func exportBackupJSON(from snapshot: VaultSnapshot) throws -> Data {
@@ -278,6 +286,13 @@ public actor LocalVaultStore {
             prefs.append(.init(
                 key: "brillyder_endgame_mastered_v1",
                 value: .array(snapshot.masteredEndgameIds.map { .string($0) }),
+                updatedAt: nowMs
+            ))
+        }
+        if !snapshot.solvedEscapeIds.isEmpty {
+            prefs.append(.init(
+                key: "brillyder_escape_solved_v1",
+                value: .array(snapshot.solvedEscapeIds.map { .string($0) }),
                 updatedAt: nowMs
             ))
         }
@@ -470,6 +485,16 @@ public actor LocalVaultStore {
             case "brillyder_rush_survival_best":
                 if case .number(let n) = pref.value {
                     merged.puzzleRushSurvivalBest = max(merged.puzzleRushSurvivalBest, Int(n.rounded()))
+                }
+            case "brillyder_escape_solved_v1":
+                if case .array(let arr) = pref.value {
+                    let ids = arr.compactMap { v -> String? in
+                        if case .string(let s) = v { return s }
+                        return nil
+                    }
+                    if !ids.isEmpty {
+                        merged.solvedEscapeIds = Array(Set(merged.solvedEscapeIds + ids)).sorted()
+                    }
                 }
             case "brillyder_daily_done":
                 if case .string(let d) = pref.value, !d.isEmpty {

@@ -18,6 +18,7 @@ public struct BrillyProPaywallSheet: View {
 
     private static let privacyURL = URL(string: "https://dund0g.github.io/brillyder/privacy.html")!
     private static let termsURL = URL(string: "https://dund0g.github.io/brillyder/terms.html")!
+    private static let appleEulaURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     public init(highlightedFeature: String? = nil) {
         self.highlightedFeature = highlightedFeature
@@ -149,16 +150,16 @@ public struct BrillyProPaywallSheet: View {
                 subtitle: "Spaced-repetition FSRS drills graded on recall speed across 12 repertoires & your own PGNs"
             )
             benefitRow(
-                "infinity",
+                "cpu.fill",
                 tint: BrillyPalette.goldAmber,
-                title: "Unlimited Offline Game, Batch Analysis & Instant Auto-Sync",
-                subtitle: "Remove the 2/day Free cap, auto-sync on open & jump straight into your latest game"
+                title: "Ultra On-Device (~2550 Elo) & Cloud SF16 (~3500 Elo) + Unlimited Batch",
+                subtitle: "Remove the 2/day Free cap, unlock Show Threat Arrow, Guided Mistake Review, Opponent Profile Scout & Instant Auto-Sync"
             )
             benefitRow(
                 "crown.fill",
                 tint: BrillyPalette.blunderRose,
-                title: "Endgame, Never Give Up & Vision Labs, 4 Piece Sets & Pro Share Studio",
-                subtitle: "12 Syzygy endgames, 10 Stalemate Escapes, Board Vision, Puzzle Rush, Pro Emoji Packs 🔥/💀, 👍/🤡, 👑/🫠 & Custom Share Card Captions"
+                title: "6 Premium Board Themes, 4 Piece Sets, All Labs & Pro Share Studio",
+                subtitle: "Seasonal, Prism & Marble Luxury boards, 12 Syzygy endgames, 10 Stalemate Escapes, Board Vision, Puzzle Rush & 9:16 Story Share Cards"
             )
         }
         .padding(16)
@@ -209,6 +210,22 @@ public struct BrillyProPaywallSheet: View {
                     let equiv = storeKit.annualMonthlyEquivalentText()
                     let trialLower = storeKit.annualTrialDurationLabel
                     let trialUpper = storeKit.annualTrialDurationTitle.uppercased()
+                    let savingsBadge: String = {
+                        if let monthly = storeKit.product(for: .monthly),
+                           monthly.price > 0 {
+                            let yearlyAtMonthly = NSDecimalNumber(decimal: monthly.price * 12).doubleValue
+                            let annualDouble = NSDecimalNumber(decimal: annual.price).doubleValue
+                            if yearlyAtMonthly > annualDouble {
+                                let pct = Int(((yearlyAtMonthly - annualDouble) / yearlyAtMonthly * 100.0).rounded())
+                                if pct >= 10 {
+                                    return storeKit.isEligibleForAnnualTrial
+                                        ? "SAVE \(pct)% · \(trialUpper) FREE TRIAL"
+                                        : "SAVE \(pct)% VS MONTHLY"
+                                }
+                            }
+                        }
+                        return storeKit.isEligibleForAnnualTrial ? "BEST VALUE · \(trialUpper) FREE TRIAL" : "BEST VALUE"
+                    }()
                     let detail = storeKit.isEligibleForAnnualTrial
                         ? "\(equiv.map { "\($0)/mo · " } ?? "")\(trialLower) free trial, then \(annual.displayPrice)/year"
                         : "\(equiv.map { "\($0)/mo · " } ?? "")Billed annually at \(annual.displayPrice)/year"
@@ -218,7 +235,7 @@ public struct BrillyProPaywallSheet: View {
                         price: annual.displayPrice,
                         cadence: "/ year",
                         detail: detail,
-                        badge: storeKit.isEligibleForAnnualTrial ? "BEST VALUE · \(trialUpper) FREE TRIAL" : "BEST VALUE",
+                        badge: savingsBadge,
                         accent: BrillyPalette.brillyTeal
                     )
                 }
@@ -350,6 +367,13 @@ public struct BrillyProPaywallSheet: View {
                 }
                 .buttonStyle(BrillyPressScaleStyle())
                 .disabled(!storeKit.hasLoadedProducts || storeKit.isPurchasing || storeKit.isRestoring)
+
+                if selectedTier == .annual && storeKit.isEligibleForAnnualTrial {
+                    Text("No payment due today · Cancel anytime in Apple Settings")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.brillyTeal.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                }
             }
 
             // Restore Purchases (Required by App Store Guideline 3.1.1)
@@ -412,7 +436,7 @@ public struct BrillyProPaywallSheet: View {
                     .font(.caption2)
                     .foregroundStyle(BrillyPalette.inkSecondary)
 
-                Link("Apple EULA", destination: Self.termsURL)
+                Link("Apple EULA", destination: Self.appleEulaURL)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkSecondary)
             }

@@ -156,10 +156,28 @@ public struct InteractiveChessBoardView: View {
                     .allowsHitTesting(false)
                 }
 
-                // 4. Lifted Dragged Piece (auto-resets on system cancellation via @GestureState)
+                // 4. Lifted Dragged Piece + Hovered Destination Target Halo (prevents 1-rank thumb slip)
                 if let fromSq = dragState.fromSquare,
                    let loc = dragState.location,
                    let piece = board[fromSq] {
+                    let dropPoint = CGPoint(x: loc.x, y: loc.y - sqSize * 0.25)
+                    if let hoverSq = squareAt(point: dropPoint, sqSize: sqSize), hoverSq != fromSq {
+                        let isLegalDest = legalTargets.contains(hoverSq)
+                        let hoverCenter = centerPoint(for: hoverSq, sqSize: sqSize)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(
+                                isLegalDest ? BrillyPalette.brillyTeal : Color.white.opacity(0.45),
+                                lineWidth: isLegalDest ? 3.0 : 1.8
+                            )
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(isLegalDest ? BrillyPalette.brillyTeal.opacity(0.20) : Color.white.opacity(0.08))
+                            )
+                            .frame(width: sqSize, height: sqSize)
+                            .position(hoverCenter)
+                            .allowsHitTesting(false)
+                    }
+
                     ChessPieceView(piece: piece, squareSize: sqSize * 1.18)
                         .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
                         .position(x: loc.x, y: loc.y - sqSize * 0.25)

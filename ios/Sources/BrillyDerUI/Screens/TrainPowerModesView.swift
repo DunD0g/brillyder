@@ -69,7 +69,7 @@ public struct WoodpeckerCyclePanel: View {
                     InteractiveChessBoardView(
                         board: board,
                         orientation: orientation,
-                        theme: store.boardTheme,
+                        theme: store.effectiveBoardTheme,
                         surfaceStyle: store.surfaceStyle,
                         interactive: !solvedCurrent && !revealedCurrent,
                         lastMove: lastMove,
@@ -279,7 +279,7 @@ public struct AdvantageConversionPanel: View {
                                 InteractiveChessBoardView(
                                     board: (try? ChessBoard(fen: lead.fen)) ?? ChessBoard(),
                                     orientation: lead.userColor,
-                                    theme: store.boardTheme,
+                                    theme: store.effectiveBoardTheme,
                                     surfaceStyle: store.surfaceStyle,
                                     interactive: false
                                 )
@@ -342,7 +342,7 @@ private struct ConversionPlaySheet: View {
                         InteractiveChessBoardView(
                             board: board,
                             orientation: lead.userColor,
-                            theme: store.boardTheme,
+                            theme: store.effectiveBoardTheme,
                             surfaceStyle: store.surfaceStyle,
                             interactive: !thinking && board.turn == lead.userColor && board.outcome == .ongoing
                         ) { move in
@@ -541,7 +541,7 @@ public struct MistakeDeckPanel: View {
                 InteractiveChessBoardView(
                     board: board,
                     orientation: orientation,
-                    theme: store.boardTheme,
+                    theme: store.effectiveBoardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: !solved,
                     lastMove: lastMove,

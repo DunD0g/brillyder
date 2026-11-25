@@ -675,7 +675,7 @@ public final class BrillyAppStore {
         if isBackground {
             BrillySoundEngine.shared.pause()
             if isAnalyzing { cancelAnalysis() }
-            if isBatchAnalyzing { cancelBatchAnalysis() }
+            // Keep batch analysis running under its UIBackgroundTask so background completion + local notification actually fire.
             flushToDiskNow()
         } else {
             if soundEnabled {
@@ -760,6 +760,9 @@ public final class BrillyAppStore {
         self.woodpeckerCycle = snap.woodpeckerCycle
         self.masteredEndgameIds = Set(snap.masteredEndgameIds)
         self.convertedAdvantageIds = Set(snap.convertedAdvantageIds)
+        if !snap.solvedEscapeIds.isEmpty {
+            self.solvedEscapeIds.formUnion(snap.solvedEscapeIds)
+        }
         self.boardVisionBestScore = snap.boardVisionBestScore
         self.puzzleRushBlitzBest = snap.puzzleRushBlitzBest
         self.puzzleRushSurvivalBest = snap.puzzleRushSurvivalBest
@@ -894,6 +897,8 @@ public final class BrillyAppStore {
 
     public func flushToDiskNow() {
         guard isHydrated else { return }
+        saveLoopTask?.cancel()
+        saveLoopTask = nil
         saveDirty = false
         let snap = currentSnapshot()
         let vaultStore = vault
@@ -934,6 +939,7 @@ public final class BrillyAppStore {
             woodpeckerCycle: woodpeckerCycle,
             masteredEndgameIds: Array(masteredEndgameIds),
             convertedAdvantageIds: Array(convertedAdvantageIds),
+            solvedEscapeIds: Array(solvedEscapeIds).sorted(),
             boardVisionBestScore: boardVisionBestScore,
             puzzleRushBlitzBest: puzzleRushBlitzBest,
             puzzleRushSurvivalBest: puzzleRushSurvivalBest
@@ -951,6 +957,7 @@ public final class BrillyAppStore {
         self.bookmarks = merged.bookmarks
         self.masteredEndgameIds = Set(merged.masteredEndgameIds)
         self.convertedAdvantageIds = Set(merged.convertedAdvantageIds)
+        self.solvedEscapeIds.formUnion(merged.solvedEscapeIds)
         self.dailyStreakDays = merged.dailyStreakDays
         self.lastDailyCompletedDate = merged.lastDailyCompletedDate
         self.woodpeckerCycle = merged.woodpeckerCycle
@@ -1430,6 +1437,7 @@ public final class BrillyAppStore {
         endBatchBackgroundTask()
         batchBackgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "BrillyDerBatchAnalysis") { [weak self] in
             Task { @MainActor in
+                self?.cancelBatchAnalysis()
                 self?.endBatchBackgroundTask()
             }
         }
@@ -1438,10 +1446,11 @@ public final class BrillyAppStore {
         batchTask = Task.detached(priority: .userInitiated) {
             for (idx, game) in targets.enumerated() {
                 if Task.isCancelled { break }
-                let matchup = "\(game.white.name) vs \(game.black.name)"
                 await MainActor.run {
                     guard self.batchGeneration == gen else { return }
-                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(preset.title) · \(matchup)"
+                    let whiteLabel = self.maskedPlayerName(game.white.name, side: .white).text
+                    let blackLabel = self.maskedPlayerName(game.black.name, side: .black).text
+                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(preset.title) · \(whiteLabel) vs \(blackLabel)"
                 }
                 do {
                     let result = try await GameAnalyzer.analyze(

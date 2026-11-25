@@ -593,6 +593,29 @@ public struct ChessBoard: Hashable, Sendable {
         }
     }
 
+    /// Performs a zero-allocation null move (passes the turn) for Null-Move Pruning.
+    @inline(__always)
+    public mutating func makeNullMove() {
+        if let oldEp = effectiveEnPassantSquare() {
+            zobristHash ^= Zobrist.epFileKeys[oldEp.file]
+        }
+        enPassantSquare = nil
+        halfmoveClock += 1
+        turn = turn.opposite
+        zobristHash ^= Zobrist.sideKey
+    }
+
+    /// Returns true if `color` has at least one non-pawn, non-king piece (guards against zugzwang in NMP).
+    @inline(__always)
+    public func hasNonPawnMaterial(for color: PieceColor) -> Bool {
+        for idx in 0..<64 {
+            if let p = squares[idx], p.color == color, p.type != .pawn && p.type != .king {
+                return true
+            }
+        }
+        return false
+    }
+
     @inline(__always)
     private mutating func moveRook(_ from: Square, to: Square, color: PieceColor) {
         let rook = Piece(color: color, type: .rook)

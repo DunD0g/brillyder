@@ -30,12 +30,12 @@ public enum GameAnalyzer {
         var cloudEnabled = preset.usesCloudEval
         var consecutiveCloudMisses = 0
 
-        func evaluatePosition(_ fen: String) async throws -> EngineEval {
+        func evaluatePosition(_ fen: String) async throws -> (eval: EngineEval, fromCloud: Bool) {
             if cloudEnabled {
                 switch await LichessCloudEvalClient.probe(fen: fen, multiPV: 2) {
                 case .hit(let cloudEval):
                     consecutiveCloudMisses = 0
-                    return cloudEval
+                    return (cloudEval, true)
                 case .rateLimited:
                     cloudEnabled = false
                 case .miss:
@@ -45,23 +45,28 @@ public enum GameAnalyzer {
                     }
                 }
             }
-            return try await engine.analyze(
+            let localEval = try await engine.analyze(
                 fen: fen,
                 depth: preset.searchDepth,
                 multiPV: 2,
                 maxTimeMs: preset.maxTimeMs
             )
+            return (localEval, false)
         }
 
-        let initialEvalResult = try await evaluatePosition(parsed.startFen)
+        let initialEvalTuple = try await evaluatePosition(parsed.startFen)
+        let initialEvalResult = initialEvalTuple.eval
 
         var evalByPlyIndex: [EngineEval] = [initialEvalResult]
+        var evalWasCloud: [Bool] = [initialEvalTuple.fromCloud]
         evalByPlyIndex.reserveCapacity(totalPlies + 1)
+        evalWasCloud.reserveCapacity(totalPlies + 1)
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
             try Task.checkCancellation()
-            let eval = try await evaluatePosition(pgnMove.applied.afterFen)
+            let (eval, fromCloud) = try await evaluatePosition(pgnMove.applied.afterFen)
             evalByPlyIndex.append(eval)
+            evalWasCloud.append(fromCloud)
             onProgress?(idx + 1, max(1, totalPlies))
         }
         if totalPlies == 0 {
@@ -80,8 +85,20 @@ public enum GameAnalyzer {
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
             let applied = pgnMove.applied
-            let evalBefore = evalByPlyIndex[idx]
+            var evalBefore = evalByPlyIndex[idx]
             var evalAfter = evalByPlyIndex[idx + 1]
+            // Eliminate cross-engine eval cliff on cloud→local transition ply by re-evaluating
+            // beforeFen with the local engine so winBefore and winAfter share the exact same scale.
+            if evalWasCloud[idx] && !evalWasCloud[idx + 1] {
+                if let localBefore = try? await engine.analyze(
+                    fen: applied.beforeFen,
+                    depth: preset.searchDepth,
+                    multiPV: 2,
+                    maxTimeMs: preset.maxTimeMs
+                ) {
+                    evalBefore = localBefore
+                }
+            }
             let beforeBoard = (try? ChessBoard(fen: applied.beforeFen)) ?? ChessBoard()
             let afterBoard = (try? ChessBoard(fen: applied.afterFen)) ?? ChessBoard()
 
@@ -175,13 +192,25 @@ public enum GameAnalyzer {
             }
 
             let isClutch = classification == .great && winBefore < 52 && secondBestGap >= 15
+            let detectedMotif: String? = (classification == .mistake || classification == .blunder)
+                ? MoveClassifier.detectTacticalMotif(
+                    beforeBoard: beforeBoard,
+                    afterBoard: afterBoard,
+                    moverColor: mover,
+                    playedToSquare: applied.move.to,
+                    bestMoveUci: evalBefore.bestMoveUci,
+                    missedMate: missedMate,
+                    walkedIntoMate: walkedIntoMate
+                )
+                : nil
             let coaching = MoveClassifier.generateExplanation(
                 classification: classification,
                 playedSan: applied.san,
                 bestSan: bestSan,
                 winLoss: winLoss,
                 evalAfterDisplay: evalAfter.score.display,
-                isClutchSave: isClutch
+                isClutchSave: isClutch,
+                detectedMotif: detectedMotif
             )
 
             var timeSpent: Double? = nil

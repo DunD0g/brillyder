@@ -409,7 +409,7 @@ public struct AnalyzeTabView: View {
                 InteractiveChessBoardView(
                     board: sandboxBoard,
                     orientation: orientation,
-                    theme: store.boardTheme,
+                    theme: store.effectiveBoardTheme,
                     surfaceStyle: store.surfaceStyle,
                     interactive: !botThinking && sandboxBoard.outcome == .ongoing,
                     lastMove: activeLastMove,
@@ -658,7 +658,7 @@ public struct AnalyzeTabView: View {
             return BrillyShareCardPayload(
                 fen: displayFen,
                 orientation: orientation,
-                theme: store.boardTheme,
+                theme: store.effectiveBoardTheme,
                 pieceSet: store.effectivePieceSet,
                 vibe: store.vibeMode,
                 calloutStyle: store.effectiveCalloutStyle,
@@ -979,7 +979,8 @@ public struct AnalyzeTabView: View {
                         retryMode = false
                         store.triggerHaptic(.success)
                     } else {
-                        retryFeedback = "Not \(move.uci) — keep hunting for a stronger continuation!"
+                        let playedSan = board.san(for: move) ?? move.uci
+                        retryFeedback = "Not \(playedSan) — keep hunting for a stronger continuation!"
                         store.triggerHaptic(.error)
                     }
                 }
@@ -1577,17 +1578,34 @@ public struct AnalyzeTabView: View {
             }
             return isClockActive ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary
         }()
+        let cleanRaw = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowerHandles = Set(store.userHandles.map { $0.lowercased() })
+        let isOwnHandle = lowerHandles.contains(cleanRaw.lowercased())
+        let isLookupEligible = !isOwnHandle
+            && !cleanRaw.isEmpty
+            && cleanRaw.lowercased() != "white"
+            && cleanRaw.lowercased() != "black"
+            && cleanRaw.lowercased() != "anonymous"
+            && !cleanRaw.contains(" ")
+
         return HStack(spacing: 7) {
             Circle()
                 .fill(isWhite ? Color.white : Color(hex: 0x1E293B))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
                 .frame(width: 13, height: 13)
             VStack(alignment: .leading, spacing: 1) {
-                Text(name)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(BrillyPalette.inkPrimary)
-                    .lineLimit(1)
-                    .blur(radius: isBlurred ? 5 : 0)
+                HStack(spacing: 3) {
+                    Text(name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .lineLimit(1)
+                        .blur(radius: isBlurred ? 5 : 0)
+                    if isLookupEligible && !isBlurred {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.8))
+                    }
+                }
                 Text("\(String(format: "%.1f", acc))% · ~\(elo)")
                     .font(.caption2.monospacedDigit())
                     .lineLimit(1)
@@ -1647,16 +1665,6 @@ public struct AnalyzeTabView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
-            let cleanRaw = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let lowerHandles = Set(store.userHandles.map { $0.lowercased() })
-            let isOwnHandle = lowerHandles.contains(cleanRaw.lowercased())
-            let isLookupEligible = !isOwnHandle
-                && !cleanRaw.isEmpty
-                && cleanRaw.lowercased() != "white"
-                && cleanRaw.lowercased() != "black"
-                && cleanRaw.lowercased() != "anonymous"
-                && !cleanRaw.contains(" ")
-
             if isLookupEligible {
                 if !store.hasProAccess {
                     store.openProPaywall(feature: "Quick Opponent Profile & Recent Games")
@@ -1674,7 +1682,7 @@ public struct AnalyzeTabView: View {
         .onLongPressGesture(minimumDuration: 0.4) {
             copyText(rawName, label: "Copied \(name)")
         }
-        .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy\(materialBadge.map { ", up \($0)" } ?? ""). Tap to view from \(isWhite ? "White" : "Black") side.")
+        .accessibilityLabel("\(name), \(String(format: "%.1f", acc)) percent accuracy\(materialBadge.map { ", up \($0)" } ?? ""). \(isLookupEligible ? "Tap to view opponent profile." : "Tap to view from \(isWhite ? "White" : "Black") side.")")
     }
 
     private func headerIconBtn(
@@ -2115,8 +2123,9 @@ private struct GuidedMistakeReviewSheet: View {
             store.recordTrainingActivity()
             store.triggerHaptic(.success)
         } else {
+            let playedSan = board.san(for: move) ?? move.uci
             feedbackIsError = true
-            feedback = "Not \(move.uci) — try looking for a sharper tactic or stronger defense!"
+            feedback = "Not \(playedSan) — try looking for a sharper tactic or stronger defense!"
             store.triggerHaptic(.error)
         }
     }

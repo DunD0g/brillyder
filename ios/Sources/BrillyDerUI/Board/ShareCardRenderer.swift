@@ -38,6 +38,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
     public let quipIndex: Int
     public let customCaption: String?
     public let blurPlayerNames: Bool
+    public let storyMode: Bool
     public let exhibitionTheme: CreatorExhibitionTheme
     public let broadcastRibbon: String?
     public let showCreatorHandle: Bool
@@ -70,6 +71,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         quipIndex: Int = 0,
         customCaption: String? = nil,
         blurPlayerNames: Bool = false,
+        storyMode: Bool = false,
         exhibitionTheme: CreatorExhibitionTheme = .none,
         broadcastRibbon: String? = nil,
         showCreatorHandle: Bool = false
@@ -102,6 +104,7 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         self.quipIndex = quipIndex
         self.customCaption = customCaption
         self.blurPlayerNames = blurPlayerNames
+        self.storyMode = storyMode
         self.exhibitionTheme = exhibitionTheme
         self.broadcastRibbon = broadcastRibbon
         self.showCreatorHandle = showCreatorHandle
@@ -125,7 +128,9 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
         calloutStyle: CalloutStyle,
         showMoveArrow: Bool,
         quipIndex: Int,
-        customCaption: String? = nil
+        customCaption: String? = nil,
+        blurPlayerNames: Bool? = nil,
+        storyMode: Bool? = nil
     ) -> BrillyShareCardPayload {
         BrillyShareCardPayload(
             id: id,
@@ -154,7 +159,8 @@ public struct BrillyShareCardPayload: Identifiable, Sendable, Equatable {
             showMoveArrow: showMoveArrow,
             quipIndex: quipIndex,
             customCaption: customCaption,
-            blurPlayerNames: blurPlayerNames,
+            blurPlayerNames: blurPlayerNames ?? self.blurPlayerNames,
+            storyMode: storyMode ?? self.storyMode,
             exhibitionTheme: exhibitionTheme,
             broadcastRibbon: broadcastRibbon,
             showCreatorHandle: showCreatorHandle
@@ -347,6 +353,7 @@ public struct BrillyShareCardView: View {
             .padding(20)
         }
         .frame(width: cardWidth)
+        .frame(minHeight: payload.storyMode ? 711 : nil)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -930,6 +937,8 @@ public struct BrillyShareCardSheet: View {
     @State private var showMoveArrow: Bool
     @State private var quipIndex: Int
     @State private var customCaption: String
+    @State private var blurPlayerNames: Bool
+    @State private var storyMode: Bool
     @State private var showingCaptionField: Bool = false
     @State private var showingProPaywall: Bool = false
     @State private var saveNotice: String? = nil
@@ -945,16 +954,22 @@ public struct BrillyShareCardSheet: View {
         _showMoveArrow = State(initialValue: payload.showMoveArrow)
         _quipIndex = State(initialValue: payload.quipIndex)
         _customCaption = State(initialValue: payload.customCaption ?? "")
+        _blurPlayerNames = State(initialValue: payload.blurPlayerNames)
+        _storyMode = State(initialValue: payload.storyMode)
     }
 
     private var activePayload: BrillyShareCardPayload {
         let effectiveCaption: String? = store.hasProAccess ? customCaption : nil
+        let effectiveBlur = store.hasProAccess ? blurPlayerNames : basePayload.blurPlayerNames
+        let effectiveStory = store.hasProAccess ? storyMode : false
         return basePayload.withOverrides(
             vibe: vibe,
             calloutStyle: calloutStyle,
             showMoveArrow: showMoveArrow,
             quipIndex: quipIndex,
-            customCaption: effectiveCaption
+            customCaption: effectiveCaption,
+            blurPlayerNames: effectiveBlur,
+            storyMode: effectiveStory
         )
     }
 
@@ -1066,6 +1081,82 @@ public struct BrillyShareCardSheet: View {
                                 .background(
                                     Group {
                                         if showingCaptionField && store.hasProAccess {
+                                            Capsule().fill(BrillyPalette.brillyTeal)
+                                        } else {
+                                            Capsule().fill(Color.clear)
+                                                .brillyGlassPill(surfaceStyle, tint: BrillyPalette.warpPurple)
+                                        }
+                                    }
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+
+                        // Pro Share Studio Row: 9:16 Story Format + Blur Player Names
+                        HStack(spacing: 8) {
+                            Button {
+                                if !store.hasProAccess {
+                                    showingProPaywall = true
+                                    return
+                                }
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    storyMode.toggle()
+                                }
+                            } label: {
+                                Label(
+                                    storyMode && store.hasProAccess ? "Story 9:16" : "Card · 9:16",
+                                    systemImage: store.hasProAccess
+                                        ? (storyMode ? "rectangle.portrait.fill" : "rectangle.portrait")
+                                        : "lock.fill"
+                                )
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(
+                                    storyMode && store.hasProAccess
+                                        ? BrillyPalette.voidBg
+                                        : (store.hasProAccess ? BrillyPalette.inkPrimary : BrillyPalette.warpPurpleText)
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Group {
+                                        if storyMode && store.hasProAccess {
+                                            Capsule().fill(BrillyPalette.brillyTeal)
+                                        } else {
+                                            Capsule().fill(Color.clear)
+                                                .brillyGlassPill(surfaceStyle, tint: BrillyPalette.warpPurple)
+                                        }
+                                    }
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                if !store.hasProAccess {
+                                    showingProPaywall = true
+                                    return
+                                }
+                                withAnimation(.snappy(duration: 0.2)) {
+                                    blurPlayerNames.toggle()
+                                }
+                            } label: {
+                                Label(
+                                    blurPlayerNames && store.hasProAccess ? "Names Blurred" : "Blur Names",
+                                    systemImage: store.hasProAccess
+                                        ? (blurPlayerNames ? "eye.slash.fill" : "eye.slash")
+                                        : "lock.fill"
+                                )
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(
+                                    blurPlayerNames && store.hasProAccess
+                                        ? BrillyPalette.voidBg
+                                        : (store.hasProAccess ? BrillyPalette.inkPrimary : BrillyPalette.warpPurpleText)
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Group {
+                                        if blurPlayerNames && store.hasProAccess {
                                             Capsule().fill(BrillyPalette.brillyTeal)
                                         } else {
                                             Capsule().fill(Color.clear)

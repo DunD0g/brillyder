@@ -298,13 +298,159 @@ public enum MoveClassifier {
         return .middlegame
     }
 
+    /// Inspects the position before/after a mistake or blunder along with the missed best move
+    /// to identify a concrete chess tactical motif (Mate Threat, Hanging Piece, Fork / Double Attack,
+    /// Back-Rank, Promotion, Missed Capture, etc.) so Insights → Missed Motifs shows real patterns.
+    public static func detectTacticalMotif(
+        beforeBoard: ChessBoard,
+        afterBoard: ChessBoard,
+        moverColor: PieceColor,
+        playedToSquare: Square,
+        bestMoveUci: String,
+        missedMate: Bool,
+        walkedIntoMate: Bool
+    ) -> String? {
+        if walkedIntoMate { return "Mate Threat" }
+        if missedMate { return "Missed Mate" }
+
+        let opp = moverColor.opposite
+
+        // 1. Check if the played move hung the moved piece (or left a major/minor piece en prise)
+        if let movedPiece = afterBoard.squares[playedToSquare.rawValue],
+           movedPiece.color == moverColor,
+           movedPiece.type != .pawn,
+           movedPiece.type != .king,
+           afterBoard.isSquareAttacked(playedToSquare, by: opp) {
+            let defended = afterBoard.isSquareAttacked(playedToSquare, by: moverColor)
+            if !defended {
+                return "Hanging Piece"
+            }
+            if movedPiece.type == .queen || movedPiece.type == .rook {
+                return "Hanging Piece"
+            }
+        }
+
+        // 2. Inspect the missed best move on a copy of beforeBoard
+        if bestMoveUci.count >= 4 {
+            var bestAfter = beforeBoard
+            if let appliedBest = try? bestAfter.apply(uci: bestMoveUci) {
+                // Missed promotion
+                if appliedBest.move.promotion != nil {
+                    return "Promotion"
+                }
+
+                // Back-rank check or mate threat on rank 1 or 8
+                let backRank = opp == .white ? 0 : 7
+                if bestAfter.isInCheck(opp),
+                   bestAfter.kingSquare(for: opp).rank == backRank,
+                   (appliedBest.piece.type == .rook || appliedBest.piece.type == .queen) {
+                    return "Back-Rank"
+                }
+
+                // Missed fork / double attack: best move attacks 2+ valuable opponent pieces
+                let dest = appliedBest.move.to
+                let attackedValuableTargets = countValuableTargetsAttacked(from: dest, mover: moverColor, on: bestAfter)
+                if attackedValuableTargets >= 2 {
+                    return "Fork / Double Attack"
+                }
+
+                // Missed winning capture of a minor/major piece
+                if let cap = appliedBest.captured, cap.type != .pawn {
+                    let capVal = cap.type.materialValue
+                    let moverVal = appliedBest.piece.type.materialValue
+                    if capVal > moverVal || !bestAfter.isSquareAttacked(dest, by: opp) {
+                        return "Missed Capture"
+                    }
+                }
+
+                // Missed forcing check
+                if bestAfter.isInCheck(opp) {
+                    return "Forcing Check"
+                }
+            }
+        }
+
+        // 3. Check if any other mover piece (non-pawn) was left completely undefended & attacked
+        for idx in 0..<64 {
+            let sq = Square(unchecked: idx)
+            if let p = afterBoard.squares[idx],
+               p.color == moverColor,
+               p.type != .pawn, p.type != .king,
+               afterBoard.isSquareAttacked(sq, by: opp),
+               !afterBoard.isSquareAttacked(sq, by: moverColor) {
+                return "Hanging Piece"
+            }
+        }
+
+        return nil
+    }
+
+    private static func countValuableTargetsAttacked(from sq: Square, mover: PieceColor, on board: ChessBoard) -> Int {
+        guard let attacker = board.squares[sq.rawValue], attacker.color == mover else { return 0 }
+        let opp = mover.opposite
+        let f = sq.file
+        let r = sq.rank
+        var targets: [Square] = []
+
+        switch attacker.type {
+        case .pawn:
+            let nr = mover == .white ? r + 1 : r - 1
+            if nr >= 0 && nr < 8 {
+                if f > 0 { targets.append(Square(unchecked: nr * 8 + (f - 1))) }
+                if f < 7 { targets.append(Square(unchecked: nr * 8 + (f + 1))) }
+            }
+        case .knight:
+            let offsets = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+            for (df, dr) in offsets {
+                let nf = f + df, nr = r + dr
+                if nf >= 0 && nf < 8 && nr >= 0 && nr < 8 {
+                    targets.append(Square(unchecked: nr * 8 + nf))
+                }
+            }
+        case .king:
+            break
+        case .bishop, .rook, .queen:
+            var dirs: [(Int, Int)] = []
+            if attacker.type == .rook || attacker.type == .queen {
+                dirs += [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            }
+            if attacker.type == .bishop || attacker.type == .queen {
+                dirs += [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+            }
+            for (df, dr) in dirs {
+                var nf = f + df, nr = r + dr
+                while nf >= 0 && nf < 8 && nr >= 0 && nr < 8 {
+                    let s = Square(unchecked: nr * 8 + nf)
+                    if board.squares[s.rawValue] != nil {
+                        targets.append(s)
+                        break
+                    }
+                    nf += df
+                    nr += dr
+                }
+            }
+        }
+
+        var count = 0
+        for s in targets {
+            if let target = board.squares[s.rawValue], target.color == opp {
+                if target.type == .king || target.type == .queen || target.type == .rook
+                    || ((target.type == .bishop || target.type == .knight) && !board.isSquareAttacked(s, by: opp)) {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+
     public static func generateExplanation(
         classification: MoveClassification,
         playedSan: String,
         bestSan: String,
         winLoss: Double,
         evalAfterDisplay: String,
-        isClutchSave: Bool = false
+        isClutchSave: Bool = false,
+        detectedMotif: String? = nil
     ) -> CoachingExplanation {
         switch classification {
         case .book:
@@ -344,16 +490,18 @@ public enum MoveClassifier {
                 tacticalTag: "Inaccuracy"
             )
         case .mistake:
+            let tag = detectedMotif ?? "Missed Tactic"
             return CoachingExplanation(
-                headline: "Tactical mistake — missed \(bestSan)",
+                headline: detectedMotif.map { "\($0) — missed \(bestSan)" } ?? "Tactical mistake — missed \(bestSan)",
                 detail: "\(playedSan) drops \(Int(winLoss.rounded()))% win chance (\(evalAfterDisplay)). \(bestSan) kept control.",
-                tacticalTag: "Missed Tactic"
+                tacticalTag: tag
             )
         case .blunder:
+            let tag = detectedMotif ?? "Blunder"
             return CoachingExplanation(
-                headline: "Decisive blunder — \(bestSan) was needed",
+                headline: detectedMotif.map { "Blunder (\($0)) — \(bestSan) was needed" } ?? "Decisive blunder — \(bestSan) was needed",
                 detail: "\(playedSan) swings the evaluation to \(evalAfterDisplay) (-\(Int(winLoss.rounded()))% win chance). Rewind and find \(bestSan)!",
-                tacticalTag: "Blunder"
+                tacticalTag: tag
             )
         }
     }
