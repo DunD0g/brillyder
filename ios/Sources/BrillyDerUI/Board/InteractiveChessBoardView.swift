@@ -253,9 +253,11 @@ public struct InteractiveChessBoardView: View {
         let piece = board[sq]
         let isHiddenByDrag = dragState.fromSquare == sq
         let showCoords = showBoardCoordinates && sqSize >= 22
+        let plySeed = max(0, (board.fullmoveNumber - 1) * 2 + (board.turn == .black ? 1 : 0))
+        let colors = theme.squareColors(plySeed: plySeed)
 
         ZStack {
-            (isLight ? theme.lightSquare : theme.darkSquare)
+            (isLight ? colors.light : colors.dark)
 
             if isLast {
                 theme.lastMove

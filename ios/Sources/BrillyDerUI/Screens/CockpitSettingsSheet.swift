@@ -663,7 +663,7 @@ public struct CockpitSettingsSheet: View {
                                     .foregroundStyle(BrillyPalette.inkSecondary)
                                 Spacer()
                                 if !store.hasProAccess {
-                                    Text("3 Extra · PRO")
+                                    Text("6 Extra · PRO")
                                         .font(.caption2.weight(.bold))
                                         .foregroundStyle(BrillyPalette.warpPurpleText)
                                 }

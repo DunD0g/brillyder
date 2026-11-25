@@ -274,8 +274,22 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
     case obsidian
     case championshipGold
     case cyberViolet
+    case seasonal
+    case prismChaos
+    case royalMarble
 
     public var id: String { rawValue }
+
+    /// Current meteorological season (0 = Winter, 1 = Spring, 2 = Summer, 3 = Autumn).
+    private static var currentSeasonIndex: Int {
+        let month = Calendar.current.component(.month, from: Date())
+        switch month {
+        case 3, 4, 5:   return 1 // Spring
+        case 6, 7, 8:   return 2 // Summer
+        case 9, 10, 11: return 3 // Autumn
+        default:        return 0 // Winter
+        }
+    }
 
     public var title: String {
         switch self {
@@ -286,6 +300,15 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return "Obsidian"
         case .championshipGold: return "Gold"
         case .cyberViolet:      return "Violet"
+        case .seasonal:
+            switch Self.currentSeasonIndex {
+            case 1: return "Spring"
+            case 2: return "Summer"
+            case 3: return "Autumn"
+            default: return "Winter"
+            }
+        case .prismChaos:       return "Prism ✨"
+        case .royalMarble:      return "Marble"
         }
     }
 
@@ -298,6 +321,15 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return Color(hex: 0x475569)
         case .championshipGold: return Color(hex: 0xE4E9DA)
         case .cyberViolet:      return Color(hex: 0xC4B5FD)
+        case .seasonal:
+            switch Self.currentSeasonIndex {
+            case 1: return Color(hex: 0xFCE7F3) // Sakura Blossom
+            case 2: return Color(hex: 0xFEF3C7) // Warm Sand
+            case 3: return Color(hex: 0xFDE6C4) // Autumn Parchment
+            default: return Color(hex: 0xE0F2FE) // Glacial Ice
+            }
+        case .prismChaos:       return Color(hex: 0xF472B6)
+        case .royalMarble:      return Color(hex: 0xF5EFE6) // Carrara Ivory Marble
         }
     }
 
@@ -310,7 +342,31 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return Color(hex: 0x1E293B)
         case .championshipGold: return Color(hex: 0x2F5239)
         case .cyberViolet:      return Color(hex: 0x4C2A85)
+        case .seasonal:
+            switch Self.currentSeasonIndex {
+            case 1: return Color(hex: 0x9D4E8A) // Spring Plum
+            case 2: return Color(hex: 0x0F766E) // Tropical Lagoon
+            case 3: return Color(hex: 0x9A3412) // Maple Ember
+            default: return Color(hex: 0x335573) // Arctic Slate
+            }
+        case .prismChaos:       return Color(hex: 0x312E81)
+        case .royalMarble:      return Color(hex: 0x231F1D) // Nero Marquina Onyx
         }
+    }
+
+    /// Returns dynamic per-move square colors for `.prismChaos`, or static `(lightSquare, darkSquare)` for all other themes.
+    public func squareColors(plySeed: Int) -> (light: Color, dark: Color) {
+        guard self == .prismChaos else { return (lightSquare, darkSquare) }
+        let palettes: [(UInt32, UInt32)] = [
+            (0xF472B6, 0x312E81), // Hot Pink / Deep Indigo
+            (0x38BDF8, 0x1E1B4B), // Electric Sky / Midnight
+            (0xA3E635, 0x14532D), // Acid Lime / Deep Forest
+            (0xFBBF24, 0x7C2D12), // Solar Gold / Molten Rust
+            (0xC084FC, 0x3B0764), // Ultraviolet / Royal Plum
+            (0x2DD4BF, 0x134E4A), // Neon Mint / Deep Abyss
+        ]
+        let idx = abs(plySeed) % palettes.count
+        return (Color(hex: palettes[idx].0), Color(hex: palettes[idx].1))
     }
 
     public var lastMove: Color {
@@ -322,6 +378,9 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return Color(hex: 0x2DD4BF).opacity(0.44)
         case .championshipGold: return Color(hex: 0xF59E0B).opacity(0.48)
         case .cyberViolet:      return Color(hex: 0x38BDF8).opacity(0.45)
+        case .seasonal:         return Color(hex: 0xF59E0B).opacity(0.42)
+        case .prismChaos:       return Color(hex: 0xFEF08A).opacity(0.52)
+        case .royalMarble:      return Color(hex: 0xD4AF37).opacity(0.46) // 24k Champagne Gold
         }
     }
 
@@ -334,6 +393,9 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return Color(hex: 0x2DD4BF).opacity(0.55)
         case .championshipGold: return Color(hex: 0xFBBF24).opacity(0.55)
         case .cyberViolet:      return Color(hex: 0xE879F9).opacity(0.52)
+        case .seasonal:         return Color(hex: 0x2DD4BF).opacity(0.50)
+        case .prismChaos:       return Color(hex: 0xFFFFFF).opacity(0.45)
+        case .royalMarble:      return Color(hex: 0xD4AF37).opacity(0.58)
         }
     }
 
@@ -346,6 +408,15 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
         case .obsidian:         return Color(hex: 0x2DD4BF)
         case .championshipGold: return Color(hex: 0xFBBF24)
         case .cyberViolet:      return Color(hex: 0xC084FC)
+        case .seasonal:
+            switch Self.currentSeasonIndex {
+            case 1: return Color(hex: 0xF472B6)
+            case 2: return Color(hex: 0x14B8A6)
+            case 3: return Color(hex: 0xFB923C)
+            default: return Color(hex: 0x38BDF8)
+            }
+        case .prismChaos:       return Color(hex: 0xF472B6)
+        case .royalMarble:      return Color(hex: 0xE6C667) // 24k Luxury Gold
         }
     }
 
@@ -353,6 +424,12 @@ public enum BoardThemeID: String, Codable, CaseIterable, Sendable, Identifiable 
     public func coordColor(isLightSquare: Bool) -> Color {
         if self == .neon || self == .obsidian {
             return isLightSquare ? Color(hex: 0xE2E8F0).opacity(0.88) : Color(hex: 0x94A3B8).opacity(0.88)
+        }
+        if self == .royalMarble {
+            return isLightSquare ? Color(hex: 0x57482E).opacity(0.88) : Color(hex: 0xE6C667).opacity(0.92)
+        }
+        if self == .prismChaos {
+            return isLightSquare ? Color(hex: 0x0F172A).opacity(0.85) : Color.white.opacity(0.88)
         }
         return (isLightSquare ? darkSquare : lightSquare).opacity(0.90)
     }
