@@ -138,6 +138,8 @@ public struct BrillyDerRootView: View {
         }) {
             BrillyWelcomeGuideSheet()
                 .environment(store)
+                .environment(\.brillyPieceSet, store.effectivePieceSet)
+                .environment(\.brillyShowCoordinates, store.showBoardCoordinates)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }

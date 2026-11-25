@@ -1,14 +1,20 @@
 import SwiftUI
 import BrillyDerCore
 
-/// First-install Welcome Guide & Interactive Theme Picker shown once on fresh install
+/// First-install 4-step Welcome Guide & Interactive Setup shown once on fresh install
 /// (and re-openable anytime from Settings -> Quick Start & Theme Guide).
 public struct BrillyWelcomeGuideSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     @State private var page: Int = 0
-    @State private var handleInput: String = ""
+    @State private var lichessInput: String = ""
+    @State private var chessComInput: String = ""
+    @State private var previewMoveTick: Int = 0
+    @State private var lockedHintMessage: String? = nil
+
+    private static let totalPages = 4
+    private static let previewBaseBoard: ChessBoard = (try? ChessBoard(fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 5")) ?? ChessBoard()
 
     public init() {}
 
@@ -18,9 +24,9 @@ public struct BrillyWelcomeGuideSheet: View {
                 CosmicVoidBackdrop(style: store.surfaceStyle)
 
                 VStack(spacing: 0) {
-                    // Compact step progress indicator
+                    // Compact 4-step progress bar
                     HStack(spacing: 6) {
-                        ForEach(0..<3, id: \.self) { idx in
+                        ForEach(0..<Self.totalPages, id: \.self) { idx in
                             Capsule()
                                 .fill(idx <= page ? BrillyPalette.brillyTeal : Color.white.opacity(0.16))
                                 .frame(height: 4)
@@ -37,21 +43,25 @@ public struct BrillyWelcomeGuideSheet: View {
                             case 0:
                                 welcomeOverviewPage
                             case 1:
-                                mascotAndThemePage
+                                boardAndAppearancePage
+                            case 2:
+                                mascotAndStylePage
                             default:
-                                readyToPlayPage
+                                quickSetupPage
                             }
                         }
                         .padding(.horizontal, 18)
                         .padding(.top, 10)
                         .padding(.bottom, 24)
                     }
+                    .scrollDismissesKeyboard(.interactively)
 
                     // Bottom Navigation Bar
                     HStack(spacing: 10) {
                         if page > 0 {
                             Button {
                                 withAnimation(.snappy(duration: 0.25)) {
+                                    lockedHintMessage = nil
                                     page -= 1
                                 }
                                 store.triggerHaptic(.move)
@@ -67,8 +77,9 @@ public struct BrillyWelcomeGuideSheet: View {
                         }
 
                         Button {
-                            if page < 2 {
+                            if page < Self.totalPages - 1 {
                                 withAnimation(.snappy(duration: 0.25)) {
+                                    lockedHintMessage = nil
                                     page += 1
                                 }
                                 store.triggerHaptic(.move)
@@ -79,7 +90,7 @@ public struct BrillyWelcomeGuideSheet: View {
                             HStack(spacing: 6) {
                                 Text(primaryButtonTitle)
                                     .font(.headline.weight(.bold))
-                                Image(systemName: page < 2 ? "arrow.right" : "checkmark")
+                                Image(systemName: page < Self.totalPages - 1 ? "arrow.right" : "checkmark")
                                     .font(.subheadline.weight(.bold))
                             }
                             .foregroundStyle(BrillyPalette.voidBg)
@@ -108,7 +119,7 @@ public struct BrillyWelcomeGuideSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Skip") {
+                    Button(store.hasCompletedOnboarding ? "Done" : "Skip") {
                         store.completeOnboarding()
                         dismiss()
                     }
@@ -116,7 +127,8 @@ public struct BrillyWelcomeGuideSheet: View {
                 }
             }
             .onAppear {
-                handleInput = store.activeUsername ?? ""
+                lichessInput = store.lichessUsername
+                chessComInput = store.chessComUsername
             }
         }
     }
@@ -124,34 +136,37 @@ public struct BrillyWelcomeGuideSheet: View {
     private var pageTitle: String {
         switch page {
         case 0: return "Welcome"
-        case 1: return "Choose Your Style"
-        default: return "Ready to Play"
+        case 1: return "Board & Look"
+        case 2: return "Mascot & Style"
+        default: return "Quick Setup"
         }
     }
 
     private var primaryButtonTitle: String {
         switch page {
-        case 0: return "Customize Style"
-        case 1: return "Next: Quick Setup"
+        case 0: return "Customize Board"
+        case 1: return "Next: Mascot & Style"
+        case 2: return "Next: Quick Setup"
         default:
-            let cleaned = handleInput.trimmingCharacters(in: .whitespacesAndNewlines)
-            return cleaned.isEmpty ? "Start Exploring" : "Sync & Launch"
+            let hasAnyHandle = !lichessInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !chessComInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return hasAnyHandle ? "Sync & Launch" : "Start Exploring"
         }
     }
 
-    // MARK: - Page 1: Quick App Guide
+    // MARK: - Step 1: Welcome Overview
 
     private var welcomeOverviewPage: some View {
         VStack(spacing: 16) {
             VStack(spacing: 10) {
                 HStack(spacing: 12) {
                     BrillyLogoMark(size: 52, circular: true)
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 58, emojiPack: store.emojiPack)
+                    BrillyGhibliBuddyView(mood: .brilliant, size: 58, emojiPack: store.effectiveEmojiPack)
                 }
 
                 BrillyWordmarkView(fontSize: 32, uppercase: false, showSlash: true)
 
-                Text("Your private, on-device chess analyzer, opening trainer, and highlight studio.")
+                Text("Your private, on-device chess analyzer, FSRS opening coach, and highlight studio.")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BrillyPalette.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -160,30 +175,177 @@ public struct BrillyWelcomeGuideSheet: View {
 
             VStack(spacing: 10) {
                 guideCard(
-                    icon: "sparkles",
+                    icon: "cpu.fill",
                     tint: BrillyPalette.brillyTeal,
-                    title: "Analyze Games On-Device",
-                    detail: "Sync your Lichess or Chess.com games in the Games tab and inspect every move offline with move ratings, eval graph & auto-play."
+                    title: "BrillyChess Offline (~2550 Elo) + Cloud SF16",
+                    detail: "Sync Lichess or Chess.com games and inspect every move offline with eval graphs, threat arrows & optional Hybrid Stockfish 16 Cloud (~3500 Elo*)."
                 )
                 guideCard(
                     icon: "brain.head.profile",
                     tint: BrillyPalette.warpPurpleText,
-                    title: "Daily Coach & Custom FSRS Openings",
-                    detail: "Build your daily streak in Train. Tap Daily or press & hold any course in Openings to pick the exact openings you want drilled."
+                    title: "FSRS Openings, Mistakes & Labs",
+                    detail: "Build your daily streak in Train → FSRS, drill your own blunders, or press & hold any course in Openings to build your custom repertoire."
                 )
                 guideCard(
                     icon: "square.and.arrow.up",
                     tint: BrillyPalette.goldAmber,
-                    title: "Brilly Vault & Move Highlight Cards",
-                    detail: "Tap the top-right !! counter anytime to revisit your best moves and export 3x social highlight cards."
+                    title: "Brilly Vault & 3x Story Share Cards",
+                    detail: "Tap the top-right !! counter anytime to revisit your best moves and export 3x Card or 9:16 Story highlights."
                 )
             }
         }
     }
 
-    // MARK: - Page 2: Interactive Mascot, Vibe & Board Theme Picker
+    // MARK: - Step 2: Live Board Preview, Surface & All 10 Board Themes
 
-    private var mascotAndThemePage: some View {
+    private var boardAndAppearancePage: some View {
+        @Bindable var bindableStore = store
+        let previewFen = "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - \(previewMoveTick % 12) \(5 + previewMoveTick)"
+        let previewBoard = (try? ChessBoard(fen: previewFen)) ?? Self.previewBaseBoard
+
+        return VStack(alignment: .leading, spacing: 14) {
+            // Live Mini-Board Preview
+            VStack(spacing: 10) {
+                HStack {
+                    Text("LIVE BOARD PREVIEW")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.0)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    Spacer()
+                    if store.effectiveBoardTheme == .prismChaos {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                previewMoveTick += 1
+                            }
+                            store.triggerHaptic(.move)
+                        } label: {
+                            Label("Shift Color", systemImage: "sparkles")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(store.effectiveBoardTheme.title)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+                }
+
+                InteractiveChessBoardView(
+                    board: previewBoard,
+                    orientation: .white,
+                    theme: store.effectiveBoardTheme,
+                    surfaceStyle: store.surfaceStyle,
+                    interactive: false,
+                    lastMove: (Square(unchecked: 5), Square(unchecked: 26))
+                )
+                .frame(width: 172, height: 172)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 20)
+
+            // UI Surface Picker
+            VStack(alignment: .leading, spacing: 8) {
+                Text("UI SURFACE STYLE")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                Picker("UI Surface", selection: $bindableStore.surfaceStyle) {
+                    ForEach(SurfaceStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+
+            // All 10 Board Themes in a balanced 5x2 grid
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("BOARD THEME")
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.0)
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                    Spacer()
+                    if !store.hasProAccess {
+                        Text("4 Free · 6 Pro")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrillyPalette.warpPurpleText)
+                    }
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(BoardThemeID.allCases) { theme in
+                        let unlocked = store.isBoardThemeUnlocked(theme)
+                        let selected = store.effectiveBoardTheme == theme
+                        Button {
+                            if !unlocked {
+                                lockedHintMessage = "\(theme.title) is a Brilly/Der Pro board theme — unlock anytime in Settings."
+                                store.triggerHaptic(.move)
+                                return
+                            }
+                            lockedHintMessage = nil
+                            withAnimation(.snappy(duration: 0.2)) {
+                                store.boardTheme = theme
+                            }
+                            store.triggerHaptic(.move)
+                        } label: {
+                            HStack(spacing: 8) {
+                                HStack(spacing: 0) {
+                                    theme.lightSquare.frame(width: 14, height: 22)
+                                    theme.darkSquare.frame(width: 14, height: 22)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                                Text(theme.title)
+                                    .font(.caption.weight(selected ? .bold : .semibold))
+                                    .foregroundStyle(selected ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                                    .lineLimit(1)
+                                Spacer(minLength: 2)
+                                if !unlocked {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                                } else if selected {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(selected ? 0.12 : 0.05))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08), lineWidth: selected ? 1.4 : 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                if let msg = lockedHintMessage {
+                    Label(msg, systemImage: "crown.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                }
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+        }
+    }
+
+    // MARK: - Step 3: Mascot, Emoji Pack & Coach Vibe
+
+    private var mascotAndStylePage: some View {
         @Bindable var bindableStore = store
         return VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
@@ -200,10 +362,10 @@ public struct BrillyWelcomeGuideSheet: View {
                 mascotOptionRow(
                     style: .brillyDer,
                     badge: "DEFAULT",
-                    title: "Brilly/Der (\(store.emojiPack.pairLabel))",
+                    title: "Brilly/Der (\(store.effectiveEmojiPack.pairLabel))",
                     subtitle: "Playful emoji badges shouting \"Very nice, Brilly!!\" & \"Blun-DER!!\""
                 ) {
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 46, emojiPack: store.emojiPack)
+                    BrillyGhibliBuddyView(mood: .brilliant, size: 46, emojiPack: store.effectiveEmojiPack)
                 }
 
                 if store.calloutStyle == .brillyDer {
@@ -213,9 +375,11 @@ public struct BrillyWelcomeGuideSheet: View {
                             let selected = store.effectiveEmojiPack == pack
                             Button {
                                 if !unlocked {
+                                    lockedHintMessage = "\(pack.pairLabel) is a Pro Emoji Pack — unlock anytime in Settings."
                                     store.triggerHaptic(.move)
                                     return
                                 }
+                                lockedHintMessage = nil
                                 withAnimation(.snappy(duration: 0.2)) {
                                     store.emojiPack = pack
                                 }
@@ -244,6 +408,12 @@ public struct BrillyWelcomeGuideSheet: View {
                             .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
+
+                    if let msg = lockedHintMessage {
+                        Label(msg, systemImage: "crown.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrillyPalette.warpPurpleText)
+                    }
                 }
 
                 mascotOptionRow(
@@ -270,166 +440,109 @@ public struct BrillyWelcomeGuideSheet: View {
                 }
             }
 
-            // Live Preview Toast so the user immediately sees their selected theme!
+            // Live Preview Toast
             AlienCelebrationBanner(
                 event: CelebrationEvent(
                     kind: .brilliant,
                     vibe: store.vibeMode,
                     calloutStyle: store.calloutStyle,
-                    emojiPack: store.emojiPack
+                    emojiPack: store.effectiveEmojiPack
                 ),
                 surfaceStyle: store.surfaceStyle,
                 onDismiss: {}
             )
             .allowsHitTesting(false)
 
-            // Coach Copy Style + Board Swatches
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Coach Copy Vibe")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.inkPrimary)
-                    Picker("Coach Copy Vibe", selection: $bindableStore.vibeMode) {
-                        Text("Classic Chess").tag(VibeMode.classic)
-                        Text("Cosmic Cockpit").tag(VibeMode.cosmic)
-                    }
-                    .pickerStyle(.segmented)
+            // Coach Copy Vibe
+            VStack(alignment: .leading, spacing: 6) {
+                Text("COACH COPY VIBE")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+                Picker("Coach Copy Vibe", selection: $bindableStore.vibeMode) {
+                    Text("Classic Chess").tag(VibeMode.classic)
+                    Text("Cosmic Cockpit").tag(VibeMode.cosmic)
                 }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Board Color")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.inkPrimary)
-                    HStack(spacing: 10) {
-                        ForEach(BoardThemeID.allCases.filter { store.isBoardThemeUnlocked($0) }) { theme in
-                            let selected = store.boardTheme == theme
-                            Button {
-                                withAnimation(.snappy(duration: 0.2)) {
-                                    store.boardTheme = theme
-                                }
-                                store.triggerHaptic(.move)
-                            } label: {
-                                VStack(spacing: 5) {
-                                    HStack(spacing: 0) {
-                                        theme.lightSquare
-                                        theme.darkSquare
-                                    }
-                                    .frame(height: 26)
-                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.14), lineWidth: selected ? 2 : 1)
-                                    )
-                                    Text(theme.title)
-                                        .font(.caption2.weight(selected ? .bold : .medium))
-                                        .foregroundStyle(selected ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
+                .pickerStyle(.segmented)
             }
             .padding(14)
             .brillySurface(store.surfaceStyle, cornerRadius: 18)
-
-            // Tip showing exactly where to find Settings later!
-            HStack(spacing: 10) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(BrillyPalette.brillyTeal)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(BrillyPalette.brillyTeal.opacity(0.16)))
-                Text("Tap the **Sliders icon** in the top-right bar anytime to switch mascots, UI surface (`Liquid Glass` / `Cosmic`), piece sets, sound, or daily openings.")
-                    .font(.caption)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-            }
-            .padding(12)
-            .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: BrillyPalette.brillyTeal)
         }
     }
 
-    // MARK: - Page 3: Optional Account Sync & Launch
+    // MARK: - Step 4: Dual Accounts, Default Engine & Launch Tab
 
-    private var readyToPlayPage: some View {
+    private var quickSetupPage: some View {
         @Bindable var bindableStore = store
-        return VStack(spacing: 16) {
-            VStack(spacing: 10) {
-                switch store.calloutStyle {
-                case .brillyDer:
-                    BrillyGhibliBuddyView(mood: .brilliant, size: 78, emojiPack: store.emojiPack)
-                case .cosmicAlien:
-                    BrillyAlienUFOView(mood: .brilliant, size: 84, showBeam: true)
-                case .standard:
-                    ZStack {
-                        Circle()
-                            .fill(BrillyPalette.brillyTeal.opacity(0.2))
-                            .frame(width: 74, height: 74)
-                        BrillyGemIcon(size: 38, color: BrillyPalette.brillyTeal)
-                    }
-                }
-
-                Text("You're All Set!")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(BrillyPalette.inkPrimary)
-
-                Text("Optionally enter your Lichess or Chess.com username to pull in your recent games right away — or skip and explore sample games & opening courses first.")
-                    .font(.subheadline)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 6)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Picker("Platform", selection: $bindableStore.syncPlatform) {
-                    Text("Lichess").tag(GameSource.lichess)
-                    Text("Chess.com").tag(GameSource.chesscom)
-                }
-                .pickerStyle(.segmented)
-
-                TextField(
-                    store.syncPlatform == .lichess ? "Lichess username (optional)" : "Chess.com username (optional)",
-                    text: $handleInput
-                )
-                .textFieldStyle(.plain)
-                #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                #endif
-                .foregroundStyle(BrillyPalette.inkPrimary)
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08)))
-
-                Text("100% private & local-first: zero accounts required, no servers, no tracking.")
-                    .font(.caption2)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
-            }
-            .padding(16)
-            .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
-
-            // Compact default launch screen preference
+        return VStack(spacing: 14) {
+            // Dual Chess Accounts (Lichess & Chess.com both supported without losing input)
             VStack(alignment: .leading, spacing: 10) {
-                Text("OPEN BRILLYDER ON")
+                Text("CHESS ACCOUNTS (OPTIONAL)")
                     .font(.caption2.weight(.bold))
-                    .tracking(0.9)
+                    .tracking(1.0)
                     .foregroundStyle(BrillyPalette.brillyTeal)
 
                 HStack(spacing: 8) {
-                    ForEach([BrillyTab.train, .analyze, .openings, .insights]) { tab in
-                        let selected = store.defaultLaunchTab == tab
+                    Text("Lichess")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        .frame(width: 72, alignment: .leading)
+                    TextField("Lichess username", text: $lichessInput)
+                        .textFieldStyle(.plain)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.08)))
+                }
+
+                HStack(spacing: 8) {
+                    Text("Chess.com")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        .frame(width: 72, alignment: .leading)
+                    TextField("Chess.com username", text: $chessComInput)
+                        .textFieldStyle(.plain)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        #endif
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.08)))
+                }
+
+                Text("100% private & local-first: zero sign-in required, no servers, no tracking.")
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.brillyTeal)
+
+            // Default Engine Strength
+            VStack(alignment: .leading, spacing: 8) {
+                Text("DEFAULT ENGINE STRENGTH")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+
+                HStack(spacing: 8) {
+                    ForEach(AnalysisDepthPreset.batchPresets) { preset in
+                        let selected = store.analysisPreset == preset
                         Button {
                             withAnimation(.snappy(duration: 0.2)) {
-                                store.defaultLaunchTab = tab
+                                store.analysisPreset = preset
                             }
                             store.triggerHaptic(.move)
                         } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: tab.systemImage)
+                            VStack(spacing: 2) {
+                                Text(preset.title)
                                     .font(.caption.weight(.bold))
-                                Text(tab.title)
-                                    .font(.caption2.weight(.bold))
-                                    .lineLimit(1)
+                                Text(preset.eloEstimate)
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .opacity(0.85)
                             }
                             .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                             .frame(maxWidth: .infinity)
@@ -447,9 +560,75 @@ public struct BrillyWelcomeGuideSheet: View {
                     }
                 }
 
-                Text("Pro tip: enable Auto-Sync on Open in Settings to jump straight into your latest game after playing.")
+                Text("Single-game Ultra (~2550 Elo) & ☁️ Cloud SF16 (~3500 Elo*) can be selected anytime inside Analyze.")
                     .font(.caption2)
                     .foregroundStyle(BrillyPalette.inkSecondary)
+            }
+            .padding(14)
+            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+
+            // Default Launch Tab (all 5 tabs) + Pro Auto-Sync
+            VStack(alignment: .leading, spacing: 10) {
+                Text("OPEN BRILLYDER ON")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(BrillyPalette.brillyTeal)
+
+                HStack(spacing: 6) {
+                    ForEach(BrillyTab.allCases) { tab in
+                        let selected = store.defaultLaunchTab == tab
+                        Button {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                store.defaultLaunchTab = tab
+                            }
+                            store.triggerHaptic(.move)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: tab.systemImage)
+                                    .font(.caption.weight(.bold))
+                                Text(tab.title)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.06))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                            .strokeBorder(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.09), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                    }
+                }
+
+                if store.hasProAccess {
+                    Toggle(isOn: $bindableStore.autoSyncOnLaunch) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Auto-Sync Latest Game on Open")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            Text("Quietly fetches new games when you open the app")
+                                .font(.caption2)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                        }
+                    }
+                    .tint(BrillyPalette.brillyTeal)
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.warpPurpleText)
+                        Text("Pro tip: enable Auto-Sync on Open in Settings to jump straight into your latest game.")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+                }
             }
             .padding(14)
             .brillySurface(store.surfaceStyle, cornerRadius: 18)
@@ -459,16 +638,27 @@ public struct BrillyWelcomeGuideSheet: View {
     // MARK: - Helpers
 
     private func finishAndSyncIfEntered() {
-        let cleaned = handleInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.completeOnboarding(applyDefaultTab: cleaned.isEmpty)
-        if !cleaned.isEmpty {
-            if store.syncPlatform == .lichess {
-                store.lichessUsername = cleaned
-            } else {
-                store.chessComUsername = cleaned
-            }
-            store.lockHandle(for: store.syncPlatform)
-            store.selectedTab = .games
+        let cleanLichess = lichessInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanChessCom = chessComInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasAny = !cleanLichess.isEmpty || !cleanChessCom.isEmpty
+
+        if !cleanLichess.isEmpty {
+            store.lichessUsername = cleanLichess
+            store.lockHandle(for: .lichess)
+        }
+        if !cleanChessCom.isEmpty {
+            store.chessComUsername = cleanChessCom
+            store.lockHandle(for: .chesscom)
+        }
+        if cleanLichess.isEmpty && !cleanChessCom.isEmpty {
+            store.syncPlatform = .chesscom
+        } else if !cleanLichess.isEmpty {
+            store.syncPlatform = .lichess
+        }
+
+        store.completeOnboarding(applyDefaultTab: true)
+
+        if hasAny {
             Task {
                 await store.syncRecentGames()
             }
@@ -543,15 +733,15 @@ public struct BrillyWelcomeGuideSheet: View {
 
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(selected ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+                    .foregroundStyle(selected ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary.opacity(0.6))
             }
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.10 : 0.04))
+                    .fill(Color.white.opacity(selected ? 0.11 : 0.04))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(selected ? BrillyPalette.brillyTeal.opacity(0.75) : Color.white.opacity(0.09), lineWidth: selected ? 1.6 : 1.0)
+                            .strokeBorder(selected ? BrillyPalette.brillyTeal.opacity(0.75) : Color.white.opacity(0.08), lineWidth: selected ? 1.5 : 1)
                     )
             )
         }

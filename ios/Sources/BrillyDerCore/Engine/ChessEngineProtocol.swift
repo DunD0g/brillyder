@@ -63,11 +63,11 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
 
     public var searchDepth: Int {
         switch self {
-        case .fast:       return 6
-        case .balanced:   return 8
-        case .deep:       return 10
-        case .ultra:      return 12
-        case .cloudUltra: return 12
+        case .fast:       return 8
+        case .balanced:   return 10
+        case .deep:       return 12
+        case .ultra:      return 16
+        case .cloudUltra: return 16
         }
     }
 
@@ -101,9 +101,9 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
 
     public var eloEstimate: String {
         switch self {
-        case .fast:       return "~1800 Elo"
-        case .balanced:   return "~2100 Elo"
-        case .deep:       return "~2350 Elo"
+        case .fast:       return "~2000 Elo"
+        case .balanced:   return "~2200 Elo"
+        case .deep:       return "~2400 Elo"
         case .ultra:      return "~2550 Elo"
         case .cloudUltra: return "~3500 Elo*"
         }
@@ -111,11 +111,11 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
 
     public var detailSummary: String {
         switch self {
-        case .fast:       return "Instant on-device tactical check (NMP + LMR)"
+        case .fast:       return "Instant on-device tactical check (SEE + NMP + LMR)"
         case .balanced:   return "Strong club & tournament review"
-        case .deep:       return "Expert tactical, pawn-structure & endgame review"
-        case .ultra:      return "Master-grade offline on-device depth (single-game)"
-        case .cloudUltra: return "Lichess Stockfish 16 Cloud + Ultra offline fallback"
+        case .deep:       return "Master tactical, mobility & king-safety review"
+        case .ultra:      return "Max offline on-device depth (single-game)"
+        case .cloudUltra: return "Hybrid Stockfish 16 Cloud + BrillyChess Ultra fallback"
         }
     }
 

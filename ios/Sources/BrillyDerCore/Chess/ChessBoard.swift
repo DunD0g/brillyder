@@ -821,20 +821,26 @@ public struct ChessBoard: Hashable, Sendable {
     // MARK: - Game State & Outcome
 
     public var isInsufficientMaterial: Bool {
-        var minorPieces: [(PieceColor, PieceType, Square)] = []
+        var minorCount = 0
+        var bishopCount = 0
+        var firstBishopLight = false
         for idx in 0..<64 {
             guard let p = squares[idx], p.type != .king else { continue }
             if p.type == .pawn || p.type == .rook || p.type == .queen { return false }
-            minorPieces.append((p.color, p.type, Square(unchecked: idx)))
+            minorCount += 1
+            if minorCount > 2 { return false }
+            if p.type == .bishop {
+                let isLight = ((idx >> 3) + (idx & 7)) & 1 == 1
+                if bishopCount == 0 {
+                    firstBishopLight = isLight
+                } else if firstBishopLight != isLight {
+                    return false
+                }
+                bishopCount += 1
+            }
         }
-        if minorPieces.count <= 1 { return true }
-        if minorPieces.count == 2 &&
-           minorPieces[0].1 == .bishop &&
-           minorPieces[1].1 == .bishop &&
-           minorPieces[0].2.isLightSquare == minorPieces[1].2.isLightSquare {
-            return true
-        }
-        return false
+        if minorCount <= 1 { return true }
+        return bishopCount == 2
     }
 
     public var outcome: GameOutcome {
@@ -847,9 +853,18 @@ public struct ChessBoard: Hashable, Sendable {
         return .ongoing
     }
 
-    /// Fast short-circuiting check used by the search engine to detect horizon stalemates without allocating a full move list.
+    /// True short-circuiting check used by the search engine to detect horizon stalemates without testing every move.
     public func hasAnyLegalMove() -> Bool {
-        !legalMoves().isEmpty
+        let mover = turn
+        let pseudo = pseudoLegalMoves(capturesOnly: false)
+        for m in pseudo {
+            var next = self
+            next.makeMoveUnchecked(m)
+            if !next.isInCheck(mover) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Standard Perft node count for exact FIDE legal move verification.

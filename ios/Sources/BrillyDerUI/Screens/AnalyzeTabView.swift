@@ -290,9 +290,14 @@ public struct AnalyzeTabView: View {
                 Text("\(store.analysisStatusText) · \(pct)%")
                     .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(BrillyPalette.brillyTeal)
-                Text("On-device native \(store.analysisPreset.title) engine")
-                    .font(.caption)
-                    .foregroundStyle(BrillyPalette.inkSecondary)
+                Label(
+                    store.analysisPreset.usesCloudEval
+                        ? "Hybrid Cloud SF16 + BrillyChess Ultra"
+                        : "On-device BrillyChess \(store.analysisPreset.title) · \(store.analysisPreset.eloEstimate)",
+                    systemImage: store.analysisPreset.sfSymbol
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(store.analysisPreset.usesCloudEval ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
             }
 
             TractorBeamProgressBar(progress: store.analysisProgress, height: 11)

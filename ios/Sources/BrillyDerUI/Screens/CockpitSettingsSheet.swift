@@ -681,7 +681,7 @@ public struct CockpitSettingsSheet: View {
                                     let selected = store.effectiveBoardTheme == theme
                                     Button {
                                         if !unlocked {
-                                            localProFeature = "Premium Board Themes (Obsidian, Gold & Violet)"
+                                            localProFeature = "6 Premium Board Themes (Obsidian, Gold, Violet, Seasonal, Prism & Marble)"
                                             showingLocalProSheet = true
                                             return
                                         }

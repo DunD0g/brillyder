@@ -25,10 +25,24 @@ public actor BrillyNativeEngine: ChessEngine {
     private static let mateScore = 29000
     private static let mateThreshold = 28000
     private static let ttMask = (1 << 17) - 1 // 131,072 entries (~4 MB RAM)
+    private static let historyMax = 16_384
+
+    /// Precomputed logarithmic Late Move Reductions table: `lmrTable[depth][moveIndex]`.
+    private static let lmrTable: [[Int]] = {
+        var table = Array(repeating: Array(repeating: 0, count: 64), count: 32)
+        for d in 1..<32 {
+            for m in 1..<64 {
+                table[d][m] = max(0, Int(0.75 + log(Double(d)) * log(Double(m)) / 2.25))
+            }
+        }
+        return table
+    }()
 
     private var tt: [TTEntry]
     private var killers: [[ChessMove?]]
     private var history: [Int] // [color (0..1) * 4096 + from * 64 + to]
+    private var countermoves: [ChessMove?] // [prevFrom * 64 + prevTo]
+    private var staticEvalStack: [Int] // [ply] for `improving` flag
     private var pathHashes: [UInt64] = []
     private var nodesVisited: Int = 0
     private var deadline: ContinuousClock.Instant?
@@ -39,6 +53,8 @@ public actor BrillyNativeEngine: ChessEngine {
         self.tt = Array(repeating: TTEntry(), count: Self.ttMask + 1)
         self.killers = Array(repeating: [nil, nil], count: 64)
         self.history = Array(repeating: 0, count: 2 * 64 * 64)
+        self.countermoves = Array(repeating: nil, count: 64 * 64)
+        self.staticEvalStack = Array(repeating: 0, count: 64)
     }
 
     public func clearHash() {
@@ -47,6 +63,9 @@ public actor BrillyNativeEngine: ChessEngine {
         }
         for i in 0..<history.count {
             history[i] = 0
+        }
+        for i in 0..<countermoves.count {
+            countermoves[i] = nil
         }
     }
 
@@ -77,7 +96,7 @@ public actor BrillyNativeEngine: ChessEngine {
         }
 
         try Task.checkCancellation()
-        let clampedDepth = max(1, min(14, depth))
+        let clampedDepth = max(1, min(20, depth))
         let requestedPV = max(1, min(multiPV, legal.count))
         let clock = ContinuousClock()
         self.deadline = maxTimeMs.map { clock.now.advanced(by: .milliseconds($0)) }
@@ -85,8 +104,8 @@ public actor BrillyNativeEngine: ChessEngine {
         self.nodesVisited = 0
         self.killers = Array(repeating: [nil, nil], count: 64)
         // Age history table gently so cross-move knowledge persists without saturating
-        for i in 0..<history.count where history[i] > 0 {
-            history[i] >>= 1
+        for i in 0..<history.count where history[i] != 0 {
+            history[i] /= 2
         }
         self.pathHashes = [board.zobristHash]
 
@@ -224,13 +243,14 @@ public actor BrillyNativeEngine: ChessEngine {
 
                 var childPV: [ChessMove] = []
                 let score: Int
+                let prevKey = move.from.rawValue * 64 + move.to.rawValue
                 if index == 0 {
-                    score = -negamax(board: next, depth: depth - 1, alpha: -beta, beta: -localAlpha, ply: 1, allowNull: true, pv: &childPV)
+                    score = -negamax(board: next, depth: depth - 1, alpha: -beta, beta: -localAlpha, ply: 1, allowNull: true, prevMoveKey: prevKey, pv: &childPV)
                 } else {
                     var zeroPV: [ChessMove] = []
-                    let probe = -negamax(board: next, depth: depth - 1, alpha: -localAlpha - 1, beta: -localAlpha, ply: 1, allowNull: true, pv: &zeroPV)
+                    let probe = -negamax(board: next, depth: depth - 1, alpha: -localAlpha - 1, beta: -localAlpha, ply: 1, allowNull: true, prevMoveKey: prevKey, pv: &zeroPV)
                     if probe > localAlpha && !aborted {
-                        score = -negamax(board: next, depth: depth - 1, alpha: -beta, beta: -localAlpha, ply: 1, allowNull: true, pv: &childPV)
+                        score = -negamax(board: next, depth: depth - 1, alpha: -beta, beta: -localAlpha, ply: 1, allowNull: true, prevMoveKey: prevKey, pv: &childPV)
                     } else {
                         score = probe
                         childPV = zeroPV
@@ -285,6 +305,7 @@ public actor BrillyNativeEngine: ChessEngine {
         beta: Int,
         ply: Int,
         allowNull: Bool,
+        prevMoveKey: Int,
         pv: inout [ChessMove]
     ) -> Int {
         nodesVisited += 1
@@ -314,7 +335,7 @@ public actor BrillyNativeEngine: ChessEngine {
         }
 
         let inCheck = board.isInCheck()
-        let effectiveDepth = (inCheck && ply < 18) ? depth + 1 : depth
+        var effectiveDepth = (inCheck && ply < 18) ? depth + 1 : depth
         let isPVNode = (beta - origAlpha) > 1
 
         var alpha = origAlpha
@@ -345,92 +366,142 @@ public actor BrillyNativeEngine: ChessEngine {
             return quiescence(board: board, alpha: alpha, beta: beta, ply: ply)
         }
 
-        // Static eval for Reverse Futility Pruning & Futility Pruning (non-PV, not in check)
+        // Internal Iterative Reduction (IIR): if no TT move at deeper nodes, reduce by 1 ply to find a good move faster
+        if ttMove == nil && effectiveDepth >= 4 && !inCheck {
+            effectiveDepth -= 1
+        }
+
+        // Static eval + Improving flag for RFP, Razoring, NMP, Futility & LMP
         var staticEval: Int? = nil
-        if !isPVNode && !inCheck && abs(beta) < Self.mateThreshold && abs(origAlpha) < Self.mateThreshold {
+        var improving = false
+        if !inCheck {
             let ev = evaluate(board)
             staticEval = ev
-            // Reverse Futility Pruning (Static Null Move Pruning) — conservative margin so tactical mates aren't pruned
-            if effectiveDepth <= 2 && ev - 160 * effectiveDepth >= beta {
-                return ev
+            if ply < 64 {
+                staticEvalStack[ply] = ev
+                if ply >= 2 {
+                    improving = ev > staticEvalStack[ply - 2]
+                }
             }
-            // Null-Move Pruning (NMP) — huge branching-factor reduction when side has non-pawn material
-            if allowNull && effectiveDepth >= 3 && ev >= beta && board.hasNonPawnMaterial(for: board.turn) {
-                var nullBoard = board
-                nullBoard.makeNullMove()
-                let R = effectiveDepth >= 6 ? 3 : 2
-                var nullPV: [ChessMove] = []
-                let nullScore = -negamax(
-                    board: nullBoard,
-                    depth: max(0, effectiveDepth - 1 - R),
-                    alpha: -beta,
-                    beta: -beta + 1,
-                    ply: ply + 1,
-                    allowNull: false,
-                    pv: &nullPV
-                )
-                if aborted { return 0 }
-                if nullScore >= beta && nullScore < Self.mateThreshold {
-                    return beta
+
+            if !isPVNode && abs(beta) < Self.mateThreshold && abs(origAlpha) < Self.mateThreshold {
+                // Reverse Futility Pruning (Static Null Move Pruning) — tighter when improving
+                let rfpMargin = (improving ? 90 : 120) * effectiveDepth
+                if effectiveDepth <= 4 && ev - rfpMargin >= beta {
+                    return ev
+                }
+
+                // Razoring: if far below alpha at shallow depth, verify via quiescence
+                if effectiveDepth <= 2 && ev + 260 * effectiveDepth < alpha {
+                    let qScore = quiescence(board: board, alpha: alpha, beta: alpha + 1, ply: ply)
+                    if aborted { return 0 }
+                    if qScore <= alpha {
+                        return qScore
+                    }
+                }
+
+                // Dynamic Null-Move Pruning (NMP) — huge branching-factor reduction when side has non-pawn material
+                if allowNull && effectiveDepth >= 3 && ev >= beta && board.hasNonPawnMaterial(for: board.turn) {
+                    var nullBoard = board
+                    nullBoard.makeNullMove()
+                    let R = 2 + effectiveDepth / 4 + min(2, max(0, (ev - beta) / 220))
+                    var nullPV: [ChessMove] = []
+                    let nullScore = -negamax(
+                        board: nullBoard,
+                        depth: max(0, effectiveDepth - 1 - R),
+                        alpha: -beta,
+                        beta: -beta + 1,
+                        ply: ply + 1,
+                        allowNull: false,
+                        prevMoveKey: -1,
+                        pv: &nullPV
+                    )
+                    if aborted { return 0 }
+                    if nullScore >= beta && nullScore < Self.mateThreshold {
+                        return beta
+                    }
                 }
             }
         }
 
-        let legal = board.legalMoves()
-        if legal.isEmpty {
+        var moves = board.legalMoves()
+        if moves.isEmpty {
             return inCheck ? (-Self.mateScore + ply) : 0
         }
 
-        let ordered = orderMoves(legal, board: board, ttMove: ttMove, ply: ply)
+        let cm = (prevMoveKey >= 0 && prevMoveKey < 4096) ? countermoves[prevMoveKey] : nil
+        var scores = scoreMoves(moves, board: board, ttMove: ttMove, countermove: cm, ply: ply)
         var bestScore = -Self.mateScore - 100
         var bestMove: ChessMove? = nil
         let colorIdx = board.turn == .white ? 0 : 1
+        var quietCount = 0
+        var triedQuiets: [ChessMove] = []
+        triedQuiets.reserveCapacity(16)
 
-        for (index, move) in ordered.enumerated() {
+        for index in 0..<moves.count {
+            let move = pickNextMove(at: index, moves: &moves, scores: &scores)
             let isEp = board[move.from]?.type == .pawn && move.to == board.enPassantSquare
             let isCapture = board[move.to] != nil || isEp
             let isTactical = isCapture || move.promotion != nil
 
-            // Futility Pruning: skip weak quiet moves at shallow depth when far below alpha
-            if !isPVNode && !inCheck && !isTactical && index > 0 && effectiveDepth <= 2,
-               let ev = staticEval, ev + 140 * effectiveDepth <= alpha {
-                var checkProbe = board
-                checkProbe.makeMoveUnchecked(move)
-                if !checkProbe.isInCheck() {
-                    continue
-                }
-            }
-
             var next = board
             next.makeMoveUnchecked(move)
             let givesCheck = next.isInCheck()
+
+            // Futility Pruning & Late Move Pruning (LMP) — single board copy (no duplicate checkProbe!)
+            if !isPVNode && !inCheck && !isTactical && !givesCheck && index > 0 {
+                if effectiveDepth <= 2, let ev = staticEval, ev + 135 * effectiveDepth <= alpha {
+                    quietCount += 1
+                    continue
+                }
+                if effectiveDepth <= 3 {
+                    let lmpLimit = improving ? (4 + effectiveDepth * effectiveDepth) : ((4 + effectiveDepth * effectiveDepth) / 2 + 1)
+                    if quietCount >= lmpLimit {
+                        continue
+                    }
+                }
+            }
+
+            if !isTactical {
+                quietCount += 1
+                triedQuiets.append(move)
+            }
+
             pathHashes.append(next.zobristHash)
 
             var childPV: [ChessMove] = []
+            let nextPrevKey = move.from.rawValue * 64 + move.to.rawValue
             let score: Int
             if index == 0 {
-                score = -negamax(board: next, depth: effectiveDepth - 1, alpha: -beta, beta: -alpha, ply: ply + 1, allowNull: true, pv: &childPV)
+                score = -negamax(board: next, depth: effectiveDepth - 1, alpha: -beta, beta: -alpha, ply: ply + 1, allowNull: true, prevMoveKey: nextPrevKey, pv: &childPV)
             } else {
-                // Late Move Reductions (LMR) for quiet, non-checking late moves
+                // Logarithmic Late Move Reductions (LMR) modulated by improving/PV/history
                 var reduction = 0
                 if effectiveDepth >= 3 && index >= 3 && !inCheck && !isTactical && !givesCheck {
-                    reduction = (index >= 8 && effectiveDepth >= 5) ? 2 : 1
+                    let dIdx = min(31, effectiveDepth)
+                    let mIdx = min(63, index)
+                    reduction = Self.lmrTable[dIdx][mIdx]
                     if isPVNode { reduction = max(0, reduction - 1) }
+                    if !improving { reduction += 1 }
+                    let hScore = history[colorIdx * 4096 + move.from.rawValue * 64 + move.to.rawValue]
+                    if hScore > 4000 { reduction = max(0, reduction - 1) }
+                    else if hScore < -4000 { reduction += 1 }
+                    reduction = min(effectiveDepth - 2, max(0, reduction))
                 }
 
                 var zeroPV: [ChessMove] = []
                 let reducedDepth = max(0, effectiveDepth - 1 - reduction)
-                var probe = -negamax(board: next, depth: reducedDepth, alpha: -alpha - 1, beta: -alpha, ply: ply + 1, allowNull: true, pv: &zeroPV)
+                var probe = -negamax(board: next, depth: reducedDepth, alpha: -alpha - 1, beta: -alpha, ply: ply + 1, allowNull: true, prevMoveKey: nextPrevKey, pv: &zeroPV)
 
                 // If reduced search beat alpha, re-search at full depth zero-window
                 if reduction > 0 && probe > alpha && !aborted {
                     zeroPV.removeAll(keepingCapacity: true)
-                    probe = -negamax(board: next, depth: effectiveDepth - 1, alpha: -alpha - 1, beta: -alpha, ply: ply + 1, allowNull: true, pv: &zeroPV)
+                    probe = -negamax(board: next, depth: effectiveDepth - 1, alpha: -alpha - 1, beta: -alpha, ply: ply + 1, allowNull: true, prevMoveKey: nextPrevKey, pv: &zeroPV)
                 }
 
                 // If zero-window beat alpha inside PV window, re-search full window
                 if probe > alpha && probe < beta && !aborted {
-                    score = -negamax(board: next, depth: effectiveDepth - 1, alpha: -beta, beta: -alpha, ply: ply + 1, allowNull: true, pv: &childPV)
+                    score = -negamax(board: next, depth: effectiveDepth - 1, alpha: -beta, beta: -alpha, ply: ply + 1, allowNull: true, prevMoveKey: nextPrevKey, pv: &childPV)
                 } else {
                     score = probe
                     childPV = zeroPV
@@ -446,7 +517,9 @@ public actor BrillyNativeEngine: ChessEngine {
             }
             if score > alpha {
                 alpha = score
-                pv = [move] + childPV
+                if isPVNode {
+                    pv = [move] + childPV
+                }
             }
             if alpha >= beta {
                 if !isTactical && ply < 64 {
@@ -454,8 +527,15 @@ public actor BrillyNativeEngine: ChessEngine {
                         killers[ply][1] = killers[ply][0]
                         killers[ply][0] = move
                     }
-                    let hIdx = colorIdx * 4096 + move.from.rawValue * 64 + move.to.rawValue
-                    history[hIdx] = min(40_000, history[hIdx] + effectiveDepth * effectiveDepth * 16)
+                    if prevMoveKey >= 0 && prevMoveKey < 4096 {
+                        countermoves[prevMoveKey] = move
+                    }
+                    let bonus = min(2000, effectiveDepth * effectiveDepth * 16)
+                    updateHistory(colorIdx: colorIdx, move: move, delta: bonus)
+                    // History malus for previously tried quiet moves that failed to cause a cutoff
+                    for prevQuiet in triedQuiets where prevQuiet != move {
+                        updateHistory(colorIdx: colorIdx, move: prevQuiet, delta: -bonus / 2)
+                    }
                 }
                 break
             }
@@ -465,14 +545,23 @@ public actor BrillyNativeEngine: ChessEngine {
         if bestScore <= origAlpha { bound = .upper }
         else if bestScore >= beta { bound = .lower }
         else { bound = .exact }
+        // Store unextended `depth` in TT to prevent check-extension depth inflation
         storeTT(
             key: board.zobristHash,
-            depth: effectiveDepth,
+            depth: depth,
             score: adjustMateScoreForTT(bestScore, ply: ply),
             bound: bound,
             bestMove: bestMove
         )
         return bestScore
+    }
+
+    @inline(__always)
+    private func updateHistory(colorIdx: Int, move: ChessMove, delta: Int) {
+        let hIdx = colorIdx * 4096 + move.from.rawValue * 64 + move.to.rawValue
+        let cur = history[hIdx]
+        // Gravity clamping keeps history values cleanly bounded in [-historyMax, +historyMax]
+        history[hIdx] = cur + delta - (cur * abs(delta)) / Self.historyMax
     }
 
     private func quiescence(board: ChessBoard, alpha origAlpha: Int, beta: Int, ply: Int) -> Int {
@@ -491,22 +580,53 @@ public actor BrillyNativeEngine: ChessEngine {
         var alpha = origAlpha
         let inCheck = board.isInCheck()
 
+        // TT probe in Quiescence Search (depth 0) — cuts 20–35% of tactical capture tree nodes
+        let ttIndex = Int(board.zobristHash & UInt64(Self.ttMask))
+        let ttEntry = tt[ttIndex]
+        if ttEntry.key == board.zobristHash && ttEntry.depth >= 0 {
+            let s = adjustMateScoreFromTT(Int(ttEntry.score), ply: ply)
+            switch ttEntry.bound {
+            case .exact: return s
+            case .lower:
+                if s >= beta { return s }
+            case .upper:
+                if s <= alpha { return s }
+            }
+        }
+
         if inCheck {
             // Never stand pat while in check; search all legal evasions & detect checkmate
-            let evasions = board.legalMoves()
+            var evasions = board.legalMoves()
             if evasions.isEmpty {
                 return -Self.mateScore + ply
             }
             if ply >= 24 { return evaluate(board) }
-            let ordered = orderMoves(evasions, board: board, ttMove: nil, ply: min(ply, 63))
-            for move in ordered {
+            var scores = scoreMoves(evasions, board: board, ttMove: ttEntry.key == board.zobristHash ? ttEntry.bestMove : nil, countermove: nil, ply: min(ply, 63))
+            var bestScore = -Self.mateScore - 100
+            var bestMove: ChessMove? = nil
+            for i in 0..<evasions.count {
+                let move = pickNextMove(at: i, moves: &evasions, scores: &scores)
                 var next = board
                 next.makeMoveUnchecked(move)
                 let score = -quiescence(board: next, alpha: -beta, beta: -alpha, ply: ply + 1)
                 if aborted { return 0 }
-                if score >= beta { return beta }
+                if score > bestScore {
+                    bestScore = score
+                    bestMove = move
+                }
+                if score >= beta {
+                    storeTT(key: board.zobristHash, depth: 0, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
+                    return beta
+                }
                 if score > alpha { alpha = score }
             }
+            storeTT(
+                key: board.zobristHash,
+                depth: 0,
+                score: adjustMateScoreForTT(bestScore, ply: ply),
+                bound: bestScore > origAlpha ? .exact : .upper,
+                bestMove: bestMove
+            )
             return alpha
         }
 
@@ -515,16 +635,26 @@ public actor BrillyNativeEngine: ChessEngine {
         if standPat > alpha { alpha = standPat }
         if ply >= 24 { return standPat }
 
-        let captures = board.legalMoves(capturesOnly: true)
+        var captures = board.legalMoves(capturesOnly: true)
         if captures.isEmpty { return standPat }
 
-        let ordered = captures.sorted { lhs, rhs in
-            captureScore(lhs, on: board) > captureScore(rhs, on: board)
+        var capScores: [Int] = []
+        capScores.reserveCapacity(captures.count)
+        for m in captures {
+            capScores.append(captureScore(m, on: board))
         }
 
-        for move in ordered {
+        var bestScore = standPat
+        var bestMove: ChessMove? = nil
+        for i in 0..<captures.count {
+            let move = pickNextMove(at: i, moves: &captures, scores: &capScores)
             if move.promotion == nil, let victim = board[move.to] {
+                // Delta pruning
                 if standPat + victim.type.centipawnValue + 200 < alpha {
+                    continue
+                }
+                // Static Exchange Evaluation (SEE) pruning: skip losing captures (e.g. QxP defended by pawn)
+                if quickSEE(move, on: board) < 0 {
                     continue
                 }
             }
@@ -532,45 +662,122 @@ public actor BrillyNativeEngine: ChessEngine {
             next.makeMoveUnchecked(move)
             let score = -quiescence(board: next, alpha: -beta, beta: -alpha, ply: ply + 1)
             if aborted { return 0 }
-            if score >= beta { return beta }
+            if score > bestScore {
+                bestScore = score
+                bestMove = move
+            }
+            if score >= beta {
+                storeTT(key: board.zobristHash, depth: 0, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
+                return beta
+            }
             if score > alpha { alpha = score }
         }
+        storeTT(
+            key: board.zobristHash,
+            depth: 0,
+            score: adjustMateScoreForTT(bestScore, ply: ply),
+            bound: bestScore > origAlpha ? .exact : .upper,
+            bestMove: bestMove
+        )
         return alpha
     }
 
-    // MARK: - Score-Once Move Ordering & TT Helpers
+    // MARK: - Incremental Selection Sort Move Ordering, SEE & TT Helpers
 
     private func orderMoves(_ moves: [ChessMove], board: ChessBoard, ttMove: ChessMove?, ply: Int) -> [ChessMove] {
-        let count = moves.count
-        guard count > 1 else { return moves }
+        var list = moves
+        var scores = scoreMoves(list, board: board, ttMove: ttMove, countermove: nil, ply: ply)
+        for i in 0..<list.count {
+            _ = pickNextMove(at: i, moves: &list, scores: &scores)
+        }
+        return list
+    }
+
+    private func scoreMoves(_ moves: [ChessMove], board: ChessBoard, ttMove: ChessMove?, countermove: ChessMove?, ply: Int) -> [Int] {
         let k0 = ply < 64 ? killers[ply][0] : nil
         let k1 = ply < 64 ? killers[ply][1] : nil
         let colorIdx = board.turn == .white ? 0 : 1
-
-        var scored: [(move: ChessMove, score: Int)] = []
-        scored.reserveCapacity(count)
+        var scores: [Int] = []
+        scores.reserveCapacity(moves.count)
         for m in moves {
-            scored.append((m, movePriority(m, board: board, ttMove: ttMove, k0: k0, k1: k1, colorIdx: colorIdx)))
+            scores.append(movePriority(m, board: board, ttMove: ttMove, k0: k0, k1: k1, countermove: countermove, colorIdx: colorIdx))
         }
-        scored.sort { $0.score > $1.score }
-        return scored.map(\.move)
+        return scores
+    }
+
+    /// In-place incremental selection sort: picks the highest-scored remaining move in O(n),
+    /// avoiding full O(n log n) sort when beta cutoffs happen on moves 1–3.
+    @inline(__always)
+    private func pickNextMove(at index: Int, moves: inout [ChessMove], scores: inout [Int]) -> ChessMove {
+        var bestIdx = index
+        var bestScore = scores[index]
+        var j = index + 1
+        let count = moves.count
+        while j < count {
+            if scores[j] > bestScore {
+                bestScore = scores[j]
+                bestIdx = j
+            }
+            j += 1
+        }
+        if bestIdx != index {
+            moves.swapAt(index, bestIdx)
+            scores.swapAt(index, bestIdx)
+        }
+        return moves[index]
+    }
+
+    /// Fast Static Exchange Evaluation approximation: returns >= 0 for winning/equal captures, < 0 for losing captures.
+    @inline(__always)
+    private func quickSEE(_ move: ChessMove, on board: ChessBoard) -> Int {
+        guard let attacker = board[move.from] else { return 0 }
+        let victimVal = board[move.to]?.type.centipawnValue ?? (move.to == board.enPassantSquare ? 100 : 0)
+        let promoBonus = (move.promotion?.centipawnValue ?? 0) - (move.promotion != nil ? 100 : 0)
+        let attackerVal = attacker.type.centipawnValue
+        // Capturing an equal or more valuable piece (or promoting) is immediately non-losing
+        if victimVal + promoBonus >= attackerVal {
+            return victimVal + promoBonus - attackerVal
+        }
+        // If destination is NOT defended by opponent, it's a clean free capture
+        if !board.isSquareAttacked(move.to, by: attacker.color.opposite) {
+            return victimVal + promoBonus
+        }
+        // Destination IS defended and attacker is strictly more valuable than victim (e.g. QxP, RxP, NxP) -> losing exchange
+        return victimVal + promoBonus - attackerVal
     }
 
     @inline(__always)
-    private func movePriority(_ move: ChessMove, board: ChessBoard, ttMove: ChessMove?, k0: ChessMove?, k1: ChessMove?, colorIdx: Int) -> Int {
+    private func movePriority(
+        _ move: ChessMove,
+        board: ChessBoard,
+        ttMove: ChessMove?,
+        k0: ChessMove?,
+        k1: ChessMove?,
+        countermove: ChessMove?,
+        colorIdx: Int
+    ) -> Int {
         if move == ttMove { return 1_000_000 }
         var score = 0
         let isEp = board[move.from]?.type == .pawn && move.to == board.enPassantSquare
         if board[move.to] != nil || isEp {
-            score += 100_000 + captureScore(move, on: board)
+            let see = quickSEE(move, on: board)
+            if see >= 0 {
+                score += 100_000 + captureScore(move, on: board)
+            } else {
+                // Order losing captures below killers and good quiet moves
+                score += -50_000 + see
+            }
         }
         if let promo = move.promotion {
             score += 90_000 + promo.centipawnValue
         }
-        if move == k0 { score += 50_000 }
-        else if move == k1 { score += 45_000 }
-        else if score == 0 {
-            score += history[colorIdx * 4096 + move.from.rawValue * 64 + move.to.rawValue]
+        if score == 0 {
+            if move == k0 { score += 50_000 }
+            else if move == k1 { score += 45_000 }
+            else if move == countermove { score += 40_000 }
+            else {
+                score += history[colorIdx * 4096 + move.from.rawValue * 64 + move.to.rawValue]
+            }
         }
         let cf = abs(move.to.file - 3) + abs(move.to.rank - 3)
         score += (8 - cf)
@@ -628,7 +835,7 @@ public actor BrillyNativeEngine: ChessEngine {
     private static let passedPawnMg: [Int] = [0, 5, 10, 20, 38, 68, 105, 0]
     private static let passedPawnEg: [Int] = [0, 12, 22, 40, 72, 118, 175, 0]
 
-    private func evaluate(_ board: ChessBoard) -> Int {
+    private nonisolated func evaluate(_ board: ChessBoard) -> Int {
         var mgWhite = 0
         var egWhite = 0
         var mgBlack = 0
@@ -646,14 +853,26 @@ public actor BrillyNativeEngine: ChessEngine {
         var bMaxRank: UInt64 = 0 // packed: file f -> byte f stores highest black pawn rank (0..7)
         var whiteRooks: UInt64 = 0
         var blackRooks: UInt64 = 0
+        var whiteKnights: UInt64 = 0
+        var blackKnights: UInt64 = 0
+        var whiteBishopsBB: UInt64 = 0
+        var blackBishopsBB: UInt64 = 0
+        var whiteQueens: UInt64 = 0
+        var blackQueens: UInt64 = 0
         var whitePawns: UInt64 = 0
         var blackPawns: UInt64 = 0
+        var whiteOcc: UInt64 = 0
+        var blackOcc: UInt64 = 0
+        var whiteBishopLight = false
+        var blackBishopLight = false
+        var majorCount = 0
 
         for idx in 0..<64 {
             guard let p = board.squares[idx] else { continue }
             let rank = idx >> 3
             let file = idx & 7
             let bit: UInt64 = 1 &<< idx
+            if p.color == .white { whiteOcc |= bit } else { blackOcc |= bit }
             // Table index: 0 = a8 (top-left from White's perspective), 63 = h1
             let pstIdx = p.color == .white ? ((7 - rank) * 8 + file) : (rank * 8 + file)
 
@@ -702,15 +921,26 @@ public actor BrillyNativeEngine: ChessEngine {
                 mg = 337 + Self.mgKnight[pstIdx]
                 eg = 281 + Self.egKnight[pstIdx]
                 phase += 1
+                if p.color == .white { whiteKnights |= bit } else { blackKnights |= bit }
             case .bishop:
                 mg = 365 + Self.mgBishop[pstIdx]
                 eg = 297 + Self.egBishop[pstIdx]
                 phase += 1
-                if p.color == .white { whiteBishops += 1 } else { blackBishops += 1 }
+                let isLight = ((rank + file) & 1) == 1
+                if p.color == .white {
+                    whiteBishops += 1
+                    whiteBishopsBB |= bit
+                    whiteBishopLight = isLight
+                } else {
+                    blackBishops += 1
+                    blackBishopsBB |= bit
+                    blackBishopLight = isLight
+                }
             case .rook:
                 mg = 477 + Self.mgRook[pstIdx]
                 eg = 512 + Self.egRook[pstIdx]
                 phase += 2
+                majorCount += 1
                 if p.color == .white {
                     whiteRooks |= bit
                     if rank == 6 { mgWhite += 20; egWhite += 28 } // Rook on 7th rank
@@ -722,6 +952,8 @@ public actor BrillyNativeEngine: ChessEngine {
                 mg = 1025 + Self.mgQueen[pstIdx]
                 eg = 936 + Self.egQueen[pstIdx]
                 phase += 4
+                majorCount += 1
+                if p.color == .white { whiteQueens |= bit } else { blackQueens |= bit }
             case .king:
                 mg = Self.mgKing[pstIdx]
                 eg = Self.egKing[pstIdx]
@@ -782,7 +1014,14 @@ public actor BrillyNativeEngine: ChessEngine {
             }
         }
 
-        // Passed pawns
+        // Pawn attack masks (used for protected passers, knight outposts & safe mobility)
+        let notAFile: UInt64 = 0xfefe_fefe_fefe_fefe
+        let notHFile: UInt64 = 0x7f7f_7f7f_7f7f_7f7f
+        let wPawnAttacks: UInt64 = ((whitePawns & notAFile) << 7) | ((whitePawns & notHFile) << 9)
+        let bPawnAttacks: UInt64 = ((blackPawns & notHFile) >> 7) | ((blackPawns & notAFile) >> 9)
+        let allOcc: UInt64 = whiteOcc | blackOcc
+
+        // Passed pawns (with protected & connected bonuses)
         var wp = whitePawns
         while wp != 0 {
             let sq = wp.trailingZeroBitCount
@@ -797,8 +1036,12 @@ public actor BrillyNativeEngine: ChessEngine {
                 }
             }
             if !blocked {
+                let bit: UInt64 = 1 &<< sq
                 mgWhite += Self.passedPawnMg[r]
                 egWhite += Self.passedPawnEg[r]
+                if (wPawnAttacks & bit) != 0 { mgWhite += 10; egWhite += 18 } // Protected passer
+                let adjSameRank: UInt64 = ((bit & notAFile) >> 1) | ((bit & notHFile) << 1)
+                if (whitePawns & adjSameRank) != 0 { mgWhite += 8; egWhite += 14 } // Connected passer
             }
         }
 
@@ -816,9 +1059,43 @@ public actor BrillyNativeEngine: ChessEngine {
                 }
             }
             if !blocked {
+                let bit: UInt64 = 1 &<< sq
                 let relRank = 7 - r
                 mgBlack += Self.passedPawnMg[relRank]
                 egBlack += Self.passedPawnEg[relRank]
+                if (bPawnAttacks & bit) != 0 { mgBlack += 10; egBlack += 18 }
+                let adjSameRank: UInt64 = ((bit & notAFile) >> 1) | ((bit & notHFile) << 1)
+                if (blackPawns & adjSameRank) != 0 { mgBlack += 8; egBlack += 14 }
+            }
+        }
+
+        // Knight outposts (ranks 4..6 for White, 3..5 for Black, supported by pawn, no enemy pawn on adjacent files ahead)
+        var wn = whiteKnights
+        while wn != 0 {
+            let sq = wn.trailingZeroBitCount
+            wn &= wn - 1
+            let r = sq >> 3
+            let f = sq & 7
+            let bit: UInt64 = 1 &<< sq
+            if r >= 3 && r <= 5 && (wPawnAttacks & bit) != 0 {
+                var canBeChased = false
+                if f > 0 && bCount(f - 1) > 0 && Int((bMaxRank >> ((f - 1) * 8)) & 0xFF) > r { canBeChased = true }
+                if f < 7 && bCount(f + 1) > 0 && Int((bMaxRank >> ((f + 1) * 8)) & 0xFF) > r { canBeChased = true }
+                if !canBeChased { mgWhite += 24; egWhite += 14 }
+            }
+        }
+        var bn = blackKnights
+        while bn != 0 {
+            let sq = bn.trailingZeroBitCount
+            bn &= bn - 1
+            let r = sq >> 3
+            let f = sq & 7
+            let bit: UInt64 = 1 &<< sq
+            if r >= 2 && r <= 4 && (bPawnAttacks & bit) != 0 {
+                var canBeChased = false
+                if f > 0 && wCount(f - 1) > 0 && Int((wMinRank >> ((f - 1) * 8)) & 0xFF) < r { canBeChased = true }
+                if f < 7 && wCount(f + 1) > 0 && Int((wMinRank >> ((f + 1) * 8)) & 0xFF) < r { canBeChased = true }
+                if !canBeChased { mgBlack += 24; egBlack += 14 }
             }
         }
 
@@ -844,8 +1121,88 @@ public actor BrillyNativeEngine: ChessEngine {
             }
         }
 
-        // King pawn-shield safety in middlegame
+        // Piece Mobility + King Zone Attack Safety (zero-alloc bitboard rays)
         let wk = board.whiteKingSquare
+        let bk = board.blackKingSquare
+        let wKingZone = Self.kingZoneMask(wk)
+        let bKingZone = Self.kingZoneMask(bk)
+        var wAttackUnits = 0
+        var wAttackers = 0
+        var bAttackUnits = 0
+        var bAttackers = 0
+
+        // Helper for sliding ray mobility + king zone hits
+        @inline(__always) func evalSlider(
+            _ bb: UInt64,
+            friendly: UInt64,
+            enemyPawnAtt: UInt64,
+            enemyKingZone: UInt64,
+            isDiag: Bool,
+            mgPerSq: Int,
+            egPerSq: Int,
+            baseline: Int,
+            attackWeight: Int,
+            mg: inout Int,
+            eg: inout Int,
+            atkUnits: inout Int,
+            atkCount: inout Int
+        ) {
+            var pieces = bb
+            while pieces != 0 {
+                let sq = pieces.trailingZeroBitCount
+                pieces &= pieces - 1
+                let f = sq & 7
+                let r = sq >> 3
+                var mob = 0
+                var hitZone = false
+                let dirs: [(Int, Int)] = isDiag ? [(1, 1), (1, -1), (-1, 1), (-1, -1)] : [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                for (df, dr) in dirs {
+                    var nf = f + df
+                    var nr = r + dr
+                    while nf >= 0 && nf < 8 && nr >= 0 && nr < 8 {
+                        let bit: UInt64 = 1 &<< (nr * 8 + nf)
+                        if (friendly & bit) != 0 { break }
+                        if (enemyPawnAtt & bit) == 0 { mob += 1 }
+                        if (enemyKingZone & bit) != 0 { hitZone = true }
+                        if (allOcc & bit) != 0 { break }
+                        nf += df
+                        nr += dr
+                    }
+                }
+                mg += (mob - baseline) * mgPerSq
+                eg += (mob - baseline) * egPerSq
+                if hitZone {
+                    atkCount += 1
+                    atkUnits += attackWeight
+                }
+            }
+        }
+
+        evalSlider(whiteBishopsBB, friendly: whiteOcc, enemyPawnAtt: bPawnAttacks, enemyKingZone: bKingZone, isDiag: true, mgPerSq: 4, egPerSq: 4, baseline: 6, attackWeight: 2, mg: &mgWhite, eg: &egWhite, atkUnits: &wAttackUnits, atkCount: &wAttackers)
+        evalSlider(blackBishopsBB, friendly: blackOcc, enemyPawnAtt: wPawnAttacks, enemyKingZone: wKingZone, isDiag: true, mgPerSq: 4, egPerSq: 4, baseline: 6, attackWeight: 2, mg: &mgBlack, eg: &egBlack, atkUnits: &bAttackUnits, atkCount: &bAttackers)
+        evalSlider(whiteRooks, friendly: whiteOcc, enemyPawnAtt: bPawnAttacks, enemyKingZone: bKingZone, isDiag: false, mgPerSq: 2, egPerSq: 4, baseline: 7, attackWeight: 3, mg: &mgWhite, eg: &egWhite, atkUnits: &wAttackUnits, atkCount: &wAttackers)
+        evalSlider(blackRooks, friendly: blackOcc, enemyPawnAtt: wPawnAttacks, enemyKingZone: wKingZone, isDiag: false, mgPerSq: 2, egPerSq: 4, baseline: 7, attackWeight: 3, mg: &mgBlack, eg: &egBlack, atkUnits: &bAttackUnits, atkCount: &bAttackers)
+
+        // Queen & Knight king-zone pressure
+        var wq = whiteQueens
+        while wq != 0 {
+            let sq = wq.trailingZeroBitCount
+            wq &= wq - 1
+            let dist = max(abs((sq & 7) - bk.file), abs((sq >> 3) - bk.rank))
+            if dist <= 3 { wAttackers += 1; wAttackUnits += 5 }
+        }
+        var bq = blackQueens
+        while bq != 0 {
+            let sq = bq.trailingZeroBitCount
+            bq &= bq - 1
+            let dist = max(abs((sq & 7) - wk.file), abs((sq >> 3) - wk.rank))
+            if dist <= 3 { bAttackers += 1; bAttackUnits += 5 }
+        }
+
+        if wAttackers >= 2 { mgWhite += min(180, wAttackUnits * wAttackUnits * 2) }
+        if bAttackers >= 2 { mgBlack += min(180, bAttackUnits * bAttackUnits * 2) }
+
+        // King pawn-shield safety in middlegame
         if wk.rank <= 1 {
             for df in max(0, wk.file - 1)...min(7, wk.file + 1) {
                 let r1 = (wk.rank + 1) * 8 + df
@@ -855,7 +1212,6 @@ public actor BrillyNativeEngine: ChessEngine {
                 else if wCount(df) == 0 { mgWhite -= 14 }
             }
         }
-        let bk = board.blackKingSquare
         if bk.rank >= 6 {
             for df in max(0, bk.file - 1)...min(7, bk.file + 1) {
                 let r1 = (bk.rank - 1) * 8 + df
@@ -871,6 +1227,11 @@ public actor BrillyNativeEngine: ChessEngine {
         let whiteDiffMg = mgWhite - mgBlack
         var whiteDiffEg = egWhite - egBlack
 
+        // Opposite-colored bishops endgame drawishness scaling
+        if majorCount == 0 && whiteBishops == 1 && blackBishops == 1 && whiteBishopLight != blackBishopLight {
+            whiteDiffEg = (whiteDiffEg * 62) / 100
+        }
+
         // Endgame mop-up evaluation (pushes losing king to corner & brings winning king close)
         if mgPhase <= 6 && abs(whiteDiffEg) >= 280 {
             let winningWhite = whiteDiffEg > 0
@@ -883,8 +1244,25 @@ public actor BrillyNativeEngine: ChessEngine {
         }
 
         let blended = (whiteDiffMg * mgPhase + whiteDiffEg * egPhase) / 24
-        let tempo = 12
+        let tempo = 6 + (mgPhase >> 1)
         return (board.turn == .white ? blended : -blended) + tempo
+    }
+
+    @inline(__always)
+    private static func kingZoneMask(_ kingSq: Square) -> UInt64 {
+        let f = kingSq.file
+        let r = kingSq.rank
+        var mask: UInt64 = 0
+        for dr in -1...1 {
+            let nr = r + dr
+            if nr < 0 || nr > 7 { continue }
+            for df in -1...1 {
+                let nf = f + df
+                if nf < 0 || nf > 7 { continue }
+                mask |= (1 &<< (nr * 8 + nf))
+            }
+        }
+        return mask
     }
 
     // Tapered Piece-Square Tables (White orientation: index 0 = a8, 63 = h1)
