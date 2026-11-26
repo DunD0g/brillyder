@@ -6,11 +6,34 @@ public struct EvalGraphView: View {
     let plies: [AnalyzedPly]
     let selectedPly: Int
     let onSelectPly: (Int) -> Void
+    let onScrubStateChanged: ((Bool) -> Void)?
 
-    public init(plies: [AnalyzedPly], selectedPly: Int, onSelectPly: @escaping (Int) -> Void) {
+    @State private var isHorizontalScrubbing: Bool = false
+
+    public init(
+        plies: [AnalyzedPly],
+        selectedPly: Int,
+        onScrubStateChanged: ((Bool) -> Void)? = nil,
+        onSelectPly: @escaping (Int) -> Void
+    ) {
         self.plies = plies
         self.selectedPly = selectedPly
+        self.onScrubStateChanged = onScrubStateChanged
         self.onSelectPly = onSelectPly
+    }
+
+    private func selectPly(at x: CGFloat, width: CGFloat) {
+        guard !plies.isEmpty, width > 0 else { return }
+        let target: Int
+        if plies.count == 1 {
+            target = 1
+        } else {
+            let ratio = max(0, min(1, x / width))
+            target = max(1, min(plies.count, Int((ratio * Double(plies.count - 1)).rounded()) + 1))
+        }
+        if target != selectedPly {
+            onSelectPly(target)
+        }
     }
 
     public var body: some View {
@@ -85,22 +108,32 @@ public struct EvalGraphView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
+            .onTapGesture(coordinateSpace: .local) { location in
+                selectPly(at: location.x, width: w)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .local)
                     .onChanged { val in
-                        guard !plies.isEmpty, w > 0 else { return }
-                        let target: Int
-                        if plies.count == 1 {
-                            target = 1
-                        } else {
-                            let ratio = max(0, min(1, val.location.x / w))
-                            target = max(1, min(plies.count, Int((ratio * Double(plies.count - 1)).rounded()) + 1))
+                        if !isHorizontalScrubbing {
+                            guard abs(val.translation.width) > abs(val.translation.height) else { return }
+                            isHorizontalScrubbing = true
+                            onScrubStateChanged?(true)
                         }
-                        if target != selectedPly {
-                            onSelectPly(target)
+                        selectPly(at: val.location.x, width: w)
+                    }
+                    .onEnded { _ in
+                        if isHorizontalScrubbing {
+                            isHorizontalScrubbing = false
+                            onScrubStateChanged?(false)
                         }
                     }
             )
+            .onDisappear {
+                if isHorizontalScrubbing {
+                    isHorizontalScrubbing = false
+                    onScrubStateChanged?(false)
+                }
+            }
         }
         .frame(height: 68)
         .accessibilityElement(children: .ignore)

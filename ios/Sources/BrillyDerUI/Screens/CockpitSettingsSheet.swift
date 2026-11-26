@@ -458,6 +458,35 @@ public struct CockpitSettingsSheet: View {
                                 }
                                 .pickerStyle(.segmented)
 
+                                if store.effectiveAnalysisPreset == .cloudUltra {
+                                    Button {
+                                        store.analysisPreset = .ultra
+                                        store.triggerHaptic(.move)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "cloud.bolt.fill")
+                                                .font(.caption2.weight(.bold))
+                                            Text("Cloud SF active · Switch to Offline Ultra")
+                                                .font(.caption2.weight(.bold))
+                                            Spacer(minLength: 0)
+                                            Image(systemName: "arrow.triangle.2.circlepath")
+                                                .font(.caption2.weight(.bold))
+                                        }
+                                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(BrillyPalette.warpPurple.opacity(0.14))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                        .strokeBorder(BrillyPalette.warpPurple.opacity(0.35), lineWidth: 0.9)
+                                                )
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("ENGINE STRENGTH GUIDE")
                                         .font(.system(size: 10, weight: .bold))
@@ -850,7 +879,7 @@ public struct CockpitSettingsSheet: View {
                                         Text("Choose Daily Openings")
                                             .font(.subheadline.weight(.bold))
                                             .foregroundStyle(BrillyPalette.inkPrimary)
-                                        Text("\(store.dailyOpeningCourseIds.count) of \(store.allCourses.count) openings active in Orbit Coach & Gravity Check")
+                                        Text("\(store.activeDailyOpeningCourseIds.count) of \(store.allCourses.count) openings active in \(store.copy(cosmic: "Orbit Coach & Gravity Check", classic: "Daily Coach & 60s Warmup"))")
                                             .font(.caption)
                                             .foregroundStyle(BrillyPalette.inkSecondary)
                                     }

@@ -361,10 +361,9 @@ public enum GameAnalyzer {
         var puzzles: [MistakePuzzle] = []
 
         for ag in analyzedGames where !ag.game.isCustomFenGame && !ag.plies.isEmpty {
-            let userColor = ag.game.resolvedUserColor(handles: handles)
+            guard let userColor = ag.game.resolvedUserColor(handles: handles) else { continue }
 
-            for p in ag.plies {
-                if let userColor, p.color != userColor { continue }
+            for p in ag.plies where p.color == userColor {
                 guard p.classification == .blunder || p.classification == .mistake else { continue }
                 guard !p.bestMoveUci.isEmpty, p.bestMoveUci != p.uci else { continue }
                 let oppForPly = p.color == .black ? ag.game.white.name : ag.game.black.name
@@ -398,6 +397,7 @@ public enum GameAnalyzer {
 
     public static func computeInsights(
         analyzedGames: [AnalyzedGame],
+        recentGames: [GameRecord] = [],
         handles: [String] = []
     ) -> InsightsSnapshot {
         // Strictly match VaultService & AdvancedInsightsService: only count games where the user's side is known
@@ -433,8 +433,36 @@ public enum GameAnalyzer {
         var brilliants = 0
         var blunders = 0
         var openingMap: [String: (games: Int, wins: Int, accSum: Double)] = [:]
-        var latestBySpeed: [String: (createdAt: Int64, rating: Int)] = [:]
+        var latestLiveBySpeed: [String: (createdAt: Int64, rating: Int)] = [:]
+        var latestFallbackBySpeed: [String: (createdAt: Int64, rating: Int)] = [:]
         var perfElos: [Int] = []
+
+        func recordRating(from g: GameRecord, color: PieceColor) {
+            guard let rating = (color == .white ? g.white.rating : g.black.rating), rating > 0 else { return }
+            let speedKey = g.speed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let label = speedKey.isEmpty ? "Rated" : speedKey.capitalized
+            let isLive = (g.source == .lichess || g.source == .chesscom)
+            if isLive {
+                if let existing = latestLiveBySpeed[label] {
+                    if g.createdAt > existing.createdAt { latestLiveBySpeed[label] = (g.createdAt, rating) }
+                } else {
+                    latestLiveBySpeed[label] = (g.createdAt, rating)
+                }
+            } else {
+                if let existing = latestFallbackBySpeed[label] {
+                    if g.createdAt > existing.createdAt { latestFallbackBySpeed[label] = (g.createdAt, rating) }
+                } else {
+                    latestFallbackBySpeed[label] = (g.createdAt, rating)
+                }
+            }
+        }
+
+        // Also ingest synced unanalyzed games so Current Elo stays live right after Sync!
+        for g in recentGames where !g.isCustomFenGame {
+            if let color = g.resolvedUserColor(handles: handles) {
+                recordRating(from: g, color: color)
+            }
+        }
 
         for (ag, color) in validGames {
             let summary = color == .white ? ag.whiteSummary : ag.blackSummary
@@ -444,17 +472,7 @@ public enum GameAnalyzer {
             if summary.estimatedElo > 0 {
                 perfElos.append(summary.estimatedElo)
             }
-            if let rating = (color == .white ? ag.game.white.rating : ag.game.black.rating), rating > 0 {
-                let speedKey = ag.game.speed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let label = speedKey.isEmpty ? "Rated" : speedKey.capitalized
-                if let existing = latestBySpeed[label] {
-                    if ag.game.createdAt > existing.createdAt {
-                        latestBySpeed[label] = (ag.game.createdAt, rating)
-                    }
-                } else {
-                    latestBySpeed[label] = (ag.game.createdAt, rating)
-                }
-            }
+            recordRating(from: ag.game, color: color)
 
             let res = ag.game.userResult(handles: handles)
             if res == "W" { wins += 1 }
@@ -497,7 +515,8 @@ public enum GameAnalyzer {
         }
         .prefix(5)
 
-        let currentRatings = latestBySpeed
+        let chosenRatingMap = latestLiveBySpeed.isEmpty ? latestFallbackBySpeed : latestLiveBySpeed
+        let currentRatings = chosenRatingMap
             .sorted { lhs, rhs in
                 if lhs.value.createdAt != rhs.value.createdAt { return lhs.value.createdAt > rhs.value.createdAt }
                 return lhs.key < rhs.key

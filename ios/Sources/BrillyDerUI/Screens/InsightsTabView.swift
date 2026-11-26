@@ -319,12 +319,14 @@ public struct InsightsTabView: View {
                                 ForEach(snap.topOpenings, id: \.name) { op in
                                     Button {
                                         let needle = op.name.lowercased()
+                                        let handles = store.userHandles
                                         if let matchingGame = store.analyzedGames.first(where: {
+                                            guard !$0.game.isCustomFenGame,
+                                                  $0.game.resolvedUserColor(handles: handles) != nil else { return false }
                                             let opName = ($0.openingLineDetected ?? $0.game.openingName).lowercased()
                                             return opName.contains(needle) || needle.contains(opName)
                                         }) {
-                                            store.activeAnalyzedGame = matchingGame
-                                            store.selectedTab = .analyze
+                                            store.openGameAtPly(gameId: matchingGame.id, ply: 1)
                                         } else {
                                             store.selectedTab = .openings
                                         }
@@ -370,7 +372,9 @@ public struct InsightsTabView: View {
 
     private func accuracyTrendAndCheckpointsCard() -> some View {
         let handles = store.userHandles
-        let validGames = store.analyzedGames.filter { !$0.plies.isEmpty && !$0.game.isCustomFenGame }
+        let validGames = store.analyzedGames.filter {
+            !$0.plies.isEmpty && !$0.game.isCustomFenGame && $0.game.resolvedUserColor(handles: handles) != nil
+        }
         let recent = Array(validGames.sorted { $0.game.createdAt < $1.game.createdAt }.suffix(20))
         let accPoints: [Double] = recent.map { ag in
             let c = ag.game.resolvedUserColor(handles: handles) ?? .white
@@ -455,8 +459,7 @@ public struct InsightsTabView: View {
                     let rawOpp = userCol == .white ? ag.game.black.name : ag.game.white.name
                     let oppMasked = store.maskedPlayerName(rawOpp, side: userCol.opposite)
                     Button {
-                        store.activeAnalyzedGame = ag
-                        store.selectedTab = .analyze
+                        store.openGameAtPly(gameId: ag.id, ply: 1)
                         store.triggerHaptic(.move)
                     } label: {
                         HStack(spacing: 6) {

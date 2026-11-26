@@ -513,20 +513,39 @@ public struct BrillyWelcomeGuideSheet: View {
                     .foregroundStyle(BrillyPalette.brillyTeal)
 
                 HStack(spacing: 8) {
-                    let effectiveBatchPreset: AnalysisDepthPreset = store.analysisPreset.isSingleGameOnly ? .deep : store.analysisPreset
-                    ForEach(AnalysisDepthPreset.batchPresets) { preset in
-                        let selected = effectiveBatchPreset == preset
+                    let offlinePresets: [AnalysisDepthPreset] = [.fast, .balanced, .deep, .ultra]
+                    let activeOfflinePreset: AnalysisDepthPreset = store.effectiveAnalysisPreset == .cloudUltra ? .ultra : store.effectiveAnalysisPreset
+                    ForEach(offlinePresets) { preset in
+                        let locked = preset == .ultra && !store.hasProAccess
+                        let selected = activeOfflinePreset == preset
                         Button {
+                            if locked {
+                                lockedHintMessage = "Ultra Offline NNUE (~3300+ Elo) is a Brilly/Der Pro engine mode — unlock anytime in Settings."
+                                store.triggerHaptic(.move)
+                                return
+                            }
+                            lockedHintMessage = nil
                             withAnimation(.snappy(duration: 0.2)) {
                                 store.analysisPreset = preset
                             }
                             store.triggerHaptic(.move)
                         } label: {
                             VStack(spacing: 2) {
-                                Text(preset.title)
-                                    .font(.caption.weight(.bold))
+                                HStack(spacing: 3) {
+                                    Text(preset.title)
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
+                                    if locked {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 8.5, weight: .bold))
+                                            .foregroundStyle(BrillyPalette.warpPurpleText)
+                                    }
+                                }
                                 Text(preset.eloEstimate)
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                                     .opacity(0.85)
                             }
                             .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
@@ -545,7 +564,13 @@ public struct BrillyWelcomeGuideSheet: View {
                     }
                 }
 
-                Text("Pro unlocks single-game Ultra NNUE (~3300+ Elo offline) & ☁️ Cloud SF16 (~3500 Elo via Lichess cloud cache) inside Analyze.")
+                if let msg = lockedHintMessage {
+                    Label(msg, systemImage: "crown.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrillyPalette.warpPurpleText)
+                }
+
+                Text("All 4 tiers run 100% offline on-device. Pro also unlocks ☁️ Cloud SF16 (~3500 Elo on Wi-Fi) inside Analyze.")
                     .font(.caption2)
                     .foregroundStyle(BrillyPalette.inkSecondary)
             }
@@ -644,8 +669,16 @@ public struct BrillyWelcomeGuideSheet: View {
         store.completeOnboarding(applyDefaultTab: true)
 
         if hasAny {
-            Task {
-                await store.syncRecentGames()
+            Task { @MainActor in
+                if !cleanLichess.isEmpty && !cleanChessCom.isEmpty {
+                    store.syncPlatform = .lichess
+                    await store.syncRecentGames()
+                    store.syncPlatform = .chesscom
+                    await store.syncRecentGames()
+                    store.syncPlatform = .lichess
+                } else {
+                    await store.syncRecentGames()
+                }
             }
         }
         store.triggerHaptic(.success)

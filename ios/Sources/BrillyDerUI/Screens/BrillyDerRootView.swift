@@ -5,6 +5,8 @@ import BrillyDerCore
 public struct BrillyDerRootView: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var reviewPromptTask: Task<Void, Never>? = nil
 
     public init() {}
 
@@ -93,7 +95,7 @@ public struct BrillyDerRootView: View {
                 if let celebration = store.activeCelebration {
                     AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
                         withAnimation(.easeOut(duration: 0.2)) {
-                            store.activeCelebration = nil
+                            store.dismissCelebration()
                         }
                     }
                     .padding(.horizontal, 16)
@@ -146,19 +148,32 @@ public struct BrillyDerRootView: View {
         .onChange(of: store.pendingReviewRequestVersion) { _, _ in
             attemptPendingReviewPrompt()
         }
-        .onChange(of: store.showingSettings) { _, _ in
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                attemptPendingReviewPrompt()
+            } else {
+                reviewPromptTask?.cancel()
+                reviewPromptTask = nil
+            }
+        }
+        .onChange(of: store.showingSettings) { _, showing in
+            if showing { store.dismissCelebration() }
             attemptPendingReviewPrompt()
         }
-        .onChange(of: store.showingVault) { _, _ in
+        .onChange(of: store.showingVault) { _, showing in
+            if showing { store.dismissCelebration() }
             attemptPendingReviewPrompt()
         }
-        .onChange(of: store.showingProPaywall) { _, _ in
+        .onChange(of: store.showingProPaywall) { _, showing in
+            if showing { store.dismissCelebration() }
             attemptPendingReviewPrompt()
         }
-        .onChange(of: store.showingWelcomeGuide) { _, _ in
+        .onChange(of: store.showingWelcomeGuide) { _, showing in
+            if showing { store.dismissCelebration() }
             attemptPendingReviewPrompt()
         }
         .onChange(of: store.selectedTab) { _, newTab in
+            store.dismissCelebration()
             if newTab == .analyze && !store.hasPinnedManualGameSelection {
                 store.autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
             }
@@ -166,14 +181,24 @@ public struct BrillyDerRootView: View {
     }
 
     private func attemptPendingReviewPrompt() {
-        guard let version = store.pendingReviewRequestVersion,
+        reviewPromptTask?.cancel()
+        reviewPromptTask = nil
+        guard scenePhase == .active,
+              let version = store.pendingReviewRequestVersion,
               !store.showingSettings,
               !store.showingVault,
               !store.showingProPaywall,
               !store.showingWelcomeGuide else { return }
-        store.markReviewPrompted(version: version)
-        Task { @MainActor in
+        reviewPromptTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled,
+                  scenePhase == .active,
+                  store.pendingReviewRequestVersion == version,
+                  !store.showingSettings,
+                  !store.showingVault,
+                  !store.showingProPaywall,
+                  !store.showingWelcomeGuide else { return }
+            store.markReviewPrompted(version: version)
             requestReview()
         }
     }

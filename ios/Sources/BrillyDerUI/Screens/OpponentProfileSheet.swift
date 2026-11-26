@@ -191,8 +191,12 @@ public struct OpponentProfileSheet: View {
                                     let bMasked = store.maskedPlayerName(g.black.name, opponent: g.white.name, side: .black)
 
                                     Button {
+                                        let rebound = g.reboundUserColor(for: store.userHandles)
                                         dismiss()
-                                        store.startAnalysis(for: g, isManualSelection: true, switchToAnalyze: true)
+                                        Task { @MainActor in
+                                            try? await Task.sleep(for: .milliseconds(300))
+                                            store.startAnalysis(for: rebound, isManualSelection: true, switchToAnalyze: true)
+                                        }
                                     } label: {
                                         HStack(spacing: 10) {
                                             RoundedRectangle(cornerRadius: 2)

@@ -260,6 +260,7 @@ public struct BrillyTurboStepButton<Label: View>: View {
     private let label: (_ isTurbo: Bool) -> Label
 
     @State private var holdTask: Task<Void, Never>? = nil
+    @State private var holdGeneration: Int = 0
     @State private var isTurbo: Bool = false
     @State private var didFireTurbo: Bool = false
 
@@ -299,28 +300,32 @@ public struct BrillyTurboStepButton<Label: View>: View {
 
     private func startHoldTimer() {
         holdTask?.cancel()
+        holdGeneration &+= 1
+        let gen = holdGeneration
         didFireTurbo = false
         holdTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(260))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled && holdGeneration == gen else { return }
             isTurbo = true
             didFireTurbo = true
             onTurboStateChanged?(true)
 
             var tick = 0
-            while !Task.isCancelled {
+            while !Task.isCancelled && holdGeneration == gen {
                 let progressed = onTurboStep(tick)
                 if !progressed { break }
                 tick += 1
                 let delayMs: Int = tick < 4 ? 110 : (tick < 12 ? 65 : 40)
                 try? await Task.sleep(for: .milliseconds(delayMs))
             }
+            guard !Task.isCancelled && holdGeneration == gen else { return }
             isTurbo = false
             onTurboStateChanged?(false)
         }
     }
 
     private func stopHoldTimer() {
+        holdGeneration &+= 1
         holdTask?.cancel()
         holdTask = nil
         if isTurbo {

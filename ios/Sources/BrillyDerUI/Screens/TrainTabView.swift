@@ -225,9 +225,9 @@ public struct TrainTabView: View {
                 } label: {
                     stageChip(
                         title: "1. Openings · Edit",
-                        value: store.dailyOpeningCourseIds.isEmpty
+                        value: store.activeDailyOpeningCourseIds.isEmpty
                             ? "Pick Openings"
-                            : "\(plan.stage1OpeningCards.count) FSRS (\(store.dailyOpeningCourseIds.count))",
+                            : "\(plan.stage1OpeningCards.count) FSRS (\(store.activeDailyOpeningCourseIds.count))",
                         icon: "book.fill",
                         tint: BrillyPalette.brillyTeal
                     )
@@ -325,7 +325,7 @@ public struct TrainTabView: View {
             } label: {
                 statCard(
                     label: "Analyzed Games",
-                    value: "\(store.analyzedGames.count)",
+                    value: "\(store.insights.analyzedCount)",
                     tint: BrillyPalette.brillyTeal
                 )
             }
@@ -879,6 +879,7 @@ private struct DailySessionSheet: View {
 private struct GravityCheckSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var items: [GravityFlashItem] = []
     @State private var initialized: Bool = false
@@ -1034,18 +1035,19 @@ private struct GravityCheckSheet: View {
 
         if hit {
             score += 1
-            store.triggerHaptic(.success)
             feedback = "Direct hit: \(item.expectedSan)!"
         } else {
-            store.triggerHaptic(.error)
             feedback = "Best was \(item.expectedSan)."
         }
 
         if let cardId = item.cardId {
+            // `recordOpeningAttempt` already triggers the success/error haptic & sound
             _ = store.recordOpeningAttempt(
                 cardId: cardId,
                 attempt: OpeningAttemptInput(correct: hit, responseMs: elapsedMs)
             )
+        } else {
+            store.triggerHaptic(hit ? .success : .error)
         }
 
         advanceTask?.cancel()
@@ -1072,6 +1074,7 @@ private struct GravityCheckSheet: View {
             while !Task.isCancelled && remainingSec > 0 && !finished {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled || finished { break }
+                guard scenePhase == .active else { continue }
                 remainingSec -= 1
                 if remainingSec <= 0 {
                     finishSession()

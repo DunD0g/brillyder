@@ -146,8 +146,11 @@ public struct OpeningsTabView: View {
                 .environment(store)
         }
         .sheet(isPresented: $showingImportSheet) {
-            ImportCourseSheet(defaultSide: sideFilter)
-                .environment(store)
+            ImportCourseSheet(defaultSide: sideFilter) { importedSide in
+                sideFilter = importedSide
+                searchQuery = ""
+            }
+            .environment(store)
         }
     }
 
@@ -348,6 +351,7 @@ private struct ImportCourseSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let defaultSide: RepertoireSide
+    let onImported: ((RepertoireSide) -> Void)?
     @State private var name: String = ""
     @State private var side: RepertoireSide = .white
     @State private var pgn: String = ""
@@ -390,6 +394,7 @@ private struct ImportCourseSheet: View {
                     Button {
                         do {
                             try store.importCustomCourse(name: name, side: side, pgn: pgn)
+                            onImported?(side)
                             dismiss()
                         } catch {
                             errorText = error.localizedDescription
@@ -421,6 +426,7 @@ private struct ImportCourseSheet: View {
 private struct CourseDetailSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let course: OpeningCourse
 
@@ -550,7 +556,17 @@ private struct CourseDetailSheet: View {
                 }
             }
             .onChange(of: walkLayout) { _, newLayout in
+                isAutoPlaying = false
                 if newLayout == .tree { refreshTreeCache() }
+            }
+            .onChange(of: confirmingDelete) { _, confirming in
+                if confirming { isAutoPlaying = false }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { isAutoPlaying = false }
+            }
+            .onDisappear {
+                isAutoPlaying = false
             }
             .task(id: isAutoPlaying) {
                 guard isAutoPlaying, let line = currentLine else { return }

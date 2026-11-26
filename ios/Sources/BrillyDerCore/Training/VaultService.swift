@@ -169,9 +169,11 @@ public enum VaultService {
                 }()
                 guard p.classification == .brilliant || isClutchCandidate || isTrapCandidate else { continue }
 
-                // Compute ChessBoard positionKey ONLY on highlight candidate plies (avoids O(N*plies) FEN parses on every render!)
-                let posKey = (try? ChessBoard(fen: p.afterFen).positionKey) ?? p.afterFen
-                guard seenPositions.insert(posKey).inserted else { continue }
+                // Never drop Brilliant (!!) moves via position deduplication so Vault `!!` always matches Insights `!!` 1:1.
+                if p.classification != .brilliant {
+                    let posKey = (try? ChessBoard(fen: p.afterFen).positionKey) ?? p.afterFen
+                    guard seenPositions.insert(posKey).inserted else { continue }
+                }
 
                 if p.classification == .brilliant {
                     brilliants.append(VaultHighlight(

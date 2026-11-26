@@ -330,6 +330,7 @@ private struct ConversionPlaySheet: View {
     @State private var thinking = false
     @State private var botTask: Task<Void, Never>? = nil
     @State private var generation: Int = 0
+    @State private var awardedMastery: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -407,6 +408,7 @@ private struct ConversionPlaySheet: View {
         cancelBot()
         board = (try? ChessBoard(fen: lead.fen)) ?? ChessBoard()
         historyFens = []
+        awardedMastery = false
         let initialCp = lead.userColor == .white ? 300 : -300
         liveScore = ChessMath.buildEngineScore(cpWhite: initialCp)
         status = "Hold >= +2.0 and push to +7.0 or checkmate to lock the win!"
@@ -427,15 +429,20 @@ private struct ConversionPlaySheet: View {
         case .ongoing:
             return false
         case .checkmate(let w):
+            cancelBot()
             if w == lead.userColor {
                 status = "Checkmate! Advantage converted cleanly!"
-                store.markAdvantageConverted(lead.id)
+                if !awardedMastery {
+                    awardedMastery = true
+                    store.markAdvantageConverted(lead.id)
+                }
             } else {
                 status = "Checkmated — tap Rewind Turn or Reset to try again."
                 store.triggerHaptic(.error)
             }
             return true
         case .stalemate, .insufficientMaterial, .fiftyMoveRule:
+            cancelBot()
             status = "Game ended in a draw — tap Rewind Turn or Reset to convert the win!"
             store.triggerHaptic(.error)
             return true
@@ -455,7 +462,10 @@ private struct ConversionPlaySheet: View {
                 let userCp = lead.userColor == .white ? ev.score.cpWhite : -ev.score.cpWhite
                 if userCp >= 700 || (ev.score.mateWhite != nil && ((lead.userColor == .white && ev.score.mateWhite! > 0) || (lead.userColor == .black && ev.score.mateWhite! < 0))) {
                     status = "Winning position locked in (\(ev.score.display))! Conversion mastered!"
-                    store.markAdvantageConverted(lead.id)
+                    if !awardedMastery {
+                        awardedMastery = true
+                        store.markAdvantageConverted(lead.id)
+                    }
                 } else if userCp < 150 {
                     status = "Careful — advantage slipped to \(ev.score.display). Tap Rewind Turn to try a cleaner move!"
                 } else {

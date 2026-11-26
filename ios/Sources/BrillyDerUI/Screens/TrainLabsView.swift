@@ -283,6 +283,7 @@ private struct EndgameDrillPlaySheet: View {
     @State private var botTask: Task<Void, Never>? = nil
     @State private var probeTask: Task<Void, Never>? = nil
     @State private var generation: Int = 0
+    @State private var awardedMastery: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -388,6 +389,7 @@ private struct EndgameDrillPlaySheet: View {
         status = drill.keyIdea
         showHint = false
         movesPlayed = 0
+        awardedMastery = false
         probeCurrent()
     }
 
@@ -407,18 +409,26 @@ private struct EndgameDrillPlaySheet: View {
     private func checkTerminalOutcome() -> Bool {
         switch board.outcome {
         case .checkmate(let winner):
+            cancelTasks()
             if winner == drill.userColor {
                 status = "Checkmate! Endgame mastered!"
-                store.markEndgameMastered(drill.id)
+                if !awardedMastery {
+                    awardedMastery = true
+                    store.markEndgameMastered(drill.id)
+                }
             } else {
                 status = "Checkmated — tap Reset to try again."
                 store.triggerHaptic(.error)
             }
             return true
         case .stalemate, .insufficientMaterial, .fiftyMoveRule:
+            cancelTasks()
             if drill.goal == .draw {
                 status = "Draw secured! Fortress mastered!"
-                store.markEndgameMastered(drill.id)
+                if !awardedMastery {
+                    awardedMastery = true
+                    store.markEndgameMastered(drill.id)
+                }
             } else {
                 status = "Drawn — you had a win here! Tap Reset to retry."
                 store.triggerHaptic(.error)
@@ -451,7 +461,10 @@ private struct EndgameDrillPlaySheet: View {
             // After user's move, opponent is to move: `draw` or `cursed-win` (opponent's 50-move draw) means user holds the draw!
             if drill.goal == .draw && movesPlayed >= 6 && (probe?.category == "draw" || probe?.category == "cursed-win") {
                 status = "Holding solid theoretical draw! Endgame fortress mastered."
-                store.markEndgameMastered(drill.id)
+                if !awardedMastery {
+                    awardedMastery = true
+                    store.markEndgameMastered(drill.id)
+                }
             }
 
             if let bestSyz = probe?.moves.first, let m = ChessMove(uci: bestSyz.uci) {
@@ -478,6 +491,7 @@ private struct EndgameDrillPlaySheet: View {
 
 private struct BoardVisionPanel: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var isRunning = false
     @State private var orientation: PieceColor = .white
@@ -616,6 +630,12 @@ private struct BoardVisionPanel: View {
             while isRunning && timeRemaining > 0 && !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard isRunning && !Task.isCancelled else { break }
+                let isPaused = scenePhase != .active
+                    || store.selectedTab != .train
+                    || store.showingSettings
+                    || store.showingVault
+                    || store.showingProPaywall
+                guard !isPaused else { continue }
                 timeRemaining -= 1
                 if timeRemaining == 0 {
                     stopGame()
@@ -624,6 +644,11 @@ private struct BoardVisionPanel: View {
         }
         .onDisappear {
             flashTask?.cancel()
+            flashTask = nil
+            flashColor = nil
+            if isRunning {
+                isRunning = false
+            }
         }
     }
 
@@ -638,7 +663,9 @@ private struct BoardVisionPanel: View {
     private func stopGame() {
         isRunning = false
         store.recordBoardVisionScore(score)
-        store.triggerHaptic(.success)
+        if scenePhase == .active && store.selectedTab == .train {
+            store.triggerHaptic(.success)
+        }
     }
 
     private func pickNextSquare() {
@@ -675,6 +702,7 @@ private struct BoardVisionPanel: View {
 
 private struct PuzzleRushPanel: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
 
     enum RushMode: String, CaseIterable {
         case blitz = "3-Min Blitz"
@@ -799,8 +827,19 @@ private struct PuzzleRushPanel: View {
             while running && timeLeft > 0 && !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard running && !Task.isCancelled else { break }
+                let isPaused = scenePhase != .active
+                    || store.selectedTab != .train
+                    || store.showingSettings
+                    || store.showingVault
+                    || store.showingProPaywall
+                guard !isPaused else { continue }
                 timeLeft -= 1
                 if timeLeft == 0 { finishRun() }
+            }
+        }
+        .onDisappear {
+            if running && mode == .blitz {
+                running = false
             }
         }
     }

@@ -6,8 +6,11 @@ import UIKit
 
 public struct AnalyzeTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var currentPlyIndex: Int = 0
     @State private var orientation: PieceColor = .white
+    @State private var orientedGameId: String? = nil
+    @State private var suppressNextCelebration: Bool = false
     @State private var retryMode: Bool = false
     @State private var retryFeedback: String? = nil
     @State private var retrySolvedBoard: ChessBoard? = nil
@@ -29,7 +32,9 @@ public struct AnalyzeTabView: View {
     // Cached Deviation, Syzygy Tablebase, Auto-Play & Copy Toast
     @State private var cachedDeviation: OpeningDeviationReport? = nil
     @State private var syzygyResult: SyzygyProbeResult? = nil
+    @State private var syzygyFen: String? = nil
     @State private var copiedNotice: String? = nil
+    @State private var noticeTask: Task<Void, Never>? = nil
     @State private var boostedDeviationCardId: String? = nil
     @State private var activeShareCard: BrillyShareCardPayload? = nil
     @State private var isAutoPlaying: Bool = false
@@ -45,6 +50,97 @@ public struct AnalyzeTabView: View {
         let id = UUID()
         let username: String
         let platform: GameSource
+    }
+
+    private var isAnyOverlayOpen: Bool {
+        store.showingSettings
+            || store.showingVault
+            || store.showingProPaywall
+            || store.showingWelcomeGuide
+            || showingMoveListSheet
+            || showingMistakeReview
+            || activeShareCard != nil
+            || opponentProfileTarget != nil
+    }
+
+    private var threatArrowTaskKey: String {
+        "\(showThreatArrow)::\(store.activeAnalyzedGame?.id ?? "")::\(currentPlyIndex)::\(isTurboScrubbing)::\(store.isAnalyzing)"
+    }
+
+    private func runAutoPlayLoop() async {
+        guard isAutoPlaying else { return }
+        while !Task.isCancelled && isAutoPlaying {
+            guard scenePhase == .active,
+                  !isAnyOverlayOpen,
+                  !store.isAnalyzing,
+                  store.selectedTab == .analyze,
+                  store.activeSandboxFen == nil,
+                  let ag = store.activeAnalyzedGame,
+                  !retryMode, !botActive else {
+                isAutoPlaying = false
+                break
+            }
+            let baseMs: Int = switch autoPlaySpeed {
+            case 3: 280
+            case 2: 520
+            default: 1020
+            }
+            let currentCls = (currentPlyIndex > 0 && currentPlyIndex <= ag.plies.count)
+                ? ag.plies[currentPlyIndex - 1].classification
+                : nil
+            let holdExtraMs: Int = (autoPlaySpeed == 1 && (currentCls == .brilliant || currentCls == .blunder)) ? 1300 : 0
+            try? await Task.sleep(for: .milliseconds(baseMs + holdExtraMs))
+            guard !Task.isCancelled && isAutoPlaying else { break }
+            guard scenePhase == .active,
+                  !isAnyOverlayOpen,
+                  !store.isAnalyzing,
+                  store.selectedTab == .analyze,
+                  store.activeSandboxFen == nil,
+                  let liveAg = store.activeAnalyzedGame,
+                  !retryMode, !botActive else {
+                isAutoPlaying = false
+                break
+            }
+            if currentPlyIndex < liveAg.plies.count {
+                currentPlyIndex += 1
+                let stepped = liveAg.plies[currentPlyIndex - 1]
+                if stepped.classification != .brilliant && stepped.classification != .blunder {
+                    store.triggerHaptic(stepped.san.contains("x") ? .capture : .move)
+                }
+            } else {
+                isAutoPlaying = false
+                break
+            }
+        }
+    }
+
+    private func refreshThreatArrow() async {
+        guard showThreatArrow,
+              store.hasProAccess,
+              store.selectedTab == .analyze,
+              !store.isAnalyzing,
+              !isTurboScrubbing,
+              store.activeSandboxFen == nil,
+              !retryMode,
+              !botActive,
+              !isAnyOverlayOpen,
+              let ag = store.activeAnalyzedGame else {
+            threatArrow = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(120))
+        guard !Task.isCancelled else { return }
+        let clamped = max(0, min(currentPlyIndex, ag.plies.count))
+        let fen = clamped == 0 ? ChessBoard.initialFEN : ag.plies[clamped - 1].afterFen
+        guard let flipped = flippedTurnFENIfSafe(fen) else {
+            threatArrow = nil
+            return
+        }
+        if let threatMove = await store.computeBotReply(fen: flipped, depth: 4), !Task.isCancelled {
+            threatArrow = BoardArrow(from: threatMove.from.algebraic, to: threatMove.to.algebraic, color: .threat)
+        } else if !Task.isCancelled {
+            threatArrow = nil
+        }
     }
 
     public var body: some View {
@@ -76,14 +172,23 @@ public struct AnalyzeTabView: View {
             applyPendingNavigation(resetIfNewGame: true)
             refreshCachedDeviation()
         }
-        .onChange(of: store.pendingAnalyzePly) { _, _ in
+        .onChange(of: store.pendingAnalyzePly) { _, newPly in
+            guard newPly != nil else { return }
             applyPendingNavigation(resetIfNewGame: false)
         }
         .onChange(of: store.customCourses.count) { _, _ in
             refreshCachedDeviation()
         }
         .onChange(of: currentPlyIndex) { _, newPly in
+            if suppressNextCelebration {
+                suppressNextCelebration = false
+                return
+            }
             guard !isTurboScrubbing,
+                  store.selectedTab == .analyze,
+                  !store.isAnalyzing,
+                  store.activeSandboxFen == nil,
+                  !isAnyOverlayOpen,
                   !retryMode && !botActive,
                   let ag = store.activeAnalyzedGame,
                   newPly > 0 && newPly <= ag.plies.count else { return }
@@ -110,40 +215,7 @@ public struct AnalyzeTabView: View {
                 .environment(store)
         }
         .task(id: isAutoPlaying) {
-            guard isAutoPlaying else { return }
-            while !Task.isCancelled && isAutoPlaying {
-                guard !store.isAnalyzing, store.selectedTab == .analyze,
-                      let ag = store.activeAnalyzedGame, !retryMode, !botActive else {
-                    isAutoPlaying = false
-                    break
-                }
-                let baseMs: Int = switch autoPlaySpeed {
-                case 3: 280
-                case 2: 520
-                default: 1020
-                }
-                let currentCls = (currentPlyIndex > 0 && currentPlyIndex <= ag.plies.count)
-                    ? ag.plies[currentPlyIndex - 1].classification
-                    : nil
-                let holdExtraMs: Int = (autoPlaySpeed == 1 && (currentCls == .brilliant || currentCls == .blunder)) ? 1300 : 0
-                try? await Task.sleep(for: .milliseconds(baseMs + holdExtraMs))
-                guard !Task.isCancelled && isAutoPlaying else { break }
-                guard !store.isAnalyzing, store.selectedTab == .analyze,
-                      let liveAg = store.activeAnalyzedGame, !retryMode, !botActive else {
-                    isAutoPlaying = false
-                    break
-                }
-                if currentPlyIndex < liveAg.plies.count {
-                    currentPlyIndex += 1
-                    let stepped = liveAg.plies[currentPlyIndex - 1]
-                    if stepped.classification != .brilliant && stepped.classification != .blunder {
-                        store.triggerHaptic(stepped.san.contains("x") ? .capture : .move)
-                    }
-                } else {
-                    isAutoPlaying = false
-                    break
-                }
-            }
+            await runAutoPlayLoop()
         }
         .onChange(of: store.isAnalyzing) { _, analyzing in
             if analyzing {
@@ -152,6 +224,16 @@ public struct AnalyzeTabView: View {
         }
         .onChange(of: store.selectedTab) { _, tab in
             if tab != .analyze {
+                isAutoPlaying = false
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                isAutoPlaying = false
+            }
+        }
+        .onChange(of: isAnyOverlayOpen) { _, open in
+            if open {
                 isAutoPlaying = false
             }
         }
@@ -180,22 +262,8 @@ public struct AnalyzeTabView: View {
                     .presentationDragIndicator(.visible)
             }
         }
-        .task(id: "\(showThreatArrow)::\(store.activeAnalyzedGame?.id ?? "")::\(currentPlyIndex)") {
-            guard showThreatArrow, store.hasProAccess, let ag = store.activeAnalyzedGame else {
-                threatArrow = nil
-                return
-            }
-            let clamped = max(0, min(currentPlyIndex, ag.plies.count))
-            let fen = clamped == 0 ? ChessBoard.initialFEN : ag.plies[clamped - 1].afterFen
-            guard let flipped = flippedTurnFENIfSafe(fen) else {
-                threatArrow = nil
-                return
-            }
-            if let threatMove = await store.computeBotReply(fen: flipped, depth: 4), !Task.isCancelled {
-                threatArrow = BoardArrow(from: threatMove.from.algebraic, to: threatMove.to.algebraic, color: .threat)
-            } else {
-                threatArrow = nil
-            }
+        .task(id: threatArrowTaskKey) {
+            await refreshThreatArrow()
         }
     }
 
@@ -220,6 +288,8 @@ public struct AnalyzeTabView: View {
         botTask = nil
         evalTask?.cancel()
         evalTask = nil
+        noticeTask?.cancel()
+        noticeTask = nil
         botThinking = false
     }
 
@@ -237,22 +307,29 @@ public struct AnalyzeTabView: View {
     private func applyPendingNavigation(resetIfNewGame: Bool) {
         guard let ag = store.activeAnalyzedGame else { return }
         cancelLiveTasks()
+        let isNewGame = resetIfNewGame || orientedGameId != ag.id
+        var targetPly = currentPlyIndex
         if let jump = store.pendingAnalyzePly {
-            currentPlyIndex = max(0, min(jump, ag.plies.count))
+            targetPly = max(0, min(jump, ag.plies.count))
             store.pendingAnalyzePly = nil
-        } else if resetIfNewGame || currentPlyIndex == 0 || currentPlyIndex > ag.plies.count {
-            currentPlyIndex = min(1, ag.plies.count)
+        } else if isNewGame || currentPlyIndex > ag.plies.count {
+            targetPly = min(1, ag.plies.count)
         }
-        orientation = ag.game.resolvedUserColor(handles: store.userHandles) ?? .white
+        if targetPly != currentPlyIndex {
+            suppressNextCelebration = true
+            currentPlyIndex = targetPly
+        }
+        if isNewGame {
+            orientation = ag.game.resolvedUserColor(handles: store.userHandles) ?? .white
+            orientedGameId = ag.id
+            boostedDeviationCardId = nil
+        }
         retryMode = false
         botActive = false
         retryFeedback = nil
         retrySolvedBoard = nil
         retrySolvedLastMove = nil
         botStatusNotice = nil
-        if resetIfNewGame {
-            boostedDeviationCardId = nil
-        }
     }
 
     private func refreshCachedDeviation() {
@@ -410,6 +487,10 @@ public struct AnalyzeTabView: View {
                     Button(store.activeAnalyzedGame != nil ? "Back to Game" : "Exit Explore") {
                         cancelLiveTasks()
                         botActive = false
+                        sandboxHistory = []
+                        sandboxCursor = 0
+                        sandboxEval = nil
+                        botStatusNotice = nil
                         store.activeSandboxFen = nil
                     }
                     .font(.caption.weight(.bold))
@@ -439,7 +520,8 @@ public struct AnalyzeTabView: View {
                 // Undo / Redo / Reset / Bot / Flip Controls
                 HStack(spacing: 8) {
                     Button {
-                        stepSandboxHistory(to: sandboxCursor - 1)
+                        let stepBack = (botActive && sandboxCursor >= 2 && sandboxBoard.turn == orientation) ? 2 : 1
+                        stepSandboxHistory(to: max(0, sandboxCursor - stepBack))
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.subheadline.weight(.bold))
@@ -713,10 +795,10 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .lineLimit(1)
 
-                    let activePreset = store.effectiveAnalysisPreset
-                    let depthPillTint: Color = activePreset.usesCloudEval
+                    let gamePreset = AnalysisDepthPreset(rawValue: ag.depth) ?? store.effectiveAnalysisPreset
+                    let depthPillTint: Color = gamePreset.usesCloudEval
                         ? BrillyPalette.warpPurpleText
-                        : (activePreset == .ultra ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
+                        : (gamePreset == .ultra ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
 
                     Menu {
                         ForEach(AnalysisDepthPreset.batchPresets) { preset in
@@ -727,7 +809,7 @@ public struct AnalyzeTabView: View {
                             } label: {
                                 Label(
                                     "\(preset.title) · \(preset.eloEstimate)",
-                                    systemImage: activePreset == preset ? "checkmark" : preset.sfSymbol
+                                    systemImage: gamePreset == preset ? "checkmark" : preset.sfSymbol
                                 )
                             }
                         }
@@ -743,15 +825,15 @@ public struct AnalyzeTabView: View {
                                     : "\(preset.title) · \(preset.eloEstimate) (Pro)"
                                 Label(
                                     labelText,
-                                    systemImage: !store.hasProAccess ? "lock.fill" : (activePreset == preset ? "checkmark" : preset.sfSymbol)
+                                    systemImage: !store.hasProAccess ? "lock.fill" : (gamePreset == preset ? "checkmark" : preset.sfSymbol)
                                 )
                             }
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: activePreset.sfSymbol)
+                            Image(systemName: gamePreset.sfSymbol)
                                 .font(.system(size: 10, weight: .bold))
-                            Text(activePreset.title)
+                            Text(gamePreset.title)
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
@@ -765,7 +847,7 @@ public struct AnalyzeTabView: View {
                                 .overlay(Capsule().strokeBorder(depthPillTint.opacity(0.40), lineWidth: 0.9))
                         )
                     }
-                    .accessibilityLabel("Engine preset \(activePreset.title), \(activePreset.eloEstimate). Tap to change depth and re-analyze.")
+                    .accessibilityLabel("Analyzed at \(gamePreset.title), \(gamePreset.eloEstimate). Tap to change depth and re-analyze.")
 
                     Spacer(minLength: 4)
 
@@ -809,6 +891,7 @@ public struct AnalyzeTabView: View {
                                 Label("Share Move Card", systemImage: "square.and.arrow.up")
                             }
                             Button {
+                                cancelLiveTasks()
                                 showingMoveListSheet = true
                                 store.triggerHaptic(.move)
                             } label: {
@@ -820,6 +903,7 @@ public struct AnalyzeTabView: View {
                                     store.openProPaywall(feature: "Guided Mistake Review")
                                     return
                                 }
+                                cancelLiveTasks()
                                 showingMistakeReview = true
                                 store.triggerHaptic(.move)
                             } label: {
@@ -1027,6 +1111,10 @@ public struct AnalyzeTabView: View {
                             if !isAutoPlaying {
                                 retryMode = false
                                 botActive = false
+                                retrySolvedBoard = nil
+                                retrySolvedLastMove = nil
+                                retryFeedback = nil
+                                botStatusNotice = nil
                                 if clampedPly >= ag.plies.count {
                                     currentPlyIndex = 0
                                 }
@@ -1104,6 +1192,7 @@ public struct AnalyzeTabView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Button {
+                                cancelLiveTasks()
                                 showingMoveListSheet = true
                                 store.triggerHaptic(.move)
                             } label: {
@@ -1155,6 +1244,7 @@ public struct AnalyzeTabView: View {
                             Spacer(minLength: 4)
                             if ap.classification == .blunder || ap.classification == .mistake {
                                 Button(retryMode ? "Exit Retry" : "Retry") {
+                                    cancelLiveTasks()
                                     retryMode.toggle()
                                     botActive = false
                                     retrySolvedBoard = nil
@@ -1189,7 +1279,15 @@ public struct AnalyzeTabView: View {
                                 default: return "Final Move · End of Recorded Game"
                                 }
                             }()
-                            let mistakeCount = ag.plies.filter { $0.classification == .mistake || $0.classification == .blunder }.count
+                            let userSide = ag.game.resolvedUserColor(handles: store.userHandles)
+                            let mistakeCount = ag.plies.filter { ap in
+                                let isMistakeOrBlunder = ap.classification == .mistake || ap.classification == .blunder
+                                let hasAlternative = !ap.bestMoveUci.isEmpty && ap.bestMoveUci != ap.uci
+                                if let side = userSide {
+                                    return isMistakeOrBlunder && hasAlternative && ap.color == side
+                                }
+                                return isMistakeOrBlunder && hasAlternative
+                            }.count
                             HStack(spacing: 6) {
                                 Image(systemName: "flag.checkered")
                                     .font(.caption2.weight(.bold))
@@ -1206,6 +1304,7 @@ public struct AnalyzeTabView: View {
                                             store.openProPaywall(feature: "Guided Mistake Review Mode")
                                             return
                                         }
+                                        cancelLiveTasks()
                                         showingMistakeReview = true
                                         store.triggerHaptic(.move)
                                     } label: {
@@ -1265,6 +1364,7 @@ public struct AnalyzeTabView: View {
                             botActive = false
                             botStatusNotice = nil
                         } else {
+                            cancelLiveTasks()
                             sandboxBoard = board
                             botActive = true
                             retryMode = false
@@ -1344,7 +1444,11 @@ public struct AnalyzeTabView: View {
 
                 // 7. Tappable Eval Graph
                 if !ag.plies.isEmpty {
-                    EvalGraphView(plies: ag.plies, selectedPly: clampedPly) { target in
+                    EvalGraphView(
+                        plies: ag.plies,
+                        selectedPly: clampedPly,
+                        onScrubStateChanged: { isTurboScrubbing = $0 }
+                    ) { target in
                         goToPly(target, maxPly: ag.plies.count)
                     }
                 }
@@ -1456,17 +1560,22 @@ public struct AnalyzeTabView: View {
         }
         .brillySoftScrollEdge()
         .task(id: displayFen) {
-            if SyzygyClient.isEligible(fen: displayFen) {
-                syzygyResult = await SyzygyClient.shared.probe(fen: displayFen)
+            let fen = displayFen
+            if SyzygyClient.isEligible(fen: fen) {
+                let res = await SyzygyClient.shared.probe(fen: fen)
+                guard !Task.isCancelled else { return }
+                syzygyResult = res
+                syzygyFen = fen
             } else {
                 syzygyResult = nil
+                syzygyFen = nil
             }
         }
     }
 
     @ViewBuilder
     private func syzygyCardIfEligible(fen: String) -> some View {
-        if let res = syzygyResult, SyzygyClient.isEligible(fen: fen) {
+        if let res = syzygyResult, syzygyFen == fen, SyzygyClient.isEligible(fen: fen) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Label("7-Piece Syzygy Tablebase", systemImage: "crown.fill")
@@ -1514,9 +1623,11 @@ public struct AnalyzeTabView: View {
                 let res = await SyzygyClient.shared.probe(fen: fen)
                 if !Task.isCancelled && self.evalGeneration == gen {
                     self.syzygyResult = res
+                    self.syzygyFen = fen
                 }
             } else if self.evalGeneration == gen {
                 self.syzygyResult = nil
+                self.syzygyFen = nil
             }
         }
     }
@@ -1568,9 +1679,11 @@ public struct AnalyzeTabView: View {
     }
 
     private func flashNotice(_ label: String) {
+        noticeTask?.cancel()
         copiedNotice = label
-        Task {
+        noticeTask = Task {
             try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled else { return }
             if copiedNotice == label { copiedNotice = nil }
         }
     }
@@ -1996,10 +2109,11 @@ private struct GuidedMistakeReviewSheet: View {
     private var mistakes: [AnalyzedPly] {
         ag.plies.filter { ap in
             let isMistakeOrBlunder = ap.classification == .blunder || ap.classification == .mistake
+            let hasAlternative = !ap.bestMoveUci.isEmpty && ap.bestMoveUci != ap.uci
             if let side = userSide {
-                return isMistakeOrBlunder && ap.color == side
+                return isMistakeOrBlunder && hasAlternative && ap.color == side
             }
-            return isMistakeOrBlunder
+            return isMistakeOrBlunder && hasAlternative
         }
     }
 
@@ -2077,7 +2191,8 @@ private struct GuidedMistakeReviewSheet: View {
                             }
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Move \(ap.moveNumber): You played \(ap.san) (\(store.classificationLabel(ap.classification)))")
+                                let actorLabel = (userSide != nil) ? "You" : ap.color.displayName
+                                Text("Move \(ap.moveNumber): \(actorLabel) played \(ap.san) (\(store.classificationLabel(ap.classification)))")
                                     .font(.subheadline.weight(.bold))
                                     .foregroundStyle(BrillyPalette.color(for: ap.classification))
 

@@ -105,8 +105,46 @@ public struct GameRecord: Codable, Hashable, Sendable, Identifiable {
             let bLow = black.name.lowercased()
             if normalized.contains(wLow) { return .white }
             if normalized.contains(bLow) { return .black }
+            // Only honor stored userColor for built-in showcase games; never misattribute opponent/broadcast games
+            return source == .sample ? userColor : nil
         }
         return userColor
+    }
+
+    /// Returns a copy with `userColor` strictly rebound to the local user's handles (or `nil` for third-party/opponent games).
+    public func reboundUserColor(for handles: [String]) -> GameRecord {
+        let normalized = handles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        let matched: PieceColor?
+        if normalized.contains(white.name.lowercased()) {
+            matched = .white
+        } else if normalized.contains(black.name.lowercased()) {
+            matched = .black
+        } else {
+            matched = nil
+        }
+        return GameRecord(
+            id: id,
+            source: source,
+            rated: rated,
+            variant: variant,
+            speed: speed,
+            perf: perf,
+            createdAt: createdAt,
+            status: status,
+            winner: winner,
+            resultString: resultString,
+            timeControlLabel: timeControlLabel,
+            pgn: pgn,
+            openingName: openingName,
+            openingEco: openingEco,
+            openingPly: openingPly,
+            white: white,
+            black: black,
+            userColor: matched,
+            url: url
+        )
     }
 
     public func userResult(for username: String? = nil) -> String {
