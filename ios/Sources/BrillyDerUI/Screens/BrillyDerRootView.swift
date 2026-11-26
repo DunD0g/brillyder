@@ -89,24 +89,24 @@ public struct BrillyDerRootView: View {
             }
         }
         .animation(.easeOut(duration: 0.28), value: store.isShowingLaunchOverlay)
-        // Safe-area-aware floating HUD banners positioned cleanly below the navigation toolbar
+        // Safe-area-aware floating HUD banners
         .overlay(alignment: .top) {
-            VStack(spacing: 8) {
-                if let celebration = store.activeCelebration {
-                    AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            store.dismissCelebration()
-                        }
+            if let celebration = store.activeCelebration {
+                AlienCelebrationBanner(event: celebration, surfaceStyle: store.surfaceStyle) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        store.dismissCelebration()
                     }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 52)
+            }
+        }
+        // Position persistent Batch Scan pill cleanly above the tab bar so it never covers large navigation titles
+        .overlay(alignment: .bottom) {
+            if store.isBatchAnalyzing && store.selectedTab != .games {
+                globalBatchPill
                     .padding(.horizontal, 16)
-                    .padding(.top, 52)
-                }
-
-                if store.isBatchAnalyzing && store.selectedTab != .games {
-                    globalBatchPill
-                        .padding(.horizontal, 16)
-                        .padding(.top, store.activeCelebration == nil ? 52 : 0)
-                }
+                    .padding(.bottom, 70)
             }
         }
         .environment(\.brillyPieceSet, store.effectivePieceSet)
@@ -241,7 +241,7 @@ public struct BrillyDerRootView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: BrillyPalette.brillyTeal)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     @ToolbarContentBuilder

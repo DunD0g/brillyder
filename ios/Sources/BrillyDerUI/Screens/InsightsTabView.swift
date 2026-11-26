@@ -4,6 +4,7 @@ import BrillyDerCore
 public struct InsightsTabView: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var selectedTrendIndex: Int? = nil
+    @State private var showingPerfExplainer: Bool = false
 
     public var body: some View {
         let snap = store.insights
@@ -152,24 +153,34 @@ public struct InsightsTabView: View {
                                             )
                                         }
                                         if let perf = snap.avgPerformanceElo {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: "chart.line.uptrend.xyaxis")
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .foregroundStyle(BrillyPalette.goldAmber)
-                                                Text("Perf")
-                                                    .font(.caption2.weight(.semibold))
-                                                    .foregroundStyle(BrillyPalette.inkSecondary)
-                                                Text("~\(perf)")
-                                                    .font(.caption.monospacedDigit().weight(.black))
-                                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                            Button {
+                                                showingPerfExplainer = true
+                                                store.triggerHaptic(.move)
+                                            } label: {
+                                                HStack(spacing: 5) {
+                                                    Image(systemName: "chart.line.uptrend.xyaxis")
+                                                        .font(.system(size: 10, weight: .bold))
+                                                        .foregroundStyle(BrillyPalette.goldAmber)
+                                                    Text("Perf")
+                                                        .font(.caption2.weight(.semibold))
+                                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                                    Text("~\(perf)")
+                                                        .font(.caption.monospacedDigit().weight(.black))
+                                                        .foregroundStyle(BrillyPalette.goldAmber)
+                                                    Image(systemName: "info.circle")
+                                                        .font(.system(size: 10, weight: .semibold))
+                                                        .foregroundStyle(BrillyPalette.goldAmber.opacity(0.75))
+                                                }
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(
+                                                    Capsule()
+                                                        .fill(BrillyPalette.goldAmber.opacity(0.12))
+                                                        .overlay(Capsule().strokeBorder(BrillyPalette.goldAmber.opacity(0.35), lineWidth: 0.9))
+                                                )
                                             }
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(
-                                                Capsule()
-                                                    .fill(BrillyPalette.goldAmber.opacity(0.12))
-                                                    .overlay(Capsule().strokeBorder(BrillyPalette.goldAmber.opacity(0.32), lineWidth: 0.8))
-                                            )
+                                            .buttonStyle(BrillyPressScaleStyle())
+                                            .accessibilityLabel("Estimated performance rating \(perf). Tap for explanation and improvement plan.")
                                         }
                                     }
                                 }
@@ -368,6 +379,14 @@ public struct InsightsTabView: View {
             .brillySoftScrollEdge()
         }
         .navigationTitle("Insights")
+        .sheet(isPresented: $showingPerfExplainer) {
+            if let perf = snap.avgPerformanceElo {
+                PerfEloExplainerSheet(perfElo: perf, snapshot: snap, advanced: adv)
+                    .environment(store)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     private func accuracyTrendAndCheckpointsCard() -> some View {
@@ -591,5 +610,353 @@ public struct InsightsTabView: View {
             ProgressView(value: ChessMath.clamp(pct, min: 0, max: 100), total: 100)
                 .tint(tint)
         }
+    }
+}
+
+// MARK: - Performance Elo Explainer & Roadmap Sheet
+
+private struct PerfEloExplainerSheet: View {
+    @Environment(BrillyAppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    let perfElo: Int
+    let snapshot: InsightsSnapshot
+    let advanced: AdvancedInsightsReport
+
+    private var primaryRating: (speed: String, rating: Int)? {
+        snapshot.currentRatings.first
+    }
+
+    private var eloGap: Int? {
+        guard let actual = primaryRating?.rating else { return nil }
+        return perfElo - actual
+    }
+
+    private var blundersPerGame: Double {
+        Double(snapshot.totalBlunders) / Double(max(1, snapshot.analyzedCount))
+    }
+
+    private var expectedBaselineAccuracy: Double {
+        let anchor = Double(primaryRating?.rating ?? 1200)
+        return ChessMath.clamp(56.0 + (anchor - 1000.0) * 0.018, min: 52.0, max: 90.0)
+    }
+
+    private var weakestPhase: (name: String, pct: Double)? {
+        let phases: [(String, Double)] = [
+            ("Opening", snapshot.openingAccuracy),
+            ("Middlegame", snapshot.middlegameAccuracy),
+            ("Endgame", snapshot.endgameAccuracy),
+        ].filter { $0.1 > 0.1 }
+        return phases.min { $0.1 < $1.1 }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CosmicVoidBackdrop(style: store.surfaceStyle)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        comparisonHeroCard
+                        howCalculatedCard
+                        whyActualDiffersCard
+                        roadmapActionCard
+                    }
+                    .padding(16)
+                }
+                .brillySoftScrollEdge()
+            }
+            .navigationTitle("Performance Elo")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.bold)
+                }
+            }
+        }
+    }
+
+    private var comparisonHeroCard: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                if let actual = primaryRating {
+                    VStack(spacing: 3) {
+                        Text("\(actual.speed.uppercased()) ELO")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(0.8)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                        Text("\(actual.rating)")
+                            .font(.title.monospacedDigit().weight(.black))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Text("Actual rating")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                }
+
+                VStack(spacing: 3) {
+                    Text("PERF ELO")
+                        .font(.system(size: 10, weight: .bold))
+                        .tracking(0.8)
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                    Text("~\(perfElo)")
+                        .font(.title.monospacedDigit().weight(.black))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                    Text("\(String(format: "%.1f", snapshot.avgAccuracy))% avg acc")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(BrillyPalette.goldAmber.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(BrillyPalette.goldAmber.opacity(0.32), lineWidth: 0.9))
+                )
+            }
+
+            if let gap = eloGap {
+                let badgeText: String = {
+                    if gap >= 50 {
+                        return "+\(gap) Elo ceiling — your move quality is already ahead of your rating!"
+                    } else if gap <= -50 {
+                        return "Actual rating is +\(-gap) Elo ahead of recent move accuracy — strong practical grit!"
+                    } else {
+                        return "Perf Elo & Actual Rating are tightly aligned."
+                    }
+                }()
+                Text(badgeText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(gap >= 50 ? BrillyPalette.brillyTeal : BrillyPalette.inkPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.goldAmber)
+    }
+
+    private var howCalculatedCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("How We Calculated ~\(perfElo)", systemImage: "function")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(BrillyPalette.brillyTeal)
+
+            explainerBullet(
+                icon: "target",
+                tint: BrillyPalette.brillyTeal,
+                title: "1. Game Rating Anchor",
+                body: primaryRating.map {
+                    "Each game starts anchored at the average of your rating and your opponent's rating (around ~\($0.rating) in your \($0.speed) games)."
+                } ?? "Each game starts anchored at the average rating of both players in that match."
+            )
+
+            explainerBullet(
+                icon: "gauge.with.needle.fill",
+                tint: BrillyPalette.warpPurpleText,
+                title: "2. Move Accuracy Lift",
+                body: "At your tier, average engine accuracy is around \(String(format: "%.0f", expectedBaselineAccuracy))%. Your \(String(format: "%.1f", snapshot.avgAccuracy))% average across \(snapshot.analyzedCount) game\(snapshot.analyzedCount == 1 ? "" : "s") adds ~19 Elo for every +1% above baseline."
+            )
+
+            explainerBullet(
+                icon: "trophy.fill",
+                tint: BrillyPalette.goldAmber,
+                title: "3. Game Result Adjustment",
+                body: "Wins add +85 and losses subtract -85 to keep move quality tied to real outcomes, then we average across all analyzed games."
+            )
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20)
+    }
+
+    private var whyActualDiffersCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(
+                (eloGap ?? 1) >= 0 ? "Why Your Actual Rating Is Lower" : "Why Actual Rating Differs",
+                systemImage: "questionmark.circle.fill"
+            )
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(BrillyPalette.warpPurpleText)
+
+            explainerBullet(
+                icon: "exclamationmark.triangle.fill",
+                tint: BrillyPalette.blunderRose,
+                title: "One Blunder Can Erase 30 Great Moves",
+                body: "Perf Elo rewards your average move quality (\(String(format: "%.1f", snapshot.avgAccuracy))%), but actual Elo only scores the final result (\(snapshot.wins)W · \(snapshot.draws)D · \(snapshot.losses)L). At \(String(format: "%.2f", blundersPerGame)) blunders/game (\(snapshot.totalBlunders) ??), a single hanging piece or missed tactic can flip a dominant game into a loss."
+            )
+
+            explainerBullet(
+                icon: "person.2.fill",
+                tint: BrillyPalette.goldAmber,
+                title: "Opponent Resistance Scales Up",
+                body: primaryRating.map {
+                    "Playing \(String(format: "%.0f", snapshot.avgAccuracy))% accuracy against ~\($0.rating) opponents is much easier than holding it against ~\(perfElo) players, who create sharper threats and punish small slips."
+                } ?? "Higher-rated opponents create sharper complications and punish minor inaccuracies that lower-rated opponents often miss."
+            )
+
+            if !store.blownLeads.isEmpty || advanced.impulseBlunders > 0 {
+                let blownCount = store.blownLeads.count
+                let impulse = advanced.impulseBlunders
+                let leakText: String = {
+                    if blownCount > 0 && impulse > 0 {
+                        return "You have \(blownCount) blown winning lead\(blownCount == 1 ? "" : "s") (+2.5 or better) and \(impulse) impulse blunder\(impulse == 1 ? "" : "s") (<5s moves with plenty of time left). Fixing just those two leaks turns existing skill straight into rating points."
+                    } else if blownCount > 0 {
+                        return "You let \(blownCount) winning position\(blownCount == 1 ? "" : "s") (+2.5 or better) slip away — converting half of those alone is worth +100 Elo."
+                    } else {
+                        return "You made \(impulse) impulse error\(impulse == 1 ? "" : "s") in under 5 seconds with plenty of clock left — slowing down in sharp spots pays off immediately."
+                    }
+                }()
+                explainerBullet(
+                    icon: "bolt.slash.fill",
+                    tint: BrillyPalette.goldAmber,
+                    title: "Unconverted Leads & Fast Slips",
+                    body: leakText
+                )
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20)
+    }
+
+    private var roadmapActionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("How to Reach ~\(perfElo) Actual Elo", systemImage: "arrow.up.right.circle.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(BrillyPalette.brillyTeal)
+
+            if let topMotif = advanced.missedMotifs.first {
+                actionRow(
+                    title: "1. Cut Your #1 Blunder Leak (\(topMotif.tag))",
+                    detail: "\(topMotif.count) errors · avg -\(Int(topMotif.avgWinLoss))% win chance. Cutting blunders from \(String(format: "%.2f", blundersPerGame))/game under 0.5/game is the fastest rating jump.",
+                    cta: "Drill"
+                ) {
+                    dismiss()
+                    store.openMotifTrainer(tag: topMotif.tag)
+                }
+            } else {
+                actionRow(
+                    title: "1. Cut Blunders Below 0.5 / Game",
+                    detail: "You're averaging \(String(format: "%.2f", blundersPerGame)) blunders/game. Run a 5-second blunder check (Checks, Captures, Threats) before committing.",
+                    cta: "Mistakes"
+                ) {
+                    dismiss()
+                    store.selectedTrainMode = .mistakes
+                    store.selectedTab = .train
+                }
+            }
+
+            if !store.blownLeads.isEmpty {
+                actionRow(
+                    title: "2. Lock In Winning Positions",
+                    detail: "Replay your \(store.blownLeads.count) blown +2.5 lead\(store.blownLeads.count == 1 ? "" : "s") against the engine until simplifying & converting feels automatic.",
+                    cta: "Convert"
+                ) {
+                    dismiss()
+                    store.selectedTrainMode = .conversion
+                    store.selectedTab = .train
+                }
+            }
+
+            if let weak = weakestPhase {
+                let stepNum = store.blownLeads.isEmpty ? "2" : "3"
+                let weakDetail: String = {
+                    if weak.name == "Endgame" {
+                        return "Your endgame trails your opening (\(String(format: "%.1f", snapshot.openingAccuracy))%). Master key pawn & rook endgames to turn draws into wins."
+                    } else if weak.name == "Opening" {
+                        return "Lock in your first 8 moves with Daily FSRS drills so you reach comfortable middlegames every game."
+                    } else {
+                        return "Drill middlegame tactics & personal mistakes so your strong openings convert cleanly."
+                    }
+                }()
+                actionRow(
+                    title: "\(stepNum). Shore Up Your \(weak.name) (\(String(format: "%.1f", weak.pct))%)",
+                    detail: weakDetail,
+                    cta: weak.name == "Opening" ? "Openings" : "Train"
+                ) {
+                    dismiss()
+                    if weak.name == "Opening" {
+                        store.selectedTab = .openings
+                    } else if weak.name == "Endgame" && store.hasProAccess {
+                        let cat: EndgameCategory = advanced.endgameWeaknesses.first?.category ?? .pawn
+                        store.openEndgameLab(category: cat)
+                    } else {
+                        store.selectedTrainMode = .mistakes
+                        store.selectedTab = .train
+                    }
+                }
+            }
+
+            if advanced.impulseBlunders > 0 {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "timer")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(BrillyPalette.goldAmber.opacity(0.16)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use Your Clock + 2-Loss Stop-Loss")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        Text("Pause 5–10s before moves when you have >3m left (\(advanced.impulseBlunders) impulse slips so far), and stop queueing after 2 straight losses to protect your Elo.")
+                            .font(.caption2)
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal)
+    }
+
+    private func explainerBullet(icon: String, tint: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(tint.opacity(0.15)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                Text(body)
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func actionRow(title: String, detail: String, cta: String, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(BrillyPalette.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            Button(cta, action: action)
+                .font(.caption2.weight(.black))
+                .foregroundStyle(BrillyPalette.voidBg)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                .buttonStyle(.plain)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
     }
 }
