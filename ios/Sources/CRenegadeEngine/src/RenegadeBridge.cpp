@@ -107,12 +107,18 @@ bool renegade_analyze(
     const int clampedPV = std::clamp<int>(multi_pv, 1, std::min<int>(3, static_cast<int>(legalMoves.size())));
     const int clampedDepth = std::clamp<int>(max_depth, 1, 30);
 
-    // Split time budget smoothly across MultiPV lines (62% for PV1, remaining split across PV2..3)
+    // Split time budget fairly across MultiPV lines so PV2 reaches parity depth with PV1
+    // (52/48 for 2-PV; 46/27/27 for 3-PV).
     auto budgetForLine = [&](int pvIdx) -> int {
         if (max_time_ms <= 0) return 0;
         if (clampedPV == 1) return max_time_ms;
-        if (pvIdx == 0) return std::max(15, (max_time_ms * 62) / 100);
-        const int rest = std::max(15, max_time_ms - (max_time_ms * 62) / 100);
+        if (clampedPV == 2) {
+            const int pv1Budget = std::max(15, (max_time_ms * 52) / 100);
+            return (pvIdx == 0) ? pv1Budget : std::max(15, max_time_ms - pv1Budget);
+        }
+        const int pv1Budget = std::max(15, (max_time_ms * 46) / 100);
+        if (pvIdx == 0) return pv1Budget;
+        const int rest = std::max(15, max_time_ms - pv1Budget);
         return std::max(12, rest / (clampedPV - 1));
     };
 
@@ -143,7 +149,10 @@ bool renegade_analyze(
         }
 
         SearchParams params{};
-        params.depth = clampedDepth;
+        // Lock PV2..PV3 to at most PV1's achieved depth so secondary lines never out-deepen PV1
+        params.depth = (i == 0 || foundLines.empty())
+            ? clampedDepth
+            : std::min(clampedDepth, foundLines[0].depth);
         params.movetime = budgetForLine(i);
 
         Results res = gSearch->SearchSinglethreaded(pos, params);
@@ -177,10 +186,17 @@ bool renegade_analyze(
 
     gSearch->RootExcludedMoves.clear();
 
-    // Sort lines strictly by rawScore descending so PV1 is always best
-    std::sort(foundLines.begin(), foundLines.end(), [](const RawLine& a, const RawLine& b) {
-        return a.rawScore > b.rawScore;
-    });
+    // Only allow an excluded PV line to outrank PV1 if it reached at least PV1's depth;
+    // otherwise a shallow PV2 missing a tactical refutation can falsely displace deep PV1.
+    if (foundLines.size() > 1) {
+        const int pv1Depth = foundLines[0].depth;
+        std::stable_sort(foundLines.begin(), foundLines.end(), [pv1Depth](const RawLine& a, const RawLine& b) {
+            const bool aDeep = a.depth >= pv1Depth;
+            const bool bDeep = b.depth >= pv1Depth;
+            if (aDeep != bDeep) return aDeep;
+            return a.rawScore > b.rawScore;
+        });
+    }
 
     out_result->line_count = static_cast<int32_t>(foundLines.size());
     out_result->depth = foundLines.empty() ? 0 : foundLines[0].depth;

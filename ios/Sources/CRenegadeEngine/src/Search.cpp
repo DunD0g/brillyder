@@ -412,7 +412,8 @@ int Search::SearchRecursive(ThreadData& t, int depth, const int level, int alpha
 	bool found = false;
 	const uint64_t hash = position.Hash();
 
-	if (!singularSearch) {
+	const bool skipRootTT = rootNode && !RootExcludedMoves.empty();
+	if (!singularSearch && !skipRootTT) {
 		found = TranspositionTable.Probe(hash, ttEntry, level);
 		if (found) {
 			if constexpr (!pvNode) {

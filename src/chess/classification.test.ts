@@ -47,7 +47,7 @@ describe('Pass 1 — Brilliant engine, classification, motifs, clocks & Maia pol
     const mv2 = c2.move({ from: 'h2', to: 'h6' });
     expect(isSacrificeMove(passiveBefore, c2.fen(), 'w', mv2.to, mv2.piece, mv2.captured, undefined, mv2.from)).toBe(true);
 
-    // Real-game 16...Nxd4!! knight sacrifice with 4.7% sigmoid gap (-2.5 vs -1.9) MUST classify as Brilliant
+    // Real-game 16...Nxd4!! knight sacrifice MUST classify as Brilliant both at -2.5 (71.5%) AND Stockfish -5.51 (88.4%)
     const nxd4Before = '2kr1b1r/ppp2p1p/2n2p2/3b4/3P4/1P3P2/P3NKPP/RN3B1R b - - 0 16';
     const c3 = new Chess(nxd4Before);
     const mv3 = c3.move({ from: 'c6', to: 'd4' });
@@ -73,11 +73,93 @@ describe('Pass 1 — Brilliant engine, classification, motifs, clocks & Maia pol
     });
     expect(nxd4Cls).toBe('brilliant');
 
-    // Fork-flee guard: saving Queen from pawn fork while Knight stays hanging is NOT a sacrifice
+    const sfNxd4Cls = classifyMove({
+      plyIndex: 31,
+      sanPrefix: [],
+      playedUci: 'c6d4',
+      bestMoveUci: 'c6d4',
+      beforeFen: nxd4Before,
+      afterFen: c3.fen(),
+      moverColor: 'b',
+      fromSquare: mv3.from,
+      toSquare: mv3.to,
+      movedPiece: mv3.piece,
+      capturedPiece: mv3.captured,
+      positionRepeated: false,
+      moverWinBefore: 88.4,
+      moverWinAfter: 88.4,
+      secondBestGapWin: 19.0,
+      hasSecondLine: true,
+      missedMate: false,
+      walkedIntoMate: false,
+    });
+    expect(sfNxd4Cls).toBe('brilliant');
+
+    // Classic smothered-mate Queen sacrifice Qg8+!! (moverWinBefore = 100%, #2 = 85%, deliversForcedMate = true)
+    const qg8Before = '5r1k/6pp/7N/8/8/1Q6/6PP/6K1 w - - 0 1';
+    const cQg8 = new Chess(qg8Before);
+    const mvQg8 = cQg8.move({ from: 'b3', to: 'g8' });
+    expect(
+      classifyMove({
+        plyIndex: 40,
+        sanPrefix: [],
+        playedUci: 'b3g8',
+        bestMoveUci: 'b3g8',
+        beforeFen: qg8Before,
+        afterFen: cQg8.fen(),
+        moverColor: 'w',
+        fromSquare: mvQg8.from,
+        toSquare: mvQg8.to,
+        movedPiece: mvQg8.piece,
+        positionRepeated: false,
+        moverWinBefore: 100,
+        moverWinAfter: 100,
+        secondBestGapWin: 15,
+        hasSecondLine: true,
+        missedMate: false,
+        walkedIntoMate: false,
+        deliversForcedMate: true,
+      })
+    ).toBe('brilliant');
+
+    // Move-6 Fried Liver 6. Nxf7!! beats Book tag
+    const flBefore = 'r1bqkb1r/ppp2ppp/2n5/3np1N1/2B5/8/PPPP1PPP/RNBQK2R w KQkq - 0 6';
+    const cFl = new Chess(flBefore);
+    const mvFl = cFl.move({ from: 'g5', to: 'f7' });
+    expect(
+      classifyMove({
+        plyIndex: 10,
+        sanPrefix: ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Nf6', 'Ng5', 'd5', 'exd5', 'Nxd5', 'Nxf7'],
+        lichessOpeningPly: 12,
+        playedUci: 'g5f7',
+        bestMoveUci: 'g5f7',
+        beforeFen: flBefore,
+        afterFen: cFl.fen(),
+        moverColor: 'w',
+        fromSquare: mvFl.from,
+        toSquare: mvFl.to,
+        movedPiece: mvFl.piece,
+        capturedPiece: mvFl.captured,
+        positionRepeated: false,
+        moverWinBefore: 64,
+        moverWinAfter: 64,
+        secondBestGapWin: 14,
+        hasSecondLine: true,
+        missedMate: false,
+        walkedIntoMate: false,
+      })
+    ).toBe('brilliant');
+
+    // Fork-flee guard: saving Queen OR equal-value Bishop from pawn fork while Knight stays hanging is NOT a sacrifice
     const forkBefore = '4k3/8/8/3p4/2Q1N3/8/8/4K3 w - - 0 1';
     const c4 = new Chess(forkBefore);
     const mv4 = c4.move({ from: 'c4', to: 'd3' });
     expect(isSacrificeMove(forkBefore, c4.fen(), 'w', mv4.to, mv4.piece, mv4.captured, undefined, mv4.from)).toBe(false);
+
+    const eqForkBefore = '4k3/8/8/3p4/2B1N3/8/8/4K3 w - - 0 1';
+    const cEq = new Chess(eqForkBefore);
+    const mvEq = cEq.move({ from: 'c4', to: 'd3' });
+    expect(isSacrificeMove(eqForkBefore, cEq.fen(), 'w', mvEq.to, mvEq.piece, mvEq.captured, undefined, mvEq.from)).toBe(false);
 
     // Counterthreat guard: 8...Nd4 attacking Qe2 while Ne4 is attacked by f3 is Best, NOT Brilliant
     const nd4Before = 'r1b1kb1r/ppp2ppp/2n5/3pq3/4n3/1B3PP1/PPPPQ2P/RNB1K2R b KQkq - 0 8';

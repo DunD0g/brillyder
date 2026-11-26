@@ -1033,7 +1033,7 @@ public final class BrillyAppStore {
 
     public func importBackupData(_ data: Data) throws -> BackupImportSummary {
         let (merged, summary) = try LocalVaultStore.mergeBackupJSONWithSummary(data, into: currentSnapshot())
-        self.analyzedGames = merged.analyzedGames
+        self.analyzedGames = merged.analyzedGames.map { GameAnalyzer.reclassifyIfOutdated($0) }
         self.customCourses = merged.customCourses
         self.bookmarks = merged.bookmarks
         self.masteredEndgameIds = Set(merged.masteredEndgameIds)
@@ -1051,14 +1051,14 @@ public final class BrillyAppStore {
         validateDailyStreakLiveness()
 
         // Hydrate Games tab offline with imported analyzed games
-        if !merged.analyzedGames.isEmpty {
+        if !self.analyzedGames.isEmpty {
             let existingIds = Set(recentGames.map(\.id))
-            let importedRecords = merged.analyzedGames.map(\.game).filter { !existingIds.contains($0.id) }
+            let importedRecords = self.analyzedGames.map(\.game).filter { !existingIds.contains($0.id) }
             if !importedRecords.isEmpty {
                 recentGames = (importedRecords + recentGames).sorted { $0.createdAt > $1.createdAt }
             }
             if activeAnalyzedGame == nil {
-                activeAnalyzedGame = merged.analyzedGames.first
+                activeAnalyzedGame = self.analyzedGames.first
             }
         }
         rehydrateFsrsCards(existing: merged.fsrsCards)

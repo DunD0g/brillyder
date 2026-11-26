@@ -146,10 +146,10 @@ struct EngineAndClassificationTests {
         #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.cloudUltra, hasProAccess: true))
     }
 
-    @Test("Brilliant Engine v5 matches Chess.com: rewards 16...Nxd4!! and rejects 8...Nd4 counterthreat, already-winning positions & fork-flee/king-escape false positives")
-    func brilliantEngineV5Calibration() throws {
+    @Test("Brilliant Engine v6 matches Chess.com: rewards 16...Nxd4!! (at -2.5 & -5.51), forced-mate Queen sacs, decisive +5.5 sacs, defensive saves & Fried Liver, while rejecting 8...Nd4 counterthreat, equal-value fork-flee & blowouts")
+    func brilliantEngineV6Calibration() throws {
         // 1. Exact real-game position: 16...Nxd4!! (knight captures pawn on d4 where Ne2 can capture it; 17. Nxd4 Bc5! pins & wins a1 rook)
-        // With #1 = -2.5 vs #2 = -1.9 (4.7% sigmoid gap, secondBestWin = 66.8% < 78%), it MUST classify as Brilliant!
+        // Must classify as Brilliant BOTH at Renegade eval (-2.5 vs -1.9) AND Stockfish eval (-5.51 vs -2.2, 88.4% > old 84% cap)!
         let beforeNxd4 = try ChessBoard(fen: "2kr1b1r/ppp2p1p/2n2p2/3b4/3P4/1P3P2/P3NKPP/RN3B1R b - - 0 16")
         var afterNxd4 = beforeNxd4
         let appliedNxd4 = try afterNxd4.apply(uci: "c6d4")
@@ -176,6 +176,118 @@ struct EngineAndClassificationTests {
             hasSecondLine: true
         ))
         #expect(nxd4Class == .brilliant)
+
+        let sfWinNxd4 = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -551), mover: .black) // 88.4%
+        let sfSecondNxd4 = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -220), mover: .black) // 69.4%
+        let sfNxd4Class = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 31,
+            sanPrefix: [],
+            playedUci: "c6d4",
+            bestMoveUci: "c6d4",
+            beforeBoard: beforeNxd4,
+            afterBoard: afterNxd4,
+            moverColor: .black,
+            fromSquare: appliedNxd4.move.from,
+            toSquare: appliedNxd4.move.to,
+            movedPiece: appliedNxd4.piece.type,
+            capturedPiece: appliedNxd4.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: sfWinNxd4,
+            moverWinAfter: sfWinNxd4,
+            secondBestGapWin: sfWinNxd4 - sfSecondNxd4,
+            hasSecondLine: true
+        ))
+        #expect(sfNxd4Class == .brilliant)
+
+        // 1b. Classic forced-mate Queen sacrifice (smothered mate Qg8+!! Rxg8 Nf7#): moverWinBefore = 100%, #2 = 85% (+4.7)
+        let beforeQg8 = try ChessBoard(fen: "5r1k/6pp/7N/8/8/1Q6/6PP/6K1 w - - 0 1")
+        var afterQg8 = beforeQg8
+        let appliedQg8 = try afterQg8.apply(uci: "b3g8")
+        let qg8Class = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 40,
+            sanPrefix: [],
+            playedUci: "b3g8",
+            bestMoveUci: "b3g8",
+            beforeBoard: beforeQg8,
+            afterBoard: afterQg8,
+            moverColor: .white,
+            fromSquare: appliedQg8.move.from,
+            toSquare: appliedQg8.move.to,
+            movedPiece: appliedQg8.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: 100.0,
+            moverWinAfter: 100.0,
+            secondBestGapWin: 15.0,
+            hasSecondLine: true,
+            deliversForcedMate: true
+        ))
+        #expect(qg8Class == .brilliant)
+
+        // 1c. Heroic defensive saving sacrifice holding 42% (-0.85 pawns) when #2 loses (25%)
+        let defSacClass = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 31,
+            sanPrefix: [],
+            playedUci: "c6d4",
+            bestMoveUci: "c6d4",
+            beforeBoard: beforeNxd4,
+            afterBoard: afterNxd4,
+            moverColor: .black,
+            fromSquare: appliedNxd4.move.from,
+            toSquare: appliedNxd4.move.to,
+            movedPiece: appliedNxd4.piece.type,
+            capturedPiece: appliedNxd4.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: 42.0,
+            moverWinAfter: 42.0,
+            secondBestGapWin: 17.0,
+            hasSecondLine: true
+        ))
+        #expect(defSacClass == .brilliant)
+
+        // 1d. Move-6 Fried Liver 6. Nxf7!! (plyIndex = 10 with openingPlyHint = 12) takes precedence over Book
+        let beforeFriedLiver = try ChessBoard(fen: "r1bqkb1r/ppp2ppp/2n5/3np1N1/2B5/8/PPPP1PPP/RNBQK2R w KQkq - 0 6")
+        var afterFriedLiver = beforeFriedLiver
+        let appliedFriedLiver = try afterFriedLiver.apply(uci: "g5f7")
+        let friedLiverClass = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 10,
+            sanPrefix: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "Ng5", "d5", "exd5", "Nxd5", "Nxf7"],
+            openingPlyHint: 12,
+            playedUci: "g5f7",
+            bestMoveUci: "g5f7",
+            beforeBoard: beforeFriedLiver,
+            afterBoard: afterFriedLiver,
+            moverColor: .white,
+            fromSquare: appliedFriedLiver.move.from,
+            toSquare: appliedFriedLiver.move.to,
+            movedPiece: appliedFriedLiver.piece.type,
+            capturedPiece: appliedFriedLiver.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: 64.0,
+            moverWinAfter: 64.0,
+            secondBestGapWin: 14.0,
+            hasSecondLine: true
+        ))
+        #expect(friedLiverClass == .brilliant)
+
+        // 1e. Passive sacrifice still triggers even if a pre-existing opponent piece (Rb5 attacked by Be2) was already hanging elsewhere
+        let beforePassiveWithPreexisting = try ChessBoard(fen: "6k1/6b1/8/1r6/8/8/4B2Q/R5K1 w - - 0 1")
+        var afterPassiveWithPreexisting = beforePassiveWithPreexisting
+        let appliedQh4 = try afterPassiveWithPreexisting.apply(uci: "h2h4")
+        #expect(MoveClassifier.detectSacrificeKind(
+            beforeBoard: beforePassiveWithPreexisting,
+            afterBoard: afterPassiveWithPreexisting,
+            mover: .white,
+            fromSquare: appliedQh4.move.from,
+            toSquare: appliedQh4.move.to,
+            movedPiece: appliedQh4.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil
+        ) == .passive)
 
         // 2. Exact real-game false positive from RonaldRaborg: 8...Nd4 counter-attacking White's Qe2
         // while Ne4 is attacked by f3 (and Black is already -5.7 vs #2 -4.5). MUST be Best, NOT Brilliant!
@@ -237,7 +349,7 @@ struct EngineAndClassificationTests {
         ))
         #expect(crushingClass != .brilliant)
 
-        // 4. False-positive guard: saving Queen from a pawn fork while Knight stays hanging is NOT a sacrifice
+        // 4. False-positive guards: saving Queen OR equal-value Bishop from a pawn fork while Knight stays hanging is NOT a sacrifice
         let forkBefore = try ChessBoard(fen: "4k3/8/8/3p4/2Q1N3/8/8/4K3 w - - 0 1")
         var forkAfter = forkBefore
         let savedQueen = try forkAfter.apply(uci: "c4d3")
@@ -248,6 +360,20 @@ struct EngineAndClassificationTests {
             fromSquare: savedQueen.move.from,
             toSquare: savedQueen.move.to,
             movedPiece: savedQueen.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil
+        ))
+
+        let eqForkBefore = try ChessBoard(fen: "4k3/8/8/3p4/2B1N3/8/8/4K3 w - - 0 1")
+        var eqForkAfter = eqForkBefore
+        let savedBishop = try eqForkAfter.apply(uci: "c4d3")
+        #expect(!MoveClassifier.isSacrificeMove(
+            beforeBoard: eqForkBefore,
+            afterBoard: eqForkAfter,
+            mover: .white,
+            fromSquare: savedBishop.move.from,
+            toSquare: savedBishop.move.to,
+            movedPiece: savedBishop.piece.type,
             capturedPiece: nil,
             promotionPiece: nil
         ))
@@ -331,9 +457,66 @@ struct EngineAndClassificationTests {
             blackSummary: PlayerAnalysisSummary(accuracy: 96, estimatedElo: 1900, counts: ["best": 1], avgWinLoss: 0),
             openingLineDetected: "Test"
         )
-        let v4Analyzed = GameAnalyzer.reclassifyIfOutdated(v3Analyzed)
-        #expect(v4Analyzed.classificationVersion == MoveClassifier.classificationVersion)
-        #expect(v4Analyzed.plies.first?.classification == .brilliant)
-        #expect(v4Analyzed.blackSummary.count(for: .brilliant) == 1)
+        let v6Analyzed = GameAnalyzer.reclassifyIfOutdated(v3Analyzed)
+        #expect(v6Analyzed.classificationVersion == MoveClassifier.classificationVersion)
+        #expect(v6Analyzed.plies.first?.classification == .brilliant)
+        #expect(v6Analyzed.blackSummary.count(for: .brilliant) == 1)
+
+        // 7. Instant v5 -> v6 reclassification restores forced-mate Queen sac (previously killed by moverWinBefore < 84%)
+        let mateEval = ChessMath.buildEngineScore(cpWhite: 10000, mateWhite: 2)
+        let v5MatePly = AnalyzedPly(
+            ply: 41,
+            moveNumber: 21,
+            color: .white,
+            san: "Qg8+",
+            uci: "b3g8",
+            from: "b3",
+            to: "g8",
+            promotion: nil,
+            captured: nil,
+            beforeFen: beforeQg8.fen,
+            afterFen: afterQg8.fen,
+            clockText: nil,
+            clockSeconds: nil,
+            timeSpentSeconds: nil,
+            clockTag: nil,
+            bestMoveUci: "b3g8",
+            bestMoveSan: "Qg8+",
+            bestPvSan: ["Qg8+", "Rxg8", "Nf7#"],
+            topLines: [
+                TopEngineLineSummary(san: "Qg8+", evalDisplay: "#2", pvSan: ["Qg8+"]),
+                TopEngineLineSummary(san: "Qf7", evalDisplay: "+3.0", pvSan: ["Qf7"]),
+            ],
+            threatMoveUci: nil,
+            threatMoveSan: nil,
+            evalBefore: mateEval,
+            evalAfter: ChessMath.buildEngineScore(cpWhite: 10000, mateWhite: 1),
+            secondBestGapWin: 24.0,
+            secondBestGapPawns: nil,
+            isCriticalMoment: true,
+            isClutchSave: false,
+            deepened: false,
+            winLoss: 0.0,
+            accuracy: 100.0,
+            classification: .great,
+            phase: .middlegame,
+            coaching: CoachingExplanation(headline: "Only move", detail: "", tacticalTag: "Precision")
+        )
+        let v5Analyzed = AnalyzedGame(
+            id: "test-qg8-v5",
+            analyzedAt: 1_700_000_000_000,
+            depth: 14,
+            classificationVersion: 5,
+            game: dummyGame,
+            initialEval: mateEval,
+            plies: [v5MatePly],
+            whiteSummary: PlayerAnalysisSummary(accuracy: 100, estimatedElo: 2000, counts: ["great": 1], avgWinLoss: 0),
+            blackSummary: PlayerAnalysisSummary(accuracy: 90, estimatedElo: 1500, counts: [:], avgWinLoss: 2),
+            openingLineDetected: "Test"
+        )
+        let upgradedV6 = GameAnalyzer.reclassifyIfOutdated(v5Analyzed)
+        #expect(upgradedV6.classificationVersion == MoveClassifier.classificationVersion)
+        #expect(upgradedV6.plies.first?.classification == .brilliant)
+        #expect(upgradedV6.whiteSummary.count(for: .brilliant) == 1)
     }
 }

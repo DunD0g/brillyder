@@ -132,7 +132,7 @@ public struct MoveClassificationInput: Sendable {
 }
 
 public enum MoveClassifier {
-    public static let classificationVersion = 5
+    public static let classificationVersion = 6
     private static let sacrificeMinGain = 2
 
     public enum SacrificeKind: Sendable, Equatable {
@@ -210,12 +210,57 @@ public enum MoveClassifier {
     }
 
     private static func flippedTurnBoard(_ board: ChessBoard, to color: PieceColor) -> ChessBoard? {
-        guard !board.isInCheck(color) else { return nil }
+        // When flipping side-to-move to `color`, the non-moving king (`color.opposite`) cannot be in check.
+        guard !board.isInCheck(color.opposite) else { return nil }
         var parts = board.fen.split(separator: " ").map(String.init)
         guard parts.count >= 4 else { return nil }
         parts[1] = (color == .white) ? "w" : "b"
         parts[3] = "-"
         return try? ChessBoard(fen: parts.joined(separator: " "))
+    }
+
+    /// Returns true if, immediately AFTER the opponent captures `hangingSq`, the mover has a
+    /// newly created immediate capture on an opponent non-pawn piece worth at least `oppGain`
+    /// (e.g. `8...Nd4` attacking `Qe2` while `Ne4` is attacked by `f3` -> counterthreat, not a sacrifice).
+    private static func hasNewlyCreatedCounterThreat(
+        beforeBoard: ChessBoard?,
+        afterBoard: ChessBoard,
+        mover: PieceColor,
+        hangingSq: Square,
+        oppGain: Int
+    ) -> Bool {
+        let oppCaptures = afterBoard.legalMoves(capturesOnly: true)
+            .filter { $0.to == hangingSq }
+            .sorted { lhs, rhs in
+                let lv = afterBoard[lhs.from]?.type.seeValue ?? 1000
+                let rv = afterBoard[rhs.from]?.type.seeValue ?? 1000
+                if lv != rv { return lv < rv }
+                return (lhs.promotion?.seeValue ?? 0) > (rhs.promotion?.seeValue ?? 0)
+            }
+        guard let oppCap = oppCaptures.first else { return false }
+        var afterOppCaptures = afterBoard
+        afterOppCaptures.makeMoveUnchecked(oppCap)
+        guard afterOppCaptures.turn == mover else { return false }
+
+        for idx in 0..<64 {
+            let oppSq = Square(unchecked: idx)
+            guard let oppPiece = afterOppCaptures[oppSq],
+                  oppPiece.color == mover.opposite,
+                  oppPiece.type != .king,
+                  oppPiece.type != .pawn else { continue }
+            let gainAfter = ChessMath.legalCaptureGainOnSquare(board: afterOppCaptures, square: oppSq, maxDepth: 6)
+            guard gainAfter >= oppGain else { continue }
+            let gainBefore: Int
+            if let before = beforeBoard, before.turn == mover {
+                gainBefore = ChessMath.legalCaptureGainOnSquare(board: before, square: oppSq, maxDepth: 6)
+            } else {
+                gainBefore = 0
+            }
+            if gainAfter > gainBefore {
+                return true
+            }
+        }
+        return false
     }
 
     public static func detectSacrificeKind(
@@ -253,31 +298,14 @@ public enum MoveClassifier {
             return .none
         }
 
-        //  (b) Saving a higher-value piece from a fork while a lower-value piece was ALREADY hanging
-        //      is damage control, not a voluntary sacrifice.
+        //  (b) Saving an equal-or-higher-value piece from a fork while another piece was ALREADY hanging
+        //      is damage control (e.g. escaping a Bishop+Knight fork), not a voluntary sacrifice.
         var oppTurnBefore: ChessBoard? = nil
         var movedPieceWasHanging = false
         if let before = beforeBoard, let flipped = flippedTurnBoard(before, to: mover.opposite) {
             oppTurnBefore = flipped
             if let fromSq = fromSquare {
                 movedPieceWasHanging = ChessMath.legalCaptureGainOnSquare(board: flipped, square: fromSq, maxDepth: 6) >= sacrificeMinGain
-            }
-        }
-
-        //  (c) Counter-attacking an opponent piece of equal or greater value (e.g. 8...Nd4 attacking Qe2
-        //      while Ne4 is attacked by f3) is a counterthreat, NOT a Chess.com Brilliant sacrifice!
-        var maxCounterThreatGain = 0
-        if let moverTurnAfter = flippedTurnBoard(afterBoard, to: mover) {
-            for idx in 0..<64 {
-                let oppSq = Square(unchecked: idx)
-                guard let oppPiece = moverTurnAfter[oppSq],
-                      oppPiece.color == mover.opposite,
-                      oppPiece.type != .king,
-                      oppPiece.type != .pawn else { continue }
-                let gain = ChessMath.legalCaptureGainOnSquare(board: moverTurnAfter, square: oppSq, maxDepth: 6)
-                if gain > maxCounterThreatGain {
-                    maxCounterThreatGain = gain
-                }
             }
         }
 
@@ -292,12 +320,19 @@ public enum MoveClassifier {
             let netRisked = oppGain - promoSurplus - capturedValue
             if netRisked >= sacrificeMinGain {
                 if movedPieceWasHanging,
-                   movedPiece.seeValue > p.type.seeValue,
+                   movedPiece.seeValue >= p.type.seeValue,
                    let oppBefore = oppTurnBefore,
                    ChessMath.legalCaptureGainOnSquare(board: oppBefore, square: sq, maxDepth: 6) >= sacrificeMinGain {
                     continue
                 }
-                if maxCounterThreatGain >= oppGain {
+                //  (c) Newly created immediate counterthreat of >= value AFTER opponent captures `sq`
+                if hasNewlyCreatedCounterThreat(
+                    beforeBoard: beforeBoard,
+                    afterBoard: afterBoard,
+                    mover: mover,
+                    hangingSq: sq,
+                    oppGain: oppGain
+                ) {
                     continue
                 }
                 return .passive
@@ -333,17 +368,20 @@ public enum MoveClassifier {
         let rawLoss = max(0.0, input.moverWinBefore - input.moverWinAfter)
         let winLoss = isTopMove ? 0.0 : rawLoss
 
-        if isBookPly(
+        let bookCandidate = isBookPly(
             plyIndex: input.plyIndex,
             sanPrefix: input.sanPrefix,
             openingPlyHint: input.openingPlyHint,
             winLoss: winLoss
-        ) {
+        )
+        // Early opening moves (moves 1–4) are always Book so standard pawn gambits stay Book.
+        if bookCandidate && input.plyIndex < 8 {
             return .book
         }
 
         let walkedIntoMateError = input.walkedIntoMate && !isTopMove
-        if walkedIntoMateError || (input.missedMate && winLoss > 12.0) || winLoss > 30.0 {
+        let missedMateError = input.missedMate && !isTopMove
+        if walkedIntoMateError || (missedMateError && winLoss > 12.0) || winLoss > 30.0 {
             return .blunder
         }
 
@@ -354,14 +392,17 @@ public enum MoveClassifier {
         if winLoss > 18.0 { return .mistake }
         if winLoss > 10.0 { return .inaccuracy }
 
-        // Chess.com-calibrated Brilliant (!!) engine v5:
-        // 1. Must be strictly the #1 best move (no sloppy #2 spam), not missing mate, not repeating.
-        // 2. Position must be viable (moverWinAfter >= 45%) AND not already completely winning
-        //    (moverWinBefore < 84% AND second-best alternative < 78% — if #2 already wins easily, it's Best, not Brilliant).
-        // 3. Active sacrifices (putting the moved piece itself en prise, e.g. 16...Nxd4!!, Bxh7+, Rxc3)
-        //    require >= 3.0% win separation (accounting for sigmoid compression at +/-2.5).
-        // 4. Passive sacrifices (leaving another piece en prise without a counterthreat) require >= 6.5% win separation.
+        // Chess.com-calibrated Brilliant (!!) engine v6:
+        // 1. Must be strictly the #1 best move, not missing mate (on non-top moves), not repeating.
+        // 2. Position must be viable (moverWinAfter >= 40%, catching heroic defensive sacrifices too).
+        // 3. Measure "already completely winning without the sacrifice" strictly via the 2nd-best move
+        //    (`secondBestWin < maxSecondBestWin`), NOT `moverWinBefore`, so decisive sacrifices winning
+        //    +5.5 or forced mate (`moverWinBefore = 88%–100%`) are NEVER falsely rejected!
+        // 4. Active sacrifices require >= 3.0% win separation; passive sacrifices require >= 5.0%.
+        // 5. Genuine #1 active piece sacrifices from move 5+ (e.g. Fried Liver 6. Nxf7!!, Traxler 5...Bxf2+!!)
+        //    take precedence over opening-book tags.
         let secondBestWin = input.moverWinBefore - input.secondBestGapWin
+        let maxSecondBestWin: Double = input.deliversForcedMate ? 90.0 : 79.0
         let sacKind = detectSacrificeKind(
             beforeBoard: input.beforeBoard,
             afterBoard: input.afterBoard,
@@ -372,22 +413,22 @@ public enum MoveClassifier {
             capturedPiece: input.capturedPiece,
             promotionPiece: input.promotionPiece
         )
-        let minGapForSac: Double = (sacKind == .active) ? 3.0 : 6.5
+        let minGapForSac: Double = (sacKind == .active) ? 3.0 : 5.0
         let isBrilliant = isTopMove
             && winLoss <= 2.0
-            && !input.missedMate
+            && !missedMateError
             && !input.positionRepeated
             && input.hasSecondLine
             && sacKind != .none
-            && input.moverWinAfter >= 45.0
-            && input.moverWinBefore < 84.0
-            && secondBestWin < 78.0
+            && input.moverWinAfter >= 40.0
+            && secondBestWin < maxSecondBestWin
             && input.secondBestGapWin >= minGapForSac
-        if isBrilliant { return .brilliant }
+        if isBrilliant && (!bookCandidate || sacKind == .active) { return .brilliant }
+        if bookCandidate { return .book }
 
         let isGreat = isTopMove
             && winLoss <= 2.0
-            && !input.missedMate
+            && !missedMateError
             && input.hasSecondLine
             && input.secondBestGapWin > 10.0
             && input.moverWinBefore < 95.0

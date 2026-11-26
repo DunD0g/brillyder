@@ -295,13 +295,20 @@ public enum ChessMath {
             return lp > rp
         }
 
-        guard let bestCapture = sorted.first else { return 0 }
-        let promoBonus = bestCapture.promotion.map { max(0, $0.seeValue - PieceType.pawn.seeValue) } ?? 0
-        let gainNow = victim.type.seeValue + promoBonus
+        guard let firstCapture = sorted.first else { return 0 }
+        let minVal = board[firstCapture.from]?.type.seeValue ?? 1000
+        let tiedCandidates = sorted.prefix(2).filter { (board[$0.from]?.type.seeValue ?? 1000) == minVal }
 
-        var next = board
-        next.makeMoveUnchecked(bestCapture)
-        let reply = legalCaptureGainOnSquare(board: next, square: square, maxDepth: maxDepth - 1)
-        return max(0, gainNow - reply)
+        var bestGain = 0
+        for capture in tiedCandidates {
+            let promoBonus = capture.promotion.map { max(0, $0.seeValue - PieceType.pawn.seeValue) } ?? 0
+            let gainNow = victim.type.seeValue + promoBonus
+            var next = board
+            next.makeMoveUnchecked(capture)
+            let reply = legalCaptureGainOnSquare(board: next, square: square, maxDepth: maxDepth - 1)
+            let net = max(0, gainNow - reply)
+            if net > bestGain { bestGain = net }
+        }
+        return bestGain
     }
 }

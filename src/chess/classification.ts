@@ -28,7 +28,7 @@ const SEE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k
 const SEE_MAX_DEPTH = 6;
 const SACRIFICE_MIN_GAIN = 2;
 
-export const CLASSIFICATION_VERSION = 5;
+export const CLASSIFICATION_VERSION = 6;
 
 export type SacrificeKind = 'none' | 'active' | 'passive';
 
@@ -38,6 +38,49 @@ function flipTurnFen(fen: string): string | null {
   parts[1] = parts[1] === 'w' ? 'b' : 'w';
   parts[3] = '-';
   return parts.join(' ');
+}
+
+function hasNewlyCreatedCounterThreat(
+  beforeBoard: Chess | null,
+  after: Chess,
+  mover: PlayerColor,
+  hangingSq: Square,
+  oppGain: number
+): boolean {
+  const oppCaptures = after
+    .moves({ verbose: true })
+    .filter((m) => m.to === hangingSq && Boolean(m.captured))
+    .sort((a, b) => {
+      const av = SEE_VALUE[a.piece] ?? 1000;
+      const bv = SEE_VALUE[b.piece] ?? 1000;
+      if (av !== bv) return av - bv;
+      const ap = a.promotion ? SEE_VALUE[a.promotion] : 0;
+      const bp = b.promotion ? SEE_VALUE[b.promotion] : 0;
+      return bp - ap;
+    });
+  if (oppCaptures.length === 0) return false;
+
+  const afterOppCaptures = new Chess(after.fen());
+  try {
+    afterOppCaptures.move(oppCaptures[0]);
+  } catch {
+    return false;
+  }
+  if (afterOppCaptures.turn() !== mover) return false;
+
+  for (const row of afterOppCaptures.board()) {
+    for (const cell of row) {
+      if (!cell || cell.color === mover || cell.type === 'k' || cell.type === 'p') continue;
+      const gainAfter = legalCaptureGainOnSquare(afterOppCaptures, cell.square, SEE_MAX_DEPTH);
+      if (gainAfter < oppGain) continue;
+      const gainBefore =
+        beforeBoard && beforeBoard.turn() === mover
+          ? legalCaptureGainOnSquare(beforeBoard, cell.square, SEE_MAX_DEPTH)
+          : 0;
+      if (gainAfter > gainBefore) return true;
+    }
+  }
+  return false;
 }
 
 export function fenPositionKey(fen: string): string {
@@ -107,25 +150,6 @@ export function detectSacrificeKind(
     }
   }
 
-  // Counterthreat filter: counter-attacking an opponent piece of >= value (e.g. Nd4 attacking Qe2
-  // while Ne4 is attacked by f3) is a counterthreat, NOT a sacrifice.
-  let maxCounterThreatGain = 0;
-  const flippedAfter = flipTurnFen(afterFen);
-  if (flippedAfter) {
-    try {
-      const moverTurnAfter = new Chess(flippedAfter);
-      for (const row of moverTurnAfter.board()) {
-        for (const cell of row) {
-          if (!cell || cell.color === mover || cell.type === 'k' || cell.type === 'p') continue;
-          const gain = legalCaptureGainOnSquare(moverTurnAfter, cell.square, SEE_MAX_DEPTH);
-          if (gain > maxCounterThreatGain) maxCounterThreatGain = gain;
-        }
-      }
-    } catch {
-      maxCounterThreatGain = 0;
-    }
-  }
-
   for (const row of after.board()) {
     for (const cell of row) {
       if (!cell || cell.color !== mover || cell.type === 'k' || cell.type === 'p') continue;
@@ -134,13 +158,13 @@ export function detectSacrificeKind(
       if (oppGain - promoSurplus - capturedValue >= SACRIFICE_MIN_GAIN) {
         if (
           movedPieceWasHanging &&
-          SEE_VALUE[movedPiece] > SEE_VALUE[cell.type] &&
+          SEE_VALUE[movedPiece] >= SEE_VALUE[cell.type] &&
           oppTurnBefore &&
           legalCaptureGainOnSquare(oppTurnBefore, cell.square, SEE_MAX_DEPTH) >= SACRIFICE_MIN_GAIN
         ) {
           continue;
         }
-        if (maxCounterThreatGain >= oppGain) {
+        if (hasNewlyCreatedCounterThreat(beforeBoard, after, mover, cell.square, oppGain)) {
           continue;
         }
         return 'passive';
@@ -203,11 +227,13 @@ export function classifyMove(params: {
   const rawLoss = Math.max(0, params.moverWinBefore - params.moverWinAfter);
   const winLoss = isTopMove ? 0 : rawLoss;
 
-  if (isBookPly(params.plyIndex, params.sanPrefix, params.lichessOpeningPly, winLoss)) return 'book';
+  const bookCandidate = isBookPly(params.plyIndex, params.sanPrefix, params.lichessOpeningPly, winLoss);
+  if (bookCandidate && params.plyIndex < 8) return 'book';
 
-  // Never blame Stockfish's #1 best move for walking into forced mate (horizon/depth effect)
+  // Never blame Stockfish's #1 best move for walking into/missing forced mate (horizon/depth effect)
   const walkedIntoMateError = params.walkedIntoMate && !isTopMove;
-  if (walkedIntoMateError || (params.missedMate && winLoss > 12) || winLoss > 30) return 'blunder';
+  const missedMateError = params.missedMate && !isTopMove;
+  if (walkedIntoMateError || (missedMateError && winLoss > 12) || winLoss > 30) return 'blunder';
 
   // Missing a forced Mate in 1–3 should never be praised as Best/Great/Brilliant
   if (params.missedShortMate && !isTopMove) {
@@ -219,6 +245,7 @@ export function classifyMove(params: {
   if (winLoss > 10) return 'inaccuracy';
 
   const secondBestWin = params.moverWinBefore - params.secondBestGapWin;
+  const maxSecondBestWin = params.deliversForcedMate ? 90 : 79;
   const sacKind = detectSacrificeKind(
     params.beforeFen,
     params.afterFen,
@@ -229,25 +256,25 @@ export function classifyMove(params: {
     params.promotionPiece,
     params.fromSquare ?? params.playedUci.slice(0, 2)
   );
-  const minGapForSac = sacKind === 'active' ? 3.0 : 6.5;
+  const minGapForSac = sacKind === 'active' ? 3.0 : 5.0;
 
   const brilliant =
     isTopMove &&
     winLoss <= 2 &&
-    !params.missedMate &&
+    !missedMateError &&
     !params.positionRepeated &&
     params.hasSecondLine &&
     sacKind !== 'none' &&
-    params.moverWinAfter >= 45 &&
-    params.moverWinBefore < 84 &&
-    secondBestWin < 78 &&
+    params.moverWinAfter >= 40 &&
+    secondBestWin < maxSecondBestWin &&
     params.secondBestGapWin >= minGapForSac;
 
-  if (brilliant) return 'brilliant';
+  if (brilliant && (!bookCandidate || sacKind === 'active')) return 'brilliant';
+  if (bookCandidate) return 'book';
   if (
     isTopMove &&
     winLoss <= 2 &&
-    !params.missedMate &&
+    !missedMateError &&
     params.hasSecondLine &&
     params.secondBestGapWin > 10 &&
     params.moverWinBefore < 95
@@ -461,6 +488,7 @@ export function buildAnalyzedGame(
       missedMate: moverHadMate && !moverHasMate,
       missedShortMate: hadShortMate && !stillShortMate,
       walkedIntoMate: oppHasMate && !oppHadMate && moverWinBefore > 15,
+      deliversForcedMate: moverHasMate || (playedUci === bestMoveUci && moverHadMate),
     });
 
     const moveNumber = Math.floor(i / 2) + 1;
@@ -595,7 +623,14 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
     let isClutchSave = ply.isClutchSave;
     let changed = false;
 
-    if (classification === 'brilliant' || classification === 'great' || classification === 'best' || classification === 'excellent') {
+    const isBookSacEligible = classification === 'book' && ply.ply - 1 >= 8;
+    if (
+      classification === 'brilliant' ||
+      classification === 'great' ||
+      classification === 'best' ||
+      classification === 'excellent' ||
+      isBookSacEligible
+    ) {
       const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
       const sacKind: SacrificeKind = movedPiece
         ? detectSacrificeKind(
@@ -610,19 +645,30 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
           )
         : 'none';
       const isTopMove = ply.uci === ply.bestMoveUci;
-      const hasSecondLine = (ply.topLines?.length ?? 2) >= 2;
+      const hasSecondLine = (ply.topLines?.length ?? 2) >= 2 || ply.secondBestGapWin > 0;
+      const moverHadMate =
+        ply.evalBefore.mateWhite !== null &&
+        ply.evalBefore.mateWhite !== 0 &&
+        ((ply.color === 'w' && ply.evalBefore.mateWhite > 0) || (ply.color === 'b' && ply.evalBefore.mateWhite < 0));
+      const moverHasMate =
+        Boolean(ply.evalAfter.isCheckmate) ||
+        (ply.evalAfter.mateWhite !== null &&
+          ply.evalAfter.mateWhite !== 0 &&
+          ((ply.color === 'w' && ply.evalAfter.mateWhite > 0) || (ply.color === 'b' && ply.evalAfter.mateWhite < 0)));
+      const deliversForcedMate = moverHasMate || (isTopMove && moverHadMate);
       const secondBestWin = moverWinBefore - ply.secondBestGapWin;
-      const minGapForSac = sacKind === 'active' ? 3.0 : 6.5;
+      const maxSecondBestWin = deliversForcedMate ? 90 : 79;
+      const minGapForSac = sacKind === 'active' ? 3.0 : 5.0;
 
       const validBrilliant =
         sacKind !== 'none' &&
+        (!isBookSacEligible || sacKind === 'active') &&
         !repeated &&
         hasSecondLine &&
         isTopMove &&
         ply.winLoss <= 2 &&
-        moverWinAfter >= 45 &&
-        moverWinBefore < 84 &&
-        secondBestWin < 78 &&
+        moverWinAfter >= 40 &&
+        secondBestWin < maxSecondBestWin &&
         ply.secondBestGapWin >= minGapForSac;
 
       if (validBrilliant && classification !== 'brilliant') {

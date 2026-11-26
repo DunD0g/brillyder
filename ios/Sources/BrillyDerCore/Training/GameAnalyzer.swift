@@ -82,8 +82,8 @@ public enum GameAnalyzer {
         }()
 
         func evaluatePosition(_ fen: String, plyIndex: Int) async throws -> (eval: EngineEval, fromCloud: Bool) {
-            // Early standard opening moves (plies 0..5) don't need MultiPV=2 or deep time budgets
-            let isEarlyOpeningBook = isStandardStart && plyIndex < 6
+            // Early standard opening moves (plies 0..3, moves 1-2) don't need MultiPV=2 or deep time budgets
+            let isEarlyOpeningBook = isStandardStart && plyIndex < 4
             let pvCount = isEarlyOpeningBook ? 1 : 2
             let timeBudget = isEarlyOpeningBook ? min(baseTimeMs, 30) : baseTimeMs
 
@@ -91,6 +91,13 @@ public enum GameAnalyzer {
                 switch await LichessCloudEvalClient.probe(fen: fen, multiPV: pvCount) {
                 case .hit(let cloudEval):
                     consecutiveCloudMisses = 0
+                    if pvCount >= 2 && cloudEval.lines.count < 2 {
+                        let legalCount = (try? ChessBoard(fen: fen))?.legalMoves().count ?? 0
+                        if legalCount >= 2 {
+                            // Fall through to local Renegade so MultiPV=2 gap is available for Brilliant/Great detection
+                            break
+                        }
+                    }
                     return (cloudEval, true)
                 case .rateLimited:
                     cloudEnabled = false
@@ -146,21 +153,25 @@ public enum GameAnalyzer {
             let applied = pgnMove.applied
             var evalBefore = evalByPlyIndex[idx]
             var evalAfter = evalByPlyIndex[idx + 1]
+            var beforeIsCloud = evalWasCloud[idx]
+            var afterIsCloud = evalWasCloud[idx + 1]
             // Eliminate cross-engine eval cliffs on BOTH cloud→local and local→cloud transition plies
-            if evalWasCloud[idx] && !evalWasCloud[idx + 1] {
+            if beforeIsCloud && !afterIsCloud {
                 evalBefore = try await engine.analyze(
                     fen: applied.beforeFen,
                     depth: preset.searchDepth,
                     multiPV: 2,
                     maxTimeMs: preset.maxTimeMs
                 )
-            } else if !evalWasCloud[idx] && evalWasCloud[idx + 1] {
+                beforeIsCloud = false
+            } else if !beforeIsCloud && afterIsCloud {
                 evalAfter = try await engine.analyze(
                     fen: applied.afterFen,
                     depth: preset.searchDepth,
                     multiPV: 2,
                     maxTimeMs: preset.maxTimeMs
                 )
+                afterIsCloud = false
             }
             let beforeBoard = (try? ChessBoard(fen: applied.beforeFen)) ?? ChessBoard()
             let afterBoard = (try? ChessBoard(fen: applied.afterFen)) ?? ChessBoard()
@@ -186,15 +197,16 @@ public enum GameAnalyzer {
 
             let mover = applied.piece.color
             var wasDeepened = false
-            // Tactical Sacrifice Deepening Pass (single-game local analysis):
+            // Tactical Sacrifice Deepening Pass (both single-game & lightweight batch):
             // Give candidate piece sacrifices extra depth/time so deep refutations (e.g. pins/skewers 6-10 plies out)
             // evaluate accurately instead of falling victim to shallow horizon cutoffs.
-            if !isBatch && !isTerminalRepetitionDraw && deepenedSacrificeCount < 6 && !evalWasCloud[idx] && !evalWasCloud[idx + 1] {
+            let maxDeepenedSacs = isBatch ? 2 : 8
+            if !isTerminalRepetitionDraw && deepenedSacrificeCount < maxDeepenedSacs && !beforeIsCloud && !afterIsCloud {
                 let prelimWinBefore = ChessMath.moverWinPercent(evalBefore.score, mover: mover)
                 let prelimWinAfter = ChessMath.moverWinPercent(evalAfter.score, mover: mover)
                 let prelimIsTop = applied.move.uci == evalBefore.bestMoveUci
                 let prelimLoss = prelimIsTop ? 0.0 : max(0.0, prelimWinBefore - prelimWinAfter)
-                if prelimWinBefore < 94.0 && prelimLoss <= 8.0 && MoveClassifier.isSacrificeMove(
+                if prelimWinBefore < 94.0 && prelimLoss <= 16.0 && MoveClassifier.isSacrificeMove(
                     beforeBoard: beforeBoard,
                     afterBoard: afterBoard,
                     mover: mover,
@@ -204,8 +216,8 @@ public enum GameAnalyzer {
                     capturedPiece: applied.captured?.type,
                     promotionPiece: applied.move.promotion
                 ) {
-                    let deepDepth = max(preset.searchDepth, 20)
-                    let deepMs = max(baseTimeMs * 2, 550)
+                    let deepDepth = isBatch ? max(preset.searchDepth, 16) : max(preset.searchDepth, 20)
+                    let deepMs = isBatch ? max(baseTimeMs * 2, 260) : max(baseTimeMs * 2, 550)
                     try Task.checkCancellation()
                     evalBefore = try await engine.analyze(
                         fen: applied.beforeFen,
@@ -283,7 +295,7 @@ public enum GameAnalyzer {
                 missedShortMate: missedShortMate,
                 walkedIntoMate: walkedIntoMate,
                 forceDrawRepetition: isTerminalRepetitionDraw,
-                deliversForcedMate: stillHasMate
+                deliversForcedMate: stillHasMate || (isTopMove && hadMateForMover)
             ))
             let moveAcc = classification == .book ? 100.0 : ChessMath.calculateMoveAccuracy(winLoss: winLoss)
 
@@ -435,6 +447,7 @@ public enum GameAnalyzer {
                 || ply.classification == .great
                 || ply.classification == .best
                 || ply.classification == .excellent
+                || (ply.classification == .book && idx >= 8)
 
             guard eligibleForRefresh,
                   let beforeBoard,
@@ -446,6 +459,8 @@ public enum GameAnalyzer {
                 continue
             }
 
+            let isTerminalRepetitionDraw = repeatCount >= 3 && idx == analyzed.plies.count - 1 && analyzed.game.resultString == "1/2-1/2"
+            let isTopMove = ply.uci == ply.bestMoveUci && !isTerminalRepetitionDraw
             let winBefore = ChessMath.moverWinPercent(ply.evalBefore, mover: ply.color)
             let winAfter = ChessMath.moverWinPercent(ply.evalAfter, mover: ply.color)
             let hadMateForMover: Bool = {
@@ -458,9 +473,14 @@ public enum GameAnalyzer {
                 return ply.color == .white ? m > 0 : m < 0
             }()
             let missedMate = hadMateForMover && !stillHasMate
-            let hasSecond = (ply.topLines?.count ?? 2) >= 2
-            let capturedType = ply.captured.flatMap { PieceType(rawValue: $0) }
-            let promoType = ply.promotion.flatMap { PieceType(rawValue: $0) }
+            let missedShortMate = missedMate && abs(ply.evalBefore.mateWhite ?? 99) <= 3
+            let hasSecond = ((ply.topLines?.count ?? 2) >= 2) || ply.secondBestGapWin > 0
+            let capturedType: PieceType? = ply.captured.flatMap { PieceType(rawValue: $0.lowercased()) }
+                ?? (beforeBoard[toSq]?.color == ply.color.opposite
+                    ? beforeBoard[toSq]?.type
+                    : (movedPiece == .pawn && fromSq.file != toSq.file ? .pawn : nil))
+            let promoType: PieceType? = ply.promotion.flatMap { PieceType(rawValue: $0.lowercased()) }
+                ?? (ply.uci.count >= 5 ? PieceType(rawValue: String(ply.uci.suffix(1)).lowercased()) : nil)
 
             let newClass = MoveClassifier.classify(MoveClassificationInput(
                 plyIndex: idx,
@@ -482,10 +502,10 @@ public enum GameAnalyzer {
                 secondBestGapWin: ply.secondBestGapWin,
                 hasSecondLine: hasSecond,
                 missedMate: missedMate,
-                missedShortMate: false,
+                missedShortMate: missedShortMate,
                 walkedIntoMate: false,
-                forceDrawRepetition: false,
-                deliversForcedMate: stillHasMate
+                forceDrawRepetition: isTerminalRepetitionDraw,
+                deliversForcedMate: stillHasMate || (isTopMove && hadMateForMover)
             ))
 
             if newClass == ply.classification {
