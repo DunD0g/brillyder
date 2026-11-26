@@ -43,6 +43,11 @@ targets:
         LSRequiresIPhoneOS: true
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
+        UIBackgroundModes:
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.brillyder.app.batch-processing
+          - com.brillyder.app.batch-continued.*
         CFBundleURLTypes:
           - CFBundleURLName: com.brillyder.app
             CFBundleURLSchemes:
@@ -94,8 +99,13 @@ targets:
         LSRequiresIPhoneOS: true
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
+        UIBackgroundModes:
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.brillyder.admin.batch-processing
+          - com.brillyder.admin.batch-continued.*
         CFBundleURLTypes:
-          - CFBundleURLName: com.brillyder.app
+          - CFBundleURLName: com.brillyder.admin
             CFBundleURLSchemes:
               - brillyder
         NSPhotoLibraryAddUsageDescription: "Save BrillyDer chess position share cards to your Photo Library."

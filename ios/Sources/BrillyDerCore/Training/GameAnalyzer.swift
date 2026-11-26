@@ -19,6 +19,7 @@ public enum GameAnalyzer {
         game: GameRecord,
         engine: any ChessEngine,
         preset: AnalysisDepthPreset = .balanced,
+        isBatch: Bool = false,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> AnalyzedGame {
         let parsed = try PGNParser.parse(game.pgn)
@@ -31,9 +32,24 @@ public enum GameAnalyzer {
         var cloudEnabled = preset.usesCloudEval
         var consecutiveCloudMisses = 0
 
-        func evaluatePosition(_ fen: String) async throws -> (eval: EngineEval, fromCloud: Bool) {
+        let baseTimeMs: Int = {
+            guard isBatch else { return preset.maxTimeMs }
+            switch preset {
+            case .fast:     return 40
+            case .balanced: return 110
+            case .deep:     return 260
+            default:        return preset.maxTimeMs
+            }
+        }()
+
+        func evaluatePosition(_ fen: String, plyIndex: Int) async throws -> (eval: EngineEval, fromCloud: Bool) {
+            // Early standard opening moves (plies 0..5) don't need MultiPV=2 or deep time budgets
+            let isEarlyOpeningBook = isStandardStart && plyIndex < 6
+            let pvCount = isEarlyOpeningBook ? 1 : 2
+            let timeBudget = isEarlyOpeningBook ? min(baseTimeMs, 30) : baseTimeMs
+
             if cloudEnabled {
-                switch await LichessCloudEvalClient.probe(fen: fen, multiPV: 2) {
+                switch await LichessCloudEvalClient.probe(fen: fen, multiPV: pvCount) {
                 case .hit(let cloudEval):
                     consecutiveCloudMisses = 0
                     return (cloudEval, true)
@@ -50,13 +66,13 @@ public enum GameAnalyzer {
             let localEval = try await engine.analyze(
                 fen: fen,
                 depth: preset.searchDepth,
-                multiPV: 2,
-                maxTimeMs: preset.maxTimeMs
+                multiPV: pvCount,
+                maxTimeMs: timeBudget
             )
             return (localEval, false)
         }
 
-        let initialEvalTuple = try await evaluatePosition(parsed.startFen)
+        let initialEvalTuple = try await evaluatePosition(parsed.startFen, plyIndex: 0)
         let initialEvalResult = initialEvalTuple.eval
 
         var evalByPlyIndex: [EngineEval] = [initialEvalResult]
@@ -66,7 +82,7 @@ public enum GameAnalyzer {
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
             try Task.checkCancellation()
-            let (eval, fromCloud) = try await evaluatePosition(pgnMove.applied.afterFen)
+            let (eval, fromCloud) = try await evaluatePosition(pgnMove.applied.afterFen, plyIndex: idx + 1)
             evalByPlyIndex.append(eval)
             evalWasCloud.append(fromCloud)
             onProgress?(idx + 1, max(1, totalPlies))

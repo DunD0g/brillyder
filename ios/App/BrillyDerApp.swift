@@ -16,6 +16,8 @@ struct BrillyDerApp: App {
 
     init() {
         Self.configureAudioSessionAsync()
+        // Register BGProcessingTask handler synchronously during launch before applicationDidFinishLaunching returns
+        _store.wrappedValue.registerBackgroundBatchTasks()
     }
 
     var body: some Scene {
