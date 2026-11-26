@@ -4,9 +4,51 @@ import BrillyDerCore
 public struct OpeningsTabView: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var sideFilter: RepertoireSide = .white
+    @State private var categoryFilter: OpeningCategoryFilter = .all
+    @State private var sortOption: OpeningSortOption = .grouped
     @State private var searchQuery: String = ""
     @State private var selectedCourse: OpeningCourse? = nil
     @State private var showingImportSheet: Bool = false
+
+    private enum OpeningCategoryFilter: String, CaseIterable, Identifiable {
+        case all
+        case daily
+        case e4
+        case d4
+        case gambit
+        case custom
+
+        var id: String { rawValue }
+
+        func label(for side: RepertoireSide) -> String {
+            switch self {
+            case .all:    return "All"
+            case .daily:  return "In Daily"
+            case .e4:     return side == .white ? "1. e4" : "vs 1. e4"
+            case .d4:     return side == .white ? "1. d4 / c4" : "vs 1. d4"
+            case .gambit: return "Gambits"
+            case .custom: return "Custom"
+            }
+        }
+    }
+
+    private enum OpeningSortOption: String, CaseIterable, Identifiable {
+        case grouped = "Grouped"
+        case dueFirst = "Due First"
+        case lowestRecall = "Lowest Recall"
+        case difficulty = "Difficulty"
+        case alphabetical = "A–Z"
+
+        var id: String { rawValue }
+    }
+
+    private struct CourseGroup: Identifiable {
+        let id: String
+        let title: String
+        let icon: String
+        let tint: Color
+        let items: [OpeningCourse]
+    }
 
     private var whiteCount: Int {
         store.allCourses.filter { $0.side == .white }.count
@@ -20,19 +62,161 @@ public struct OpeningsTabView: View {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var hasCustomForSide: Bool {
+        store.allCourses.contains { $0.side == sideFilter && isCustomCourse($0) }
+    }
+
+    private var visibleFilterChips: [OpeningCategoryFilter] {
+        var chips: [OpeningCategoryFilter] = [.all, .daily, .e4, .d4, .gambit]
+        if hasCustomForSide { chips.append(.custom) }
+        return chips
+    }
+
+    private func isCustomCourse(_ course: OpeningCourse) -> Bool {
+        course.source == "pgn" || course.source == "lichess-study"
+    }
+
+    private func primaryBucket(for course: OpeningCourse) -> OpeningCategoryFilter {
+        if isCustomCourse(course) { return .custom }
+        let lowerName = course.name.lowercased()
+        let isSharpGambit = (lowerName.contains("gambit") && !lowerName.contains("queen's gambit"))
+            || course.difficulty.lowercased() == "aggressive"
+        if isSharpGambit { return .gambit }
+        let firstMove = course.lines.first?.moves.first ?? course.mothershipSetup.previewMoves.first ?? ""
+        if firstMove == "e4" { return .e4 }
+        return .d4
+    }
+
+    private func dueCount(for course: OpeningCourse) -> Int {
+        store.fsrsCards.filter { $0.courseId == course.id && FSRS6Scheduler.isCardDue($0) }.count
+    }
+
+    private func avgRecall(for course: OpeningCourse) -> Int {
+        let reviewed = store.fsrsCards.filter { $0.courseId == course.id && $0.attempts > 0 }
+        guard !reviewed.isEmpty else { return -1 }
+        return reviewed.map { FSRS6Scheduler.recallProbability(for: $0) }.reduce(0, +) / reviewed.count
+    }
+
+    private func difficultyRank(_ difficulty: String) -> Int {
+        switch difficulty.lowercased() {
+        case "beginner": return 0
+        case "intermediate": return 1
+        case "aggressive": return 2
+        default: return 3
+        }
+    }
+
     private var courses: [OpeningCourse] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else {
-            return store.allCourses.filter { $0.side == sideFilter }
+        let base: [OpeningCourse]
+        if !q.isEmpty {
+            // Search across BOTH White & Black courses so typing "QGD", "Ruy Lopez", or "Caro-Kann" always finds them!
+            base = store.allCourses.filter { c in
+                c.name.lowercased().contains(q)
+                    || c.tagline.lowercased().contains(q)
+                    || c.codename.lowercased().contains(q)
+                    || c.lines.contains(where: { $0.title.lowercased().contains(q) || $0.eco.lowercased().contains(q) })
+                    || (c.counterGuide?.contains(where: { $0.title.lowercased().contains(q) }) ?? false)
+            }
+        } else {
+            base = store.allCourses.filter { c in
+                guard c.side == sideFilter else { return false }
+                switch categoryFilter {
+                case .all:    return true
+                case .daily:  return store.isCourseInDaily(c.id)
+                case .custom: return isCustomCourse(c)
+                case .e4, .d4, .gambit:
+                    return primaryBucket(for: c) == categoryFilter
+                }
+            }
         }
-        // Search across BOTH White & Black courses so typing "QGD" or "Caro-Kann" on the White tab always finds them!
-        return store.allCourses.filter { c in
-            c.name.lowercased().contains(q)
-                || c.tagline.lowercased().contains(q)
-                || c.codename.lowercased().contains(q)
-                || c.lines.contains(where: { $0.title.lowercased().contains(q) })
-                || (c.counterGuide?.contains(where: { $0.title.lowercased().contains(q) }) ?? false)
+
+        switch sortOption {
+        case .grouped:
+            return base
+        case .dueFirst:
+            return base.sorted { a, b in
+                let da = dueCount(for: a), db = dueCount(for: b)
+                if da != db { return da > db }
+                return a.name < b.name
+            }
+        case .lowestRecall:
+            return base.sorted { a, b in
+                let ra = avgRecall(for: a), rb = avgRecall(for: b)
+                if ra != rb { return ra < rb }
+                return a.name < b.name
+            }
+        case .difficulty:
+            return base.sorted { a, b in
+                let da = difficultyRank(a.difficulty), db = difficultyRank(b.difficulty)
+                if da != db { return da < db }
+                return a.name < b.name
+            }
+        case .alphabetical:
+            return base.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
+    }
+
+    private var groupedCourses: [CourseGroup] {
+        let list = courses
+        guard !isSearching && sortOption == .grouped && categoryFilter == .all else { return [] }
+
+        var groups: [CourseGroup] = []
+        let dailyItems = list.filter { store.isCourseInDaily($0.id) }
+        let dailyIds = Set(dailyItems.map(\.id))
+        if !dailyItems.isEmpty {
+            groups.append(CourseGroup(
+                id: "daily",
+                title: "Pinned in Daily FSRS",
+                icon: "bolt.circle.fill",
+                tint: BrillyPalette.brillyTeal,
+                items: dailyItems
+            ))
+        }
+
+        let remaining = list.filter { !dailyIds.contains($0.id) }
+        let e4Items = remaining.filter { primaryBucket(for: $0) == .e4 }
+        let d4Items = remaining.filter { primaryBucket(for: $0) == .d4 }
+        let gambitItems = remaining.filter { primaryBucket(for: $0) == .gambit }
+        let customItems = remaining.filter { primaryBucket(for: $0) == .custom }
+
+        if !e4Items.isEmpty {
+            groups.append(CourseGroup(
+                id: "e4",
+                title: sideFilter == .white ? "1. e4 Classical & Main Lines" : "Defenses vs 1. e4",
+                icon: "crown.fill",
+                tint: BrillyPalette.brillyTeal,
+                items: e4Items
+            ))
+        }
+        if !d4Items.isEmpty {
+            groups.append(CourseGroup(
+                id: "d4",
+                title: sideFilter == .white ? "1. d4 Systems & 1. c4 Flank" : "Defenses vs 1. d4",
+                icon: "shield.lefthalf.filled",
+                tint: BrillyPalette.goldAmber,
+                items: d4Items
+            ))
+        }
+        if !gambitItems.isEmpty {
+            groups.append(CourseGroup(
+                id: "gambit",
+                title: "Gambits & Tactical Traps",
+                icon: "flame.fill",
+                tint: BrillyPalette.warpPurpleText,
+                items: gambitItems
+            ))
+        }
+        if !customItems.isEmpty {
+            groups.append(CourseGroup(
+                id: "custom",
+                title: "Custom Imported PGN",
+                icon: "doc.text.fill",
+                tint: BrillyPalette.inkPrimary,
+                items: customItems
+            ))
+        }
+        return groups
     }
 
     public var body: some View {
@@ -40,13 +224,18 @@ public struct OpeningsTabView: View {
             CosmicVoidBackdrop(style: store.surfaceStyle)
 
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 12) {
                     HStack(spacing: 10) {
                         Picker("Side", selection: $sideFilter) {
                             Text("White (\(whiteCount))").tag(RepertoireSide.white)
                             Text("Black (\(blackCount))").tag(RepertoireSide.black)
                         }
                         .pickerStyle(.segmented)
+                        .onChange(of: sideFilter) { _, _ in
+                            if categoryFilter == .custom && !hasCustomForSide {
+                                categoryFilter = .all
+                            }
+                        }
 
                         Button {
                             if !store.hasProAccess {
@@ -69,29 +258,87 @@ public struct OpeningsTabView: View {
                         .buttonStyle(.plain)
                     }
 
-                    // Quick Openings Search Bar
+                    // Search Bar + Sort Menu
                     HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.inkSecondary)
-                        TextField("Search QGD, QGA, Caro-Kann, Ruy Lopez…", text: $searchQuery)
-                            .textFieldStyle(.plain)
-                            .font(.subheadline)
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                        if !searchQuery.isEmpty {
-                            Button {
-                                searchQuery = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            TextField("Search Ruy Lopez, Scotch, QGD, Caro…", text: $searchQuery)
+                                .textFieldStyle(.plain)
+                                .font(.subheadline)
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            if !searchQuery.isEmpty {
+                                Button {
+                                    searchQuery = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 14)
+
+                        Menu {
+                            ForEach(OpeningSortOption.allCases) { opt in
+                                Button {
+                                    sortOption = opt
+                                    store.triggerHaptic(.move)
+                                } label: {
+                                    Label(opt.rawValue, systemImage: sortOption == opt ? "checkmark" : "arrow.up.arrow.down")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.caption2.weight(.bold))
+                                Text(sortOption.rawValue)
+                                    .font(.caption2.weight(.bold))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(sortOption == .grouped ? BrillyPalette.inkPrimary : BrillyPalette.brillyTeal)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 10)
+                            .brillySurface(store.surfaceStyle, cornerRadius: 14, tint: sortOption == .grouped ? nil : BrillyPalette.brillyTeal)
+                        }
+                        .accessibilityLabel("Sort openings, currently \(sortOption.rawValue)")
+                    }
+
+                    // Category Filter Pills (hidden while typing a global search)
+                    if !isSearching {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 7) {
+                                ForEach(visibleFilterChips) { chip in
+                                    let active = categoryFilter == chip
+                                    Button {
+                                        withAnimation(.snappy(duration: 0.2)) {
+                                            categoryFilter = chip
+                                        }
+                                        store.triggerHaptic(.move)
+                                    } label: {
+                                        Text(chip.label(for: sideFilter))
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(active ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                Capsule()
+                                                    .fill(active ? BrillyPalette.brillyTeal : Color.white.opacity(0.07))
+                                                    .overlay(
+                                                        Capsule().strokeBorder(active ? BrillyPalette.brillyTeal : Color.white.opacity(0.09), lineWidth: 0.8)
+                                                    )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 1)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .brillySurface(store.surfaceStyle, cornerRadius: 14)
 
                     HStack(spacing: 6) {
                         Image(systemName: "hand.tap.fill")
@@ -106,14 +353,20 @@ public struct OpeningsTabView: View {
 
                     if courses.isEmpty {
                         VStack(spacing: 10) {
-                            Image(systemName: "magnifyingglass")
+                            Image(systemName: isSearching ? "magnifyingglass" : "tray")
                                 .font(.title2)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
-                            Text("No matching openings for \"\(searchQuery)\"")
+                            Text(isSearching
+                                 ? "No matching openings for \"\(searchQuery)\""
+                                 : (categoryFilter == .daily
+                                    ? "No \(sideFilter == .white ? "White" : "Black") openings pinned in Daily FSRS yet."
+                                    : "No openings in this category."))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
-                            Button("Clear Search") {
+                                .multilineTextAlignment(.center)
+                            Button(isSearching ? "Clear Search" : "Show All") {
                                 searchQuery = ""
+                                categoryFilter = .all
                             }
                             .font(.caption.weight(.bold))
                             .foregroundStyle(BrillyPalette.voidBg)
@@ -125,6 +378,31 @@ public struct OpeningsTabView: View {
                         .frame(maxWidth: .infinity)
                         .padding(24)
                         .brillySurface(store.surfaceStyle, cornerRadius: 18)
+                    } else if !groupedCourses.isEmpty {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            ForEach(groupedCourses) { group in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: group.icon)
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(group.tint)
+                                        Text(group.title.uppercased())
+                                            .font(.caption2.weight(.black))
+                                            .tracking(0.8)
+                                            .foregroundStyle(group.tint)
+                                        Spacer()
+                                        Text("\(group.items.count)")
+                                            .font(.caption2.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
+                                    .padding(.horizontal, 4)
+
+                                    ForEach(group.items) { course in
+                                        courseCard(course)
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         LazyVStack(spacing: 12) {
                             ForEach(courses) { course in
@@ -148,6 +426,7 @@ public struct OpeningsTabView: View {
         .sheet(isPresented: $showingImportSheet) {
             ImportCourseSheet(defaultSide: sideFilter) { importedSide in
                 sideFilter = importedSide
+                categoryFilter = .all
                 searchQuery = ""
             }
             .environment(store)
@@ -311,7 +590,7 @@ public struct OpeningsTabView: View {
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture {
             if !unlocked {
-                store.openProPaywall(feature: "\(course.name) & All 16 Starter Openings")
+                store.openProPaywall(feature: "\(course.name) & All \(store.starterCourses.count) Starter Openings")
                 return
             }
             selectedCourse = course

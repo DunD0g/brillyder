@@ -148,8 +148,8 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "book.closed.fill",
                 tint: BrillyPalette.warpPurpleText,
-                title: "All 16 Opening Courses (incl. QGD, QGA & Pro Gambits) + Custom PGNs",
-                subtitle: "Spaced-repetition FSRS drills & 32 counter/refutation guides across 16 repertoires & your own PGNs"
+                title: "All \(store.starterCourses.count) Opening Courses (incl. QGD, QGA, Ruy Lopez & Gambits) + Custom PGNs",
+                subtitle: "Spaced-repetition FSRS drills & \(store.starterCourses.count * 2) counter/refutation guides across \(store.starterCourses.count) repertoires & your own PGNs"
             )
             benefitRow(
                 "cpu.fill",

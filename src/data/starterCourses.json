@@ -5410,5 +5410,755 @@
         "keyIdea": "Recover the c4 pawn cleanly while disrupting Black's queenside development with 4.Qa4+."
       }
     ]
+  },
+  {
+    "id": "scotch-game-core",
+    "name": "Scotch Game",
+    "codename": "Highland Hammer",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Blast open the 1.e4 e5 center on move 3 — clean tactical play, Mieses space squeeze & Scotch Gambit blitz.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "d4",
+        "exd4",
+        "Nxd4",
+        "Nf6",
+        "Nxc6",
+        "bxc6",
+        "e5",
+        "Qe7",
+        "Qe2",
+        "Nd5",
+        "c4"
+      ],
+      "arrows": [
+        {
+          "from": "d2",
+          "to": "d4",
+          "color": "best"
+        },
+        {
+          "from": "e4",
+          "to": "e5",
+          "color": "plan"
+        },
+        {
+          "from": "c2",
+          "to": "c4",
+          "color": "outpost"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d4",
+          "color": "best"
+        },
+        {
+          "square": "e5",
+          "color": "plan"
+        },
+        {
+          "square": "c6",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Strike immediately with 3. d4 to avoid long closed Ruy Lopez/Italian maneuvering.",
+        "Against 4...Nf6, double Black's pawns with 5. Nxc6 bxc6 and seize space with 6. e5!.",
+        "Against 4...Bc5, hold d4 solidly with 5. Be3 + 6. c3 before developing Bc4 and castling."
+      ],
+      "goldenRules": [
+        "In the Mieses (4...Nf6), play 5. Nxc6 BEFORE pushing e5 so Black's knight is forced to awkward squares.",
+        "Against 4...Bc5, play 5. Be3 first — never trade 5. Nxc6? into 5...Qf6!.",
+        "In the 4. Bc4 Scotch Gambit, always meet 4...Nf6 with 5. e5! to seize the initiative."
+      ]
+    },
+    "lines": [
+      {
+        "id": "scotch-mieses-main",
+        "title": "Mieses Variation: 4...Nf6 5. Nxc6 & 6. e5!",
+        "subtitle": "Kasparov's favorite weapon — wreck Black's structure and claim space",
+        "eco": "C45",
+        "frequencyNote": "Most popular Black response to the Scotch at 1200–2200 Elo",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "exd4",
+          "Nxd4",
+          "Nf6",
+          "Nxc6",
+          "bxc6",
+          "e5",
+          "Qe7",
+          "Qe2",
+          "Nd5",
+          "c4",
+          "Ba6",
+          "b3",
+          "g6",
+          "f4"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "isCritical": true,
+            "plan": "Open the center immediately with 3. d4! Black must surrender the e5 anchor with 3...exd4.",
+            "cosmicCue": "Detonate the center on move 3 before Black can build shields.",
+            "arrows": [
+              {
+                "from": "d2",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Trade 5. Nxc6! Wreck Black's queenside pawn structure first so 6. e5! drives the f6 knight into an awkward pin.",
+            "arrows": [
+              {
+                "from": "d4",
+                "to": "c6",
+                "color": "best"
+              },
+              {
+                "from": "e4",
+                "to": "e5",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nc3",
+                "punishmentLine": [
+                  "Bb4",
+                  "Nxc6",
+                  "bxc6"
+                ],
+                "reason": "Allowing 5...Bb4 pins your knight and lets Black attack e4 before you seize space with 5. Nxc6 bxc6 6. e5!.",
+                "arrows": [
+                  {
+                    "from": "f8",
+                    "to": "b4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "Push 6. e5! Immediately kick the knight while Black's d-pawn is still stuck on d7.",
+            "arrows": [
+              {
+                "from": "e4",
+                "to": "e5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Claim even more central territory with 8. c4! Push the d5 knight back and lock down the board.",
+            "arrows": [
+              {
+                "from": "c2",
+                "to": "c4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "scotch-classical-bc5",
+        "title": "Classical 4...Bc5: 5. Be3 & Solid c3 Fortress",
+        "subtitle": "Neutralize Black's f2 pressure and launch a clean kingside initiative",
+        "eco": "C45",
+        "frequencyNote": "Very common at club level against the Scotch",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "exd4",
+          "Nxd4",
+          "Bc5",
+          "Be3",
+          "Qf6",
+          "c3",
+          "Nge7",
+          "Bc4",
+          "Ne5",
+          "Be2",
+          "Qg6",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Defend d4 actively with 5. Be3! You develop with tempo and threaten Nxc6 + Bxc5.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "e3",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nxc6",
+                "punishmentLine": [
+                  "Qf6",
+                  "Qd2",
+                  "dxc6"
+                ],
+                "reason": "Trading on c6 lets Black jump into f6 with a mate threat on f2 and free development — play 5. Be3! first.",
+                "arrows": [
+                  {
+                    "from": "d8",
+                    "to": "f6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "Reinforce d4 like granite with 6. c3! Now Black's queen and bishop bounce right off your center.",
+            "arrows": [
+              {
+                "from": "c2",
+                "to": "c3",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "plan": "Castle calmly with 9. O-O! Don't fear 9...Qxe4? — your lead in development and Nd2 crush the greedy queen.",
+            "arrows": [
+              {
+                "from": "e1",
+                "to": "g1",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "scotch-gambit-bc4",
+        "title": "Scotch Gambit (4. Bc4): Rapid Development Blitz",
+        "subtitle": "Skip recapturing d4 immediately and target f7 with blistering tempo",
+        "eco": "C44",
+        "frequencyNote": "Sharp tactical alternative that crushes unprepared 1...e5 players",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "exd4",
+          "Bc4",
+          "Nf6",
+          "e5",
+          "d5",
+          "Bb5",
+          "Ne4",
+          "Nxd4",
+          "Bd7",
+          "Bxc6",
+          "bxc6",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Aim straight at f7 with 4. Bc4! Instead of recapturing d4 right away, you race ahead in development.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "c4",
+                "color": "best"
+              },
+              {
+                "from": "c4",
+                "to": "f7",
+                "color": "outpost"
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Strike with 5. e5! Drive the knight forward and meet 5...d5 with the sharp 6. Bb5! pin.",
+            "arrows": [
+              {
+                "from": "e4",
+                "to": "e5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nxd4",
+                "punishmentLine": [
+                  "Nxe4",
+                  "O-O",
+                  "d5"
+                ],
+                "reason": "Recapturing on d4 drops your e4 pawn immediately to 5...Nxe4! — always push 5. e5! first.",
+                "arrows": [
+                  {
+                    "from": "f6",
+                    "to": "e4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "plan": "Regain the d4 pawn cleanly while keeping a crushing pin against Black's c6 knight.",
+            "arrows": [
+              {
+                "from": "f3",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-scotch-schmidt",
+        "title": "4...Nf6 (Schmidt Counterattack)",
+        "badge": "Main Defense",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "exd4",
+          "Nxd4",
+          "Nf6",
+          "Nxc6",
+          "bxc6",
+          "e5",
+          "Qe7",
+          "Qe2",
+          "Nd5"
+        ],
+        "keyIdea": "Counter-attack e4 immediately with 4...Nf6; after 5. Nxc6 bxc6 6. e5, pin the pawn with 6...Qe7 and centralize on d5."
+      },
+      {
+        "id": "cnt-scotch-classical",
+        "title": "4...Bc5 (Classical Pressure)",
+        "badge": "Active Counter",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "exd4",
+          "Nxd4",
+          "Bc5",
+          "Be3",
+          "Qf6",
+          "c3",
+          "Nge7"
+        ],
+        "keyIdea": "Develop swiftly with 4...Bc5 and 5...Qf6 to pile pressure onto d4 and prepare a quick ...d5 break."
+      }
+    ]
+  },
+  {
+    "id": "english-opening-core",
+    "name": "English Opening",
+    "codename": "Flank Sovereign",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "Strategic 1.c4 flank mastery — Reversed Sicilian Dragon, Symmetrical d4 breaks & the Botvinnik Triangle.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "c4",
+        "e5",
+        "Nc3",
+        "Nf6",
+        "g3",
+        "d5",
+        "cxd5",
+        "Nxd5",
+        "Bg2",
+        "Nb6",
+        "Nf3",
+        "Nc6",
+        "O-O",
+        "Be7",
+        "d3"
+      ],
+      "arrows": [
+        {
+          "from": "c2",
+          "to": "c4",
+          "color": "best"
+        },
+        {
+          "from": "g2",
+          "to": "a8",
+          "color": "outpost"
+        },
+        {
+          "from": "c3",
+          "to": "d5",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d5",
+          "color": "outpost"
+        },
+        {
+          "square": "g2",
+          "color": "best"
+        },
+        {
+          "square": "c4",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "Control d5 from the flank with 1. c4 and unleash a monster fianchettoed Bg2 down the h1-a8 diagonal.",
+        "Against 1...e5, play a Reversed Sicilian with an extra tempo — trade cxd5 whenever Black plays ...d5.",
+        "Use the Botvinnik Triangle (c4 + d3 + e4 + Nge2) to lock down d5 and launch a kingside f4 storm."
+      ],
+      "goldenRules": [
+        "In the Reversed Sicilian, always trade cxd5 when Black pushes ...d5 so you keep an extra central pawn.",
+        "In the Botvinnik setup, develop Nge2 (NOT Nf3) so your g2 bishop stays open and f2-f4 is ready.",
+        "Break symmetry in the 1...c5 Symmetrical English with a timely d2-d4 after castling."
+      ]
+    },
+    "lines": [
+      {
+        "id": "english-reversed-sicilian",
+        "title": "Reversed Sicilian (1...e5): g3 Dragon Fianchetto",
+        "subtitle": "Play a Dragon Sicilian a full tempo up with total h1-a8 diagonal control",
+        "eco": "A29",
+        "frequencyNote": "Most common response to 1. c4 across all rating levels",
+        "moves": [
+          "c4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "g3",
+          "d5",
+          "cxd5",
+          "Nxd5",
+          "Bg2",
+          "Nb6",
+          "Nf3",
+          "Nc6",
+          "O-O",
+          "Be7",
+          "d3",
+          "O-O",
+          "Be3"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "isCritical": true,
+            "plan": "Prepare the Bg2 fianchetto immediately! Your light-squared bishop will rule the long diagonal all game.",
+            "cosmicCue": "Charge the g2 sniper beam straight down the a8 corridor.",
+            "arrows": [
+              {
+                "from": "g2",
+                "to": "g3",
+                "color": "best"
+              },
+              {
+                "from": "f1",
+                "to": "g2",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Always capture 4. cxd5! Trade your wing c-pawn for Black's central d-pawn and expose the d5 knight to Bg2.",
+            "arrows": [
+              {
+                "from": "c4",
+                "to": "d5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Bg2",
+                "punishmentLine": [
+                  "dxc4",
+                  "Qa4+",
+                  "Nc6"
+                ],
+                "reason": "Skipping 4. cxd5 lets Black grab c4 and equalize comfortably — trade wing pawn for center pawn first!",
+                "arrows": [
+                  {
+                    "from": "d5",
+                    "to": "c4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "plan": "Develop 9. Be3 to control d4 and prepare Rc1 + Ne4-c5 queenside domination.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "e3",
+                "color": "best"
+              },
+              {
+                "from": "c3",
+                "to": "c5",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "english-symmetrical-g3",
+        "title": "Symmetrical English (1...c5): Rubinstein d4 Break",
+        "subtitle": "Shatter Black's copycat setup with a timely central d4 strike",
+        "eco": "A34",
+        "frequencyNote": "Classic GM plan when Black mirrors 1...c5",
+        "moves": [
+          "c4",
+          "c5",
+          "Nc3",
+          "Nc6",
+          "g3",
+          "g6",
+          "Bg2",
+          "Bg7",
+          "Nf3",
+          "Nf6",
+          "O-O",
+          "O-O",
+          "d4",
+          "cxd4",
+          "Nxd4",
+          "Nxd4",
+          "Qxd4"
+        ],
+        "annotations": [
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Break symmetry immediately with 7. d4! Seize central space and open the long diagonal for your g2 bishop.",
+            "arrows": [
+              {
+                "from": "d2",
+                "to": "d4",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "d3",
+                "punishmentLine": [
+                  "d6",
+                  "a3",
+                  "Rb8"
+                ],
+                "reason": "Playing 7. d3 passively lets Black stay completely symmetrical and comfortable — claim the center with 7. d4!.",
+                "arrows": [
+                  {
+                    "from": "d7",
+                    "to": "d6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "plan": "Centralize with 9. Qxd4! With Black's c6 knight gone, your queen dominates the center safely.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "d4",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "english-botvinnik-system",
+        "title": "Botvinnik Triangle (c4 + d3 + e4): d5 Outpost",
+        "subtitle": "World-Champion structural system with zero sharp theory to memorize",
+        "eco": "A25",
+        "frequencyNote": "Ultra-reliable universal system against 1...e5 ...Nc6",
+        "moves": [
+          "c4",
+          "e5",
+          "Nc3",
+          "Nc6",
+          "g3",
+          "g6",
+          "Bg2",
+          "Bg7",
+          "d3",
+          "d6",
+          "e4",
+          "Nge7",
+          "Nge2",
+          "O-O",
+          "O-O",
+          "f5",
+          "Nd5"
+        ],
+        "annotations": [
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "Lock in the Botvinnik Triangle with 6. e4! You clamp down on d5 permanently while preparing Nge2 + O-O + f4.",
+            "cosmicCue": "Lock the c4-d3-e4 fortress and claim the d5 command square.",
+            "arrows": [
+              {
+                "from": "e2",
+                "to": "e4",
+                "color": "best"
+              },
+              {
+                "from": "c3",
+                "to": "d5",
+                "color": "outpost"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "d5",
+                "color": "outpost"
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Play 7. Nge2! Keep the f-pawn free for f2-f4 and leave your g2 bishop completely unobstructed.",
+            "arrows": [
+              {
+                "from": "g1",
+                "to": "e2",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nf3",
+                "punishmentLine": [
+                  "Bg4",
+                  "h3",
+                  "Bxf3"
+                ],
+                "reason": "Developing 7. Nf3 blocks your f-pawn and hands Black an annoying ...Bg4 pin — always put the knight on e2 in the Botvinnik!",
+                "arrows": [
+                  {
+                    "from": "c8",
+                    "to": "g4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "plan": "Plant your knight on the monster 9. Nd5 outpost! Black's pieces are squeezed on both flanks.",
+            "arrows": [
+              {
+                "from": "c3",
+                "to": "d5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-english-reversed",
+        "title": "1...e5 & ...d5 (Active Center Strike)",
+        "badge": "Main Defense",
+        "moves": [
+          "c4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "g3",
+          "d5",
+          "cxd5",
+          "Nxd5",
+          "Bg2",
+          "Nb6",
+          "Nf3",
+          "Nc6",
+          "O-O",
+          "Be7"
+        ],
+        "keyIdea": "Claim central space immediately with 1...e5 and 3...d5, then tuck the knight to b6 and build a solid ...Be7/...Be6 setup."
+      },
+      {
+        "id": "cnt-english-symmetrical",
+        "title": "1...c5 & ...g6 (Symmetrical Fianchetto)",
+        "badge": "Solid Counter",
+        "moves": [
+          "c4",
+          "c5",
+          "Nc3",
+          "Nc6",
+          "g3",
+          "g6",
+          "Bg2",
+          "Bg7",
+          "Nf3",
+          "Nf6",
+          "O-O",
+          "O-O"
+        ],
+        "keyIdea": "Mirror White's light-square grip with 1...c5 and ...Bg7 so White never gets a free d5 outpost."
+      }
+    ]
   }
 ]

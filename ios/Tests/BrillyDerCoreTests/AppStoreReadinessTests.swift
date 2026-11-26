@@ -141,9 +141,9 @@ struct AppStoreReadinessTests {
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: true, usedToday: 99, hasProAccess: false))
         #expect(BrillyEntitlementPolicy.canStartNewAnalysis(isAlreadyCached: false, usedToday: 99, hasProAccess: true))
 
-        // Openings: 2 starter courses free (1 White + 1 Black); all 16 (incl. Ruy Lopez, Caro-Kann, QGD, QGA & 4 Pro Gambits) unlocked on Pro
+        // Openings: 2 starter courses free (1 White + 1 Black); all 18 (incl. Ruy Lopez, Scotch, English, Caro-Kann, QGD, QGA & 4 Pro Gambits) unlocked on Pro
         let courses = try CourseRepository.loadStarterCourses()
-        #expect(courses.count == 16)
+        #expect(courses.count == 18)
         let freeCourses = courses.filter { BrillyEntitlementPolicy.isCourseUnlocked($0.id, hasProAccess: false) }
         #expect(freeCourses.count == 2)
         #expect(freeCourses.contains(where: { $0.side == .white }))

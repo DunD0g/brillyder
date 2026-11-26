@@ -184,7 +184,7 @@ public struct BrillyWelcomeGuideSheet: View {
                     icon: "brain.head.profile",
                     tint: BrillyPalette.warpPurpleText,
                     title: "FSRS Openings, Mistakes & Labs",
-                    detail: "Build your daily streak in Train → FSRS, drill your own blunders, or tap Daily on any of the 16 courses in Openings to customize your repertoire."
+                    detail: "Build your daily streak in Train → FSRS, drill your own blunders, or tap Daily on any of the \(store.starterCourses.count) courses in Openings to customize your repertoire."
                 )
                 guideCard(
                     icon: "square.and.arrow.up",
