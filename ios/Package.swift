@@ -20,10 +20,24 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "CRenegadeEngine",
+            path: "Sources/CRenegadeEngine",
+            exclude: [
+                "LICENSE",
+            ],
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath("src"),
+                .define("NDEBUG", .when(configuration: .release)),
+            ]
+        ),
+        .target(
             name: "BrillyDerCore",
+            dependencies: ["CRenegadeEngine"],
             path: "Sources/BrillyDerCore",
             resources: [
                 .copy("Resources/starterCourses.json"),
+                .copy("Resources/renegade-net-36.bin"),
             ]
         ),
         .target(
@@ -39,5 +53,6 @@ let package = Package(
             dependencies: ["BrillyDerCore"],
             path: "Tests/BrillyDerCoreTests"
         ),
-    ]
+    ],
+    cxxLanguageStandard: .cxx20
 )

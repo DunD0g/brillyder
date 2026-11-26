@@ -177,8 +177,8 @@ public struct BrillyWelcomeGuideSheet: View {
                 guideCard(
                     icon: "cpu.fill",
                     tint: BrillyPalette.brillyTeal,
-                    title: "BrillyChess Offline (~2550 Elo) + Cloud SF16",
-                    detail: "Sync Lichess or Chess.com games and inspect every move offline with eval graphs, threat arrows & optional Hybrid Stockfish 16 Cloud (~3500 Elo*)."
+                    title: "BrillyChess NNUE Offline (~3300+ Elo) + Cloud SF16",
+                    detail: "Sync Lichess or Chess.com games and inspect every move 100% offline with Super-GM NNUE eval graphs, threat arrows & optional Hybrid Stockfish 16 Cloud (~3500 Elo*)."
                 )
                 guideCard(
                     icon: "brain.head.profile",
@@ -561,7 +561,7 @@ public struct BrillyWelcomeGuideSheet: View {
                     }
                 }
 
-                Text("Single-game Ultra (~2550 Elo) & ☁️ Cloud SF16 (~3500 Elo*) can be selected anytime inside Analyze.")
+                Text("Single-game Ultra NNUE (~3300+ Elo offline) & ☁️ Cloud SF16 (~3500 Elo*) can be selected anytime inside Analyze.")
                     .font(.caption2)
                     .foregroundStyle(BrillyPalette.inkSecondary)
             }

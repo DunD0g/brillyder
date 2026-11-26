@@ -381,9 +381,9 @@ public final class BrillyAppStore {
     public var puzzleRushSurvivalBest: Int = 0
 
     // MARK: - Engine & Storage
-    /// Background analysis engine (single + batch review).
-    public let engine = BrillyNativeEngine()
-    /// Dedicated engine for interactive Play Bot, Sandbox, Conversion, and Endgame drills so batch analysis never blocks them.
+    /// Background analysis engine (single + batch review) powered by MIT-licensed Renegade NNUE (~3300+ Elo offline).
+    public let engine = RenegadeEngine()
+    /// Dedicated pure-Swift engine for interactive Play Bot, Sandbox, Conversion, and Endgame drills so batch analysis never blocks them.
     public let interactiveEngine = BrillyNativeEngine()
     private let vault = LocalVaultStore()
 

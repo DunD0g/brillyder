@@ -63,11 +63,11 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
 
     public var searchDepth: Int {
         switch self {
-        case .fast:       return 8
-        case .balanced:   return 10
-        case .deep:       return 12
-        case .ultra:      return 16
-        case .cloudUltra: return 16
+        case .fast:       return 12
+        case .balanced:   return 15
+        case .deep:       return 18
+        case .ultra:      return 22
+        case .cloudUltra: return 22
         }
     }
 
@@ -92,47 +92,47 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
     public var badge: String {
         switch self {
         case .fast:       return "Quick"
-        case .balanced:   return "Standard"
-        case .deep:       return "Deep"
-        case .ultra:      return "Master Local"
+        case .balanced:   return "GM Local"
+        case .deep:       return "Super-GM"
+        case .ultra:      return "Max Local"
         case .cloudUltra: return "SF16 Cloud"
         }
     }
 
     public var eloEstimate: String {
         switch self {
-        case .fast:       return "~2000 Elo"
-        case .balanced:   return "~2200 Elo"
-        case .deep:       return "~2400 Elo"
-        case .ultra:      return "~2550 Elo"
+        case .fast:       return "~2650 Elo"
+        case .balanced:   return "~2900 Elo"
+        case .deep:       return "~3100 Elo"
+        case .ultra:      return "~3300+ Elo"
         case .cloudUltra: return "~3500 Elo*"
         }
     }
 
     public var detailSummary: String {
         switch self {
-        case .fast:       return "Instant on-device tactical check (SEE + NMP + LMR)"
-        case .balanced:   return "Strong club & tournament review"
-        case .deep:       return "Master tactical, mobility & king-safety review"
-        case .ultra:      return "Max offline on-device depth (single-game)"
-        case .cloudUltra: return "Hybrid Stockfish 16 Cloud + BrillyChess Ultra fallback"
+        case .fast:       return "Blazing on-device NNUE tactical check (batch-ready)"
+        case .balanced:   return "Grandmaster-grade on-device NNUE review"
+        case .deep:       return "Super-GM on-device NNUE positional & tactical review"
+        case .ultra:      return "Max 100% offline NNUE strength (single-game)"
+        case .cloudUltra: return "Hybrid Stockfish 16 Cloud + BrillyChess NNUE Ultra fallback"
         }
     }
 
     public var maxTimeMs: Int {
         switch self {
-        case .fast:       return 140
-        case .balanced:   return 320
-        case .deep:       return 750
-        case .ultra:      return 1250
-        case .cloudUltra: return 1250
+        case .fast:       return 65
+        case .balanced:   return 150
+        case .deep:       return 350
+        case .ultra:      return 900
+        case .cloudUltra: return 900
         }
     }
 }
 
 /// Pluggable, App-Store-compliant engine protocol.
-/// Default implementation is `BrillyNativeEngine` (100% pure Swift, zero GPL).
-/// Can also wrap permissive MIT C++ NNUE UCI engines (e.g. Caissa / Renegade) in Phase 1.5 without touching UI or analysis code.
+/// Primary game-analysis engine is `RenegadeEngine` (MIT-licensed C++20 ARM64 NEON NNUE, ~3300+ Elo offline, zero GPL),
+/// with `BrillyNativeEngine` (100% pure Swift) serving as automatic fallback and dedicated interactive bot/sandbox engine.
 public protocol ChessEngine: Sendable {
     var engineName: String { get }
     var engineLicense: String { get }

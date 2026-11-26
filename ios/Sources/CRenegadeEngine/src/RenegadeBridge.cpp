@@ -1,0 +1,170 @@
+#include "RenegadeBridge.h"
+#include "Magics.h"
+#include "Neural.h"
+#include "Position.h"
+#include "Search.h"
+#include "Settings.h"
+
+#include <algorithm>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace {
+std::mutex gEngineMutex;
+std::unique_ptr<Search> gSearch;
+bool gInitialized = false;
+}
+
+bool renegade_init(const char* network_path, int32_t hash_mb) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gInitialized) return true;
+
+    GenerateMagicTables();
+    if (!LoadNetworkFromPath(network_path)) {
+        return false;
+    }
+
+    Settings::UseUCI = true;
+    Settings::Threads = 1;
+    Settings::Hash = std::clamp<int>(hash_mb, 4, 64);
+
+    gSearch = std::make_unique<Search>();
+    gSearch->TranspositionTable.SetSize(Settings::Hash, 1);
+    gSearch->ResetState(true);
+    gInitialized = true;
+    return true;
+}
+
+void renegade_clear_hash(void) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gSearch) {
+        gSearch->ResetState(true);
+    }
+}
+
+void renegade_abort(void) {
+    if (gSearch) {
+        gSearch->Aborting.store(true, std::memory_order_relaxed);
+    }
+}
+
+bool renegade_analyze(
+    const char* fen,
+    int32_t max_depth,
+    int32_t multi_pv,
+    int32_t max_time_ms,
+    RenegadeAnalysisResult* out_result
+) {
+    if (!fen || !out_result) return false;
+    std::memset(out_result, 0, sizeof(RenegadeAnalysisResult));
+
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gInitialized || !gSearch) return false;
+
+    Position pos((std::string(fen)));
+    out_result->turn_is_white = (pos.Turn() == Side::White);
+
+    MoveList legalMoves{};
+    pos.GenerateAllLegalMoves(legalMoves);
+    if (legalMoves.size() == 0) {
+        out_result->is_terminal = true;
+        out_result->is_checkmate = pos.IsInCheck();
+        out_result->line_count = 0;
+        out_result->depth = 0;
+        return true;
+    }
+
+    const int clampedPV = std::clamp<int>(multi_pv, 1, std::min<int>(3, static_cast<int>(legalMoves.size())));
+    const int clampedDepth = std::clamp<int>(max_depth, 1, 30);
+
+    // Split time budget smoothly across MultiPV lines (65% for PV1, remaining split across PV2..3)
+    auto budgetForLine = [&](int pvIdx) -> int {
+        if (max_time_ms <= 0) return 0;
+        if (clampedPV == 1) return max_time_ms;
+        if (pvIdx == 0) return std::max(15, (max_time_ms * 62) / 100);
+        const int rest = std::max(15, max_time_ms - (max_time_ms * 62) / 100);
+        return std::max(12, rest / (clampedPV - 1));
+    };
+
+    gSearch->RootExcludedMoves.clear();
+
+    struct RawLine {
+        int rawScore;
+        int cpSide;
+        int mateSide;
+        int depth;
+        Move bestMove;
+        std::vector<Move> pv;
+    };
+    std::vector<RawLine> foundLines;
+    foundLines.reserve(clampedPV);
+
+    for (int i = 0; i < clampedPV; ++i) {
+        SearchParams params{};
+        params.depth = clampedDepth;
+        params.movetime = budgetForLine(i);
+
+        Results res = gSearch->SearchSinglethreaded(pos, params);
+        Move bm = res.BestMove();
+        if (bm.IsNull()) {
+            // Fallback to first non-excluded legal move if aborted at depth 0
+            for (const auto& entry : legalMoves) {
+                if (std::find(gSearch->RootExcludedMoves.begin(), gSearch->RootExcludedMoves.end(), entry.move) == gSearch->RootExcludedMoves.end()) {
+                    bm = entry.move;
+                    break;
+                }
+            }
+            if (bm.IsNull()) break;
+        }
+
+        RawLine line{};
+        line.rawScore = res.score;
+        line.depth = std::max(1, res.depth);
+        line.bestMove = bm;
+        line.pv = res.pv.empty() ? std::vector<Move>{bm} : res.pv;
+        if (IsMateScore(res.score)) {
+            const int movesToMate = (MateEval - std::abs(res.score) + 1) / 2;
+            line.mateSide = res.score > 0 ? std::max(1, movesToMate) : -std::max(1, movesToMate);
+            line.cpSide = res.score > 0 ? 10000 : -10000;
+        } else {
+            line.mateSide = 0;
+            line.cpSide = ToCentipawns(res.score, res.ply);
+        }
+
+        foundLines.push_back(line);
+        gSearch->RootExcludedMoves.push_back(bm);
+    }
+
+    gSearch->RootExcludedMoves.clear();
+
+    // Sort lines strictly by rawScore descending so PV1 is always best
+    std::sort(foundLines.begin(), foundLines.end(), [](const RawLine& a, const RawLine& b) {
+        return a.rawScore > b.rawScore;
+    });
+
+    out_result->line_count = static_cast<int32_t>(foundLines.size());
+    out_result->depth = foundLines.empty() ? 0 : foundLines[0].depth;
+
+    for (size_t i = 0; i < foundLines.size() && i < 3; ++i) {
+        const auto& src = foundLines[i];
+        auto& dst = out_result->lines[i];
+        dst.score_cp_side = src.cpSide;
+        dst.mate_side = src.mateSide;
+        dst.depth = src.depth;
+
+        const std::string bmStr = src.bestMove.ToString(false);
+        std::strncpy(dst.best_move_uci, bmStr.c_str(), sizeof(dst.best_move_uci) - 1);
+
+        std::string pvJoined;
+        for (size_t k = 0; k < src.pv.size() && k < 12; ++k) {
+            if (k > 0) pvJoined += ' ';
+            pvJoined += src.pv[k].ToString(false);
+        }
+        std::strncpy(dst.pv_uci, pvJoined.c_str(), sizeof(dst.pv_uci) - 1);
+    }
+
+    return true;
+}

@@ -60,10 +60,70 @@ struct EngineAndClassificationTests {
     @Test("End-to-end GameAnalyzer produces summaries and mistake puzzles")
     func analyzeSampleGame() async throws {
         let sample = LichessClient.sampleGames()[0]
-        let engine = BrillyNativeEngine()
+        let engine = RenegadeEngine()
         let analyzed = try await GameAnalyzer.analyze(game: sample, engine: engine, preset: .fast)
         #expect(analyzed.plies.count == 30)
         #expect(analyzed.whiteSummary.accuracy > 0 && analyzed.whiteSummary.accuracy <= 100)
         #expect(analyzed.openingLineDetected == "London System")
+    }
+
+    @Test("RenegadeEngine loads NNUE via mmap and solves Mate-in-1, Mate-in-2, Hanging Queen, MultiPV & terminal positions")
+    func renegadeNNUECoreTactics() async throws {
+        let engine = RenegadeEngine()
+        let ready = await engine.isNativeNNUEReady()
+        #expect(ready, "RenegadeEngine must load bundled renegade-net-36.bin via mmap without falling back")
+
+        // 1. Mate in 1 + MultiPV
+        let mate1 = try await engine.analyze(
+            fen: "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",
+            depth: 10,
+            multiPV: 2,
+            maxTimeMs: 300
+        )
+        #expect(mate1.bestMoveUci == "d1d8")
+        #expect(mate1.score.mateWhite == 1)
+        #expect(mate1.lines.count == 2)
+        #expect(mate1.lines[0].bestMoveUci != mate1.lines[1].bestMoveUci)
+
+        // 2. Hanging Queen
+        let queen = try await engine.analyze(
+            fen: "4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1",
+            depth: 10,
+            multiPV: 2,
+            maxTimeMs: 300
+        )
+        #expect(queen.bestMoveUci == "d2d5")
+        #expect(queen.score.cpWhite > 400)
+
+        // 3. Forced Mate in 2
+        let mate2 = try await engine.analyze(
+            fen: "8/6pk/5Q1p/8/8/8/8/4R2K w - - 0 1",
+            depth: 12,
+            multiPV: 1,
+            maxTimeMs: 400
+        )
+        #expect(mate2.score.mateWhite == 2 || mate2.score.cpWhite > 1500)
+        #expect(mate2.bestMoveUci == "e1e7" || mate2.bestMoveUci == "f6g7")
+
+        // 4. Black to move sign convention (Black has mate in 1: Rd1#)
+        let blackMate1 = try await engine.analyze(
+            fen: "3r2k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1",
+            depth: 8,
+            multiPV: 1,
+            maxTimeMs: 250
+        )
+        #expect(blackMate1.bestMoveUci == "d8d1")
+        #expect(blackMate1.score.mateWhite == -1)
+
+        // 5. Terminal checkmate position
+        let checkmated = try await engine.analyze(
+            fen: "3R2k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1",
+            depth: 8,
+            multiPV: 2,
+            maxTimeMs: 150
+        )
+        #expect(checkmated.score.isCheckmate == true)
+        #expect(checkmated.score.cpWhite == 10000)
+        #expect(checkmated.bestMoveUci.isEmpty)
     }
 }

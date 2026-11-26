@@ -1443,10 +1443,16 @@ private struct BrillyLicensesSheet: View {
                             notice: "Artwork licensed under CC BY 4.0 (creativecommons.org/licenses/by/4.0/). Converted to high-resolution PNG sprites for native rendering."
                         )
                         licenseCard(
-                            name: "Chess Engine, Spaced Repetition & Tablebase Credits",
+                            name: "Renegade Chess Engine (v1.3.1 NNUE)",
+                            license: "MIT License",
+                            author: "Copyright © 2022–2026 Krisztián Peőcz",
+                            notice: "On-device game analysis uses Renegade (C++20 ARM64 NEON with pure self-play NNUE weights, MIT License). Permission is hereby granted, free of charge, to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the MIT copyright and permission notice. Provided \"AS IS\" without warranty."
+                        )
+                        licenseCard(
+                            name: "Fallback Engine, Spaced Repetition & Tablebase Credits",
                             license: "Permissive / Public API",
                             author: "BrillyNative Swift Engine · FSRS · PeSTO · Lichess Syzygy",
-                            notice: "On-device analysis uses BrillyNative (pure Swift, MIT) inspired by PeSTO tapered piece-square evaluation tables; opening scheduling implements FSRS-6; optional <=7-piece lookups query Lichess's public Syzygy Tablebase API."
+                            notice: "Interactive bot/sandbox drills and automatic fallback use BrillyNative (pure Swift, MIT) inspired by PeSTO tapered piece-square evaluation tables; opening scheduling implements FSRS-6; optional <=7-piece lookups query Lichess's public Syzygy Tablebase API."
                         )
                     }
                     .padding(16)
