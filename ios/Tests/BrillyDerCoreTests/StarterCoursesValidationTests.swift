@@ -19,7 +19,12 @@ struct StarterCoursesValidationTests {
         #expect(ids.contains("caro-kann-core"))
         #expect(ids.contains("queens-gambit-core"))
         #expect(ids.contains("queens-gambit-declined-core"))
-        #expect(ids.contains("queens-gambit-accepted-core"))
+        #expect(ids.contains("kings-indian-defense-core"))
+        if let qgBlack = courses.first(where: { $0.id == "queens-gambit-declined-core" }) {
+            let lineIds = Set(qgBlack.lines.map(\.id))
+            #expect(lineIds.contains("qgd-tartakower"))
+            #expect(lineIds.contains("qga-mainline-c5"))
+        }
         if let qgWhite = courses.first(where: { $0.id == "queens-gambit-core" }) {
             let lineIds = Set(qgWhite.lines.map(\.id))
             #expect(lineIds.contains("qga-c6-qf3-refutation"))

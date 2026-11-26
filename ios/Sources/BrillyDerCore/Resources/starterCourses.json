@@ -4962,11 +4962,11 @@
   },
   {
     "id": "queens-gambit-declined-core",
-    "name": "Queen's Gambit Declined (QGD)",
-    "codename": "Orthodox Fortress",
+    "name": "Queen's Gambit (QGD & QGA)",
+    "codename": "Orthodox & Accepted",
     "side": "black",
     "difficulty": "Beginner",
-    "tagline": "The ultimate classical defense to 1.d4 — hold d5 with ...e6, castle safely, and equalize cleanly with ...c5 or ...e5.",
+    "tagline": "Complete Black repertoire vs 1.d4 + 2.c4 — choose rock-solid QGD (2...e6) or active QGA (2...dxc4) lines.",
     "mothershipSetup": {
       "previewMoves": [
         "d4",
@@ -5012,19 +5012,19 @@
         }
       ],
       "corePlans": [
-        "Anchor your d5 stronghold with ...e6 and ...Nf6 so White never gets a free e4 steamroller.",
-        "Break the Bg5 pin early with ...Be7, ...O-O, and ...h6.",
-        "Free the c8 bishop via ...b6 + ...Bb7 (Tartakower) or ...dxc4 followed by ...c5."
+        "In the QGD (2...e6), anchor d5 solidly, break the Bg5 pin with ...Be7 + ...h6, and liberate with ...b6 + ...c5.",
+        "In the QGA (2...dxc4), never cling greedily to c4 with ...b5? — counter-strike immediately with ...c5 or ...e5!.",
+        "Switch cleanly between solid classical QGD setups and sharp open QGA counterplay depending on the opponent."
       ],
       "goldenRules": [
-        "Never panic about the c8 bishop — once you play ...c5 or ...b6 + ...Bb7 it becomes your best piece.",
-        "Against the Exchange QGD (cxd5 exd5), remember ...c6 + ...Bf5/Be7 + ...Nd7 before castling."
+        "QGD: Never panic about the c8 bishop — once you play ...c5 or ...b6 + ...Bb7 it becomes your best piece.",
+        "QGA: Never fall for 3. e3 b5? 4. a4 c6? 5. axb5 cxb5 6. Qf3! — meet 3. e4 or 3. e3 with 3...e5! and 3. Nf3 with ...c5."
       ]
     },
     "lines": [
       {
         "id": "qgd-tartakower",
-        "title": "Tartakower Defense (...h6 & ...b6)",
+        "title": "QGD Tartakower Defense (...h6 & ...b6)",
         "subtitle": "World Champion favorite — fianchetto the c8 bishop and strike with ...c5.",
         "eco": "D58",
         "frequencyNote": "Top mainline vs 4.Bg5",
@@ -5069,7 +5069,7 @@
       },
       {
         "id": "qgd-exchange",
-        "title": "Exchange Variation Defense (4.cxd5 exd5)",
+        "title": "QGD Exchange Variation Defense (4.cxd5 exd5)",
         "subtitle": "Meet White's minority attack with active piece play on the e-file.",
         "eco": "D35",
         "frequencyNote": "Most common club try vs QGD",
@@ -5107,7 +5107,7 @@
       },
       {
         "id": "qgd-ragozin",
-        "title": "Ragozin Counter-Pin (4...Bb4)",
+        "title": "QGD Ragozin Counter-Pin (4...Bb4)",
         "subtitle": "Dynamic modern QGD — pin c3 immediately and fight for active piece play.",
         "eco": "D38",
         "frequencyNote": "Super-GM sharp weapon",
@@ -5140,124 +5140,10 @@
             "plan": "dxc4 grabs the pawn only once White's bishop is committed to h4."
           }
         ]
-      }
-    ],
-    "counterGuide": [
-      {
-        "id": "cnt-qgd-exchange-minority",
-        "title": "Exchange QGD Minority Attack (b4-b5)",
-        "badge": "Top Strategic Weapon",
-        "moves": [
-          "d4",
-          "d5",
-          "c4",
-          "e6",
-          "Nc3",
-          "Nf6",
-          "cxd5",
-          "exd5",
-          "Bg5",
-          "Be7",
-          "e3",
-          "c6",
-          "Qc2",
-          "Nbd7",
-          "Bd3",
-          "O-O",
-          "Nge2",
-          "Re8",
-          "O-O"
-        ],
-        "keyIdea": "Clarify the center early with cxd5, then push Rb1 + b4-b5 to shatter Black's c6-d5 pawns and create a weak backward c6 pawn."
       },
       {
-        "id": "cnt-qgd-catalan",
-        "title": "Catalan Squeeze (g3 + Bg2)",
-        "badge": "Modern Grandmaster Try",
-        "moves": [
-          "d4",
-          "d5",
-          "c4",
-          "e6",
-          "Nf3",
-          "Nf6",
-          "g3",
-          "Be7",
-          "Bg2",
-          "O-O",
-          "O-O",
-          "dxc4",
-          "Qc2",
-          "a6",
-          "Qxc4"
-        ],
-        "keyIdea": "Fianchetto on g2 to exert relentless long-diagonal pressure across Black's entire queenside."
-      }
-    ]
-  },
-  {
-    "id": "queens-gambit-accepted-core",
-    "name": "Queen's Gambit Accepted (QGA)",
-    "codename": "Quantum Snatch",
-    "side": "black",
-    "difficulty": "Intermediate",
-    "tagline": "Take the c4 pawn, give it back on your terms, and strike White's center with ...c5 and rapid piece development.",
-    "mothershipSetup": {
-      "previewMoves": [
-        "d4",
-        "d5",
-        "c4",
-        "dxc4",
-        "Nf3",
-        "Nf6",
-        "e3",
-        "e6",
-        "Bxc4",
-        "c5",
-        "O-O",
-        "a6"
-      ],
-      "arrows": [
-        {
-          "from": "c7",
-          "to": "c5",
-          "color": "plan"
-        },
-        {
-          "from": "a7",
-          "to": "a6",
-          "color": "plan"
-        },
-        {
-          "from": "b7",
-          "to": "b5",
-          "color": "plan"
-        }
-      ],
-      "highlights": [
-        {
-          "square": "c5",
-          "color": "outpost"
-        },
-        {
-          "square": "b7",
-          "color": "plan"
-        }
-      ],
-      "corePlans": [
-        "Do NOT try to cling to the c4 pawn with ...b5? — use White's time recovering it to seize active development.",
-        "Strike the center immediately with ...c5 and gain queenside space with ...a6 + ...b5 + ...Bb7.",
-        "Enjoy completely open diagonals for both bishops with zero cramped QGD pieces."
-      ],
-      "goldenRules": [
-        "If White plays 3.e4, immediately hit back with 3...e5! or 3...Nf6 — never let White keep a free d4+e4 center.",
-        "Watch out for the classic trap 3.e3 b5? 4.a4 c6 5.axb5 cxb5 6.Qf3! winning the a8 rook."
-      ]
-    },
-    "lines": [
-      {
         "id": "qga-mainline-c5",
-        "title": "Classical Main Line (3.Nf3 Nf6 4.e3 e6 5.Bxc4 c5)",
+        "title": "QGA Classical Main Line (3.Nf3 Nf6 4.e3 e6 5.Bxc4 c5)",
         "subtitle": "Clean, active equality with fast queenside expansion (...a6, ...b5, ...Bb7).",
         "eco": "D27",
         "frequencyNote": "Main theoretical battleground",
@@ -5298,7 +5184,7 @@
       },
       {
         "id": "qga-central-e4",
-        "title": "Countering 3.e4 with 3...e5!",
+        "title": "QGA Countering 3.e4 with 3...e5!",
         "subtitle": "Punish White's greedy 3.e4 center immediately by blowing open the d-file.",
         "eco": "D20",
         "frequencyNote": "Most aggressive White try",
@@ -5332,7 +5218,7 @@
       },
       {
         "id": "qga-quick-e3",
-        "title": "Countering 3.e3 with 3...e5!",
+        "title": "QGA Countering 3.e3 with 3...e5!",
         "subtitle": "Instantly free your c8 bishop and seize active central play.",
         "eco": "D20",
         "frequencyNote": "Common club shortcut",
@@ -5368,6 +5254,33 @@
     ],
     "counterGuide": [
       {
+        "id": "cnt-qgd-exchange-minority",
+        "title": "Exchange QGD Minority Attack (b4-b5)",
+        "badge": "Top Strategic Weapon",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "cxd5",
+          "exd5",
+          "Bg5",
+          "Be7",
+          "e3",
+          "c6",
+          "Qc2",
+          "Nbd7",
+          "Bd3",
+          "O-O",
+          "Nge2",
+          "Re8",
+          "O-O"
+        ],
+        "keyIdea": "Clarify the center early with cxd5, then push Rb1 + b4-b5 to shatter Black's c6-d5 pawns and create a weak backward c6 pawn."
+      },
+      {
         "id": "cnt-qga-e4-space",
         "title": "Central Steamroller (3.e4)",
         "badge": "Most Aggressive",
@@ -5387,27 +5300,357 @@
           "Ne2"
         ],
         "keyIdea": "Claim both central squares with 3.e4! immediately — if Black doesn't counter with 3...e5!, White builds a huge space advantage."
-      },
+      }
+    ]
+  },
+  {
+    "id": "kings-indian-defense-core",
+    "name": "King's Indian Defense",
+    "codename": "Crimson Fianchetto",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Kasparov & Fischer's fierce counterattack vs 1.d4 — fianchetto ...Bg7, strike ...e5 or ...c5, and storm the kingside with ...f5!.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "Nf6",
+        "c4",
+        "g6",
+        "Nc3",
+        "Bg7",
+        "e4",
+        "d6",
+        "Nf3",
+        "O-O",
+        "Be2",
+        "e5",
+        "O-O",
+        "Nc6",
+        "d5",
+        "Ne7"
+      ],
+      "arrows": [
+        {
+          "from": "g7",
+          "to": "a1",
+          "color": "outpost"
+        },
+        {
+          "from": "e7",
+          "to": "e5",
+          "color": "best"
+        },
+        {
+          "from": "f7",
+          "to": "f5",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "g7",
+          "color": "best"
+        },
+        {
+          "square": "e5",
+          "color": "plan"
+        },
+        {
+          "square": "f5",
+          "color": "outpost"
+        }
+      ],
+      "corePlans": [
+        "Let White build a big d4+c4+e4 center while you castle fast with ...Nf6, ...g6, ...Bg7, ...d6, ...O-O.",
+        "Lock the center with ...e5 + ...Nc6, tuck the knight to e7, and unleash the classic ...f5-f4 kingside pawn storm.",
+        "Against the Sämisch (5. f3) or Fianchetto (3. g3), counter-attack White's center with a swift ...c5!."
+      ],
+      "goldenRules": [
+        "Always castle BEFORE launching ...e5 or ...c5 so your king is tucked behind the g7 shield.",
+        "In the Mar del Plata (d5), retreat ...Ne7 (NOT ...Na5? which drops a piece to b4!) to clear the path for ...f5.",
+        "Once the center locks with d5, your attack lives on the kingside (...Nd7, ...f5, ...g5, ...Rf6-g6)."
+      ]
+    },
+    "lines": [
       {
-        "id": "cnt-qga-nf3-qa4",
-        "title": "Mannheim Queen Check (3.Nf3 Nf6 4.Qa4+)",
-        "badge": "Clean Recovery",
+        "id": "kid-classical-mar-del-plata",
+        "title": "Mar del Plata Attack (6...e5 & 10...f5!)",
+        "subtitle": "The iconic King's Indian kingside mating storm against the Classical main line",
+        "eco": "E97",
+        "frequencyNote": "Signature KID battleground at every rating level",
         "moves": [
           "d4",
-          "d5",
-          "c4",
-          "dxc4",
-          "Nf3",
           "Nf6",
-          "Qa4+",
-          "Nbd7",
+          "c4",
+          "g6",
           "Nc3",
-          "e6",
+          "Bg7",
           "e4",
-          "c5",
-          "Bxc4"
+          "d6",
+          "Nf3",
+          "O-O",
+          "Be2",
+          "e5",
+          "O-O",
+          "Nc6",
+          "d5",
+          "Ne7",
+          "Ne1",
+          "Nd7",
+          "Be3",
+          "f5"
         ],
-        "keyIdea": "Recover the c4 pawn cleanly while disrupting Black's queenside development with 4.Qa4+."
+        "annotations": [
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Strike the center immediately with 6...e5! Now White must either lock the center with d5 (giving you a dream ...f5 attack) or trade on e5.",
+            "cosmicCue": "Ignite the e5 fuse — force White to commit the center.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "isCritical": true,
+            "plan": "Tuck the knight to 8...Ne7! It guards c6/f5 and stays ready to leap into g6 or f5 once the kingside attack rolls.",
+            "arrows": [
+              {
+                "from": "c6",
+                "to": "e7",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Na5",
+                "punishmentLine": [
+                  "b4",
+                  "Nxc4",
+                  "Bxc4"
+                ],
+                "reason": "8...Na5? walks into 9. b4! trapping your knight on the rim — always retreat 8...Ne7!.",
+                "arrows": [
+                  {
+                    "from": "b2",
+                    "to": "b4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 19,
+            "isCritical": true,
+            "plan": "Unleash 10...f5! With the center locked, your kingside pawn storm (...f4, ...g5, ...Ng6) crashes straight into White's king.",
+            "cosmicCue": "Full thrusters on the f-file — launch the kingside storm!",
+            "arrows": [
+              {
+                "from": "f7",
+                "to": "f5",
+                "color": "best"
+              },
+              {
+                "from": "f5",
+                "to": "f4",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "kid-samisch-c5",
+        "title": "Against Sämisch (5. f3): Sharp 6...c5! Counter",
+        "subtitle": "Tear into White's slow f3+Be3 setup before they castle queenside",
+        "eco": "E81",
+        "frequencyNote": "Most dangerous aggressive anti-KID setup from White",
+        "moves": [
+          "d4",
+          "Nf6",
+          "c4",
+          "g6",
+          "Nc3",
+          "Bg7",
+          "e4",
+          "d6",
+          "f3",
+          "O-O",
+          "Be3",
+          "c5",
+          "Nge2",
+          "Nc6",
+          "d5",
+          "Ne5",
+          "Ng3",
+          "e6"
+        ],
+        "annotations": [
+          {
+            "ply": 11,
+            "isCritical": true,
+            "plan": "Hit back immediately with 6...c5! Against the Sämisch, attacking d4 prevents White from effortlessly rolling g4-h4.",
+            "arrows": [
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "isCritical": true,
+            "plan": "Jump 8...Ne5! Target the weak c4 pawn and force White's pieces onto awkward defensive squares.",
+            "arrows": [
+              {
+                "from": "c6",
+                "to": "e5",
+                "color": "best"
+              },
+              {
+                "from": "e5",
+                "to": "c4",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 17,
+            "plan": "Challenge the d5 wedge immediately with 9...e6! Open lines while White's king is still stuck in the middle.",
+            "arrows": [
+              {
+                "from": "e7",
+                "to": "e6",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "kid-fianchetto-c5",
+        "title": "Against Fianchetto (3. g3): ...Nc6, ...a6 & ...c5!",
+        "subtitle": "Active queenside counterplay when White plays a solid g3/Bg2 shell",
+        "eco": "E62",
+        "frequencyNote": "Common positional try by 1. d4 players",
+        "moves": [
+          "d4",
+          "Nf6",
+          "c4",
+          "g6",
+          "g3",
+          "Bg7",
+          "Bg2",
+          "O-O",
+          "Nf3",
+          "d6",
+          "O-O",
+          "Nc6",
+          "Nc3",
+          "a6",
+          "d5",
+          "Na5",
+          "Nd2",
+          "c5"
+        ],
+        "annotations": [
+          {
+            "ply": 13,
+            "plan": "Play 7...a6 to prepare ...Rb8 and ...b5 queenside expansion while keeping ...e5 in reserve.",
+            "arrows": [
+              {
+                "from": "a7",
+                "to": "a6",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 15,
+            "isCritical": true,
+            "plan": "Here 8...Na5! IS strong because White's c4 pawn is undefended and b4 is impossible without hanging c4!",
+            "arrows": [
+              {
+                "from": "c6",
+                "to": "a5",
+                "color": "best"
+              },
+              {
+                "from": "a5",
+                "to": "c4",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 17,
+            "isCritical": true,
+            "plan": "Clamp down with 9...c5! Fix White's queenside and open the g7 bishop's diagonal for ...Rb8 and ...b5.",
+            "arrows": [
+              {
+                "from": "c7",
+                "to": "c5",
+                "color": "best"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-kid-bayonet",
+        "title": "Bayonet Attack (9. b4)",
+        "badge": "Top White Weapon",
+        "moves": [
+          "d4",
+          "Nf6",
+          "c4",
+          "g6",
+          "Nc3",
+          "Bg7",
+          "e4",
+          "d6",
+          "Nf3",
+          "O-O",
+          "Be2",
+          "e5",
+          "O-O",
+          "Nc6",
+          "d5",
+          "Ne7",
+          "b4"
+        ],
+        "keyIdea": "Race faster on the queenside with 9. b4! and c4-c5 before Black's ...f5-f4 kingside attack reaches your king."
+      },
+      {
+        "id": "cnt-kid-samisch",
+        "title": "Sämisch System (5. f3 + 6. Be3)",
+        "badge": "Solid Clamp",
+        "moves": [
+          "d4",
+          "Nf6",
+          "c4",
+          "g6",
+          "Nc3",
+          "Bg7",
+          "e4",
+          "d6",
+          "f3",
+          "O-O",
+          "Be3",
+          "e5",
+          "d5",
+          "Nh5",
+          "Qd2"
+        ],
+        "keyIdea": "Cement e4 with f3, build a Qd2+Be3 battery to trade off Black's g7 bishop, and castle queenside safely."
       }
     ]
   },

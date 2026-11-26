@@ -645,7 +645,8 @@ public final class BrillyAppStore {
             self.selectedTab = savedLaunchTab
             self.hasAppliedInitialLaunchTab = true
         }
-        let savedIds = defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? []
+        let savedIds = (defaults.stringArray(forKey: "brilly_daily_opening_course_ids") ?? [])
+            .map { $0 == "queens-gambit-accepted-core" ? "queens-gambit-declined-core" : $0 }
         self.dailyOpeningCourseIds = Set(savedIds)
         let savedEscapeIds = defaults.stringArray(forKey: "brilly_solved_escape_ids") ?? []
         self.solvedEscapeIds = Set(savedEscapeIds)
