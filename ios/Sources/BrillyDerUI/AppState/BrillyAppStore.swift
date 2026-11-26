@@ -795,7 +795,15 @@ public final class BrillyAppStore {
 
     private func hydrateFromDisk() async {
         let snap = await vault.load()
-        self.analyzedGames = snap.analyzedGames
+        var upgradedAnyClassification = false
+        let upgradedGames = snap.analyzedGames.map { ag -> AnalyzedGame in
+            let updated = GameAnalyzer.reclassifyIfOutdated(ag)
+            if updated.classificationVersion != ag.classificationVersion {
+                upgradedAnyClassification = true
+            }
+            return updated
+        }
+        self.analyzedGames = upgradedGames
         self.customCourses = snap.customCourses
         self.bookmarks = snap.bookmarks
         self.dailyStreakDays = snap.dailyStreakDays
@@ -828,12 +836,12 @@ public final class BrillyAppStore {
 
         validateDailyStreakLiveness()
 
-        if let first = snap.analyzedGames.first {
+        if let first = upgradedGames.first {
             self.activeAnalyzedGame = first
         }
         // Hydrate Games tab offline from analyzed games if we have them
-        if !snap.analyzedGames.isEmpty {
-            let cachedRecords = snap.analyzedGames.map(\.game)
+        if !upgradedGames.isEmpty {
+            let cachedRecords = upgradedGames.map(\.game)
             let existingIds = Set(recentGames.map(\.id))
             let newOnes = cachedRecords.filter { !existingIds.contains($0.id) }
             if !newOnes.isEmpty {
@@ -843,6 +851,9 @@ public final class BrillyAppStore {
 
         rehydrateFsrsCards(existing: snap.fsrsCards)
         self.isHydrated = true
+        if upgradedAnyClassification {
+            persistToDisk()
+        }
         self.derivedCacheKeyVersion &+= 1
         if hasPendingSave {
             hasPendingSave = false

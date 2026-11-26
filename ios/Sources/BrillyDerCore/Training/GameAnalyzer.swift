@@ -139,6 +139,7 @@ public enum GameAnalyzer {
         }
         var sanPrefix: [String] = []
         var prevClockByColor: [PieceColor: Double] = [:]
+        var deepenedSacrificeCount = 0
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
             try Task.checkCancellation()
@@ -184,6 +185,48 @@ public enum GameAnalyzer {
             }
 
             let mover = applied.piece.color
+            var wasDeepened = false
+            // Tactical Sacrifice Deepening Pass (single-game local analysis):
+            // Give candidate piece sacrifices extra depth/time so deep refutations (e.g. pins/skewers 6-10 plies out)
+            // evaluate accurately instead of falling victim to shallow horizon cutoffs.
+            if !isBatch && !isTerminalRepetitionDraw && deepenedSacrificeCount < 6 && !evalWasCloud[idx] && !evalWasCloud[idx + 1] {
+                let prelimWinBefore = ChessMath.moverWinPercent(evalBefore.score, mover: mover)
+                let prelimWinAfter = ChessMath.moverWinPercent(evalAfter.score, mover: mover)
+                let prelimIsTop = applied.move.uci == evalBefore.bestMoveUci
+                let prelimLoss = prelimIsTop ? 0.0 : max(0.0, prelimWinBefore - prelimWinAfter)
+                if prelimWinBefore < 94.0 && prelimLoss <= 8.0 && MoveClassifier.isSacrificeMove(
+                    beforeBoard: beforeBoard,
+                    afterBoard: afterBoard,
+                    mover: mover,
+                    fromSquare: applied.move.from,
+                    toSquare: applied.move.to,
+                    movedPiece: applied.piece.type,
+                    capturedPiece: applied.captured?.type,
+                    promotionPiece: applied.move.promotion
+                ) {
+                    let deepDepth = max(preset.searchDepth, 20)
+                    let deepMs = max(baseTimeMs * 2, 550)
+                    try Task.checkCancellation()
+                    evalBefore = try await engine.analyze(
+                        fen: applied.beforeFen,
+                        depth: deepDepth,
+                        multiPV: 2,
+                        maxTimeMs: deepMs
+                    )
+                    try Task.checkCancellation()
+                    evalAfter = try await engine.analyze(
+                        fen: applied.afterFen,
+                        depth: deepDepth,
+                        multiPV: 2,
+                        maxTimeMs: deepMs
+                    )
+                    evalByPlyIndex[idx] = evalBefore
+                    evalByPlyIndex[idx + 1] = evalAfter
+                    wasDeepened = true
+                    deepenedSacrificeCount += 1
+                }
+            }
+
             let winBefore = ChessMath.moverWinPercent(evalBefore.score, mover: mover)
             let winAfter = ChessMath.moverWinPercent(evalAfter.score, mover: mover)
             let isTopMove = applied.move.uci == evalBefore.bestMoveUci && !isTerminalRepetitionDraw
@@ -223,8 +266,10 @@ public enum GameAnalyzer {
                 openingPlyHint: isStandardStart ? game.openingPly : 0,
                 playedUci: applied.move.uci,
                 bestMoveUci: evalBefore.bestMoveUci,
+                beforeBoard: beforeBoard,
                 afterBoard: afterBoard,
                 moverColor: mover,
+                fromSquare: applied.move.from,
                 toSquare: applied.move.to,
                 movedPiece: applied.piece.type,
                 capturedPiece: applied.captured?.type,
@@ -237,7 +282,8 @@ public enum GameAnalyzer {
                 missedMate: missedMate,
                 missedShortMate: missedShortMate,
                 walkedIntoMate: walkedIntoMate,
-                forceDrawRepetition: isTerminalRepetitionDraw
+                forceDrawRepetition: isTerminalRepetitionDraw,
+                deliversForcedMate: stillHasMate
             ))
             let moveAcc = classification == .book ? 100.0 : ChessMath.calculateMoveAccuracy(winLoss: winLoss)
 
@@ -325,7 +371,7 @@ public enum GameAnalyzer {
                 secondBestGapPawns: nil,
                 isCriticalMoment: winLoss > 12 || classification == .brilliant || classification == .great,
                 isClutchSave: isClutch,
-                deepened: false,
+                deepened: wasDeepened,
                 winLoss: (winLoss * 10.0).rounded() / 10.0,
                 accuracy: moveAcc,
                 classification: classification,
@@ -351,6 +397,162 @@ public enum GameAnalyzer {
             whiteSummary: whiteSummary,
             blackSummary: blackSummary,
             openingLineDetected: detected
+        )
+    }
+
+    /// Instantly upgrades previously analyzed games to the latest `MoveClassifier.classificationVersion`
+    /// without re-running the engine — promoting newly qualifying Brilliant sacrifices and clearing false positives.
+    public static func reclassifyIfOutdated(_ analyzed: AnalyzedGame) -> AnalyzedGame {
+        guard (analyzed.classificationVersion ?? 0) < MoveClassifier.classificationVersion,
+              !analyzed.plies.isEmpty else {
+            return analyzed
+        }
+
+        var seenKeys: [String: Int] = [:]
+        if let firstBefore = try? ChessBoard(fen: analyzed.plies[0].beforeFen) {
+            seenKeys[firstBefore.positionKey] = 1
+        }
+        let isStandardStart = analyzed.plies[0].beforeFen == ChessBoard.initialFEN
+        var sanPrefix: [String] = []
+        var updatedPlies: [AnalyzedPly] = []
+        updatedPlies.reserveCapacity(analyzed.plies.count)
+        var anyChanged = false
+
+        for (idx, ply) in analyzed.plies.enumerated() {
+            sanPrefix.append(ply.san)
+            let beforeBoard = try? ChessBoard(fen: ply.beforeFen)
+            let afterBoard = try? ChessBoard(fen: ply.afterFen)
+            let posKey = afterBoard?.positionKey ?? ""
+            let repeatCount: Int
+            if !posKey.isEmpty {
+                repeatCount = (seenKeys[posKey] ?? 0) + 1
+                seenKeys[posKey] = repeatCount
+            } else {
+                repeatCount = 1
+            }
+
+            let eligibleForRefresh = ply.classification == .brilliant
+                || ply.classification == .great
+                || ply.classification == .best
+                || ply.classification == .excellent
+
+            guard eligibleForRefresh,
+                  let beforeBoard,
+                  let afterBoard,
+                  let fromSq = Square(algebraic: ply.from),
+                  let toSq = Square(algebraic: ply.to),
+                  let movedPiece = beforeBoard[fromSq]?.type else {
+                updatedPlies.append(ply)
+                continue
+            }
+
+            let winBefore = ChessMath.moverWinPercent(ply.evalBefore, mover: ply.color)
+            let winAfter = ChessMath.moverWinPercent(ply.evalAfter, mover: ply.color)
+            let hadMateForMover: Bool = {
+                guard let m = ply.evalBefore.mateWhite else { return false }
+                return ply.color == .white ? m > 0 : m < 0
+            }()
+            let stillHasMate: Bool = {
+                if ply.evalAfter.isCheckmate == true { return true }
+                guard let m = ply.evalAfter.mateWhite else { return false }
+                return ply.color == .white ? m > 0 : m < 0
+            }()
+            let missedMate = hadMateForMover && !stillHasMate
+            let hasSecond = (ply.topLines?.count ?? 2) >= 2
+            let capturedType = ply.captured.flatMap { PieceType(rawValue: $0) }
+            let promoType = ply.promotion.flatMap { PieceType(rawValue: $0) }
+
+            let newClass = MoveClassifier.classify(MoveClassificationInput(
+                plyIndex: idx,
+                sanPrefix: isStandardStart ? sanPrefix : [],
+                openingPlyHint: isStandardStart ? analyzed.game.openingPly : 0,
+                playedUci: ply.uci,
+                bestMoveUci: ply.bestMoveUci,
+                beforeBoard: beforeBoard,
+                afterBoard: afterBoard,
+                moverColor: ply.color,
+                fromSquare: fromSq,
+                toSquare: toSq,
+                movedPiece: movedPiece,
+                capturedPiece: capturedType,
+                promotionPiece: promoType,
+                positionRepeated: repeatCount >= 2,
+                moverWinBefore: winBefore,
+                moverWinAfter: winAfter,
+                secondBestGapWin: ply.secondBestGapWin,
+                hasSecondLine: hasSecond,
+                missedMate: missedMate,
+                missedShortMate: false,
+                walkedIntoMate: false,
+                forceDrawRepetition: false,
+                deliversForcedMate: stillHasMate
+            ))
+
+            if newClass == ply.classification {
+                updatedPlies.append(ply)
+                continue
+            }
+
+            anyChanged = true
+            let isClutch = newClass == .great && winBefore < 52 && ply.secondBestGapWin >= 15
+            let newCoaching = MoveClassifier.generateExplanation(
+                classification: newClass,
+                playedSan: ply.san,
+                bestSan: ply.bestMoveSan,
+                winLoss: ply.winLoss,
+                evalAfterDisplay: ply.evalAfter.display,
+                isClutchSave: isClutch
+            )
+            updatedPlies.append(AnalyzedPly(
+                ply: ply.ply,
+                moveNumber: ply.moveNumber,
+                color: ply.color,
+                san: ply.san,
+                uci: ply.uci,
+                from: ply.from,
+                to: ply.to,
+                promotion: ply.promotion,
+                captured: ply.captured,
+                beforeFen: ply.beforeFen,
+                afterFen: ply.afterFen,
+                clockText: ply.clockText,
+                clockSeconds: ply.clockSeconds,
+                timeSpentSeconds: ply.timeSpentSeconds,
+                clockTag: ply.clockTag,
+                bestMoveUci: ply.bestMoveUci,
+                bestMoveSan: ply.bestMoveSan,
+                bestPvSan: ply.bestPvSan,
+                topLines: ply.topLines,
+                threatMoveUci: ply.threatMoveUci,
+                threatMoveSan: ply.threatMoveSan,
+                evalBefore: ply.evalBefore,
+                evalAfter: ply.evalAfter,
+                secondBestGapWin: ply.secondBestGapWin,
+                secondBestGapPawns: ply.secondBestGapPawns,
+                isCriticalMoment: ply.winLoss > 12 || newClass == .brilliant || newClass == .great,
+                isClutchSave: isClutch,
+                deepened: ply.deepened,
+                winLoss: ply.winLoss,
+                accuracy: newClass == .book ? 100.0 : ply.accuracy,
+                classification: newClass,
+                phase: ply.phase,
+                coaching: newCoaching
+            ))
+        }
+
+        let whiteSummary = anyChanged ? summarize(plies: updatedPlies, color: .white, game: analyzed.game) : analyzed.whiteSummary
+        let blackSummary = anyChanged ? summarize(plies: updatedPlies, color: .black, game: analyzed.game) : analyzed.blackSummary
+        return AnalyzedGame(
+            id: analyzed.id,
+            analyzedAt: analyzed.analyzedAt,
+            depth: analyzed.depth,
+            classificationVersion: MoveClassifier.classificationVersion,
+            game: analyzed.game,
+            initialEval: analyzed.initialEval,
+            plies: updatedPlies,
+            whiteSummary: whiteSummary,
+            blackSummary: blackSummary,
+            openingLineDetected: analyzed.openingLineDetected
         )
     }
 

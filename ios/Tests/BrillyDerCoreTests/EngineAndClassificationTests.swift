@@ -145,4 +145,179 @@ struct EngineAndClassificationTests {
         #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.ultra, hasProAccess: true))
         #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.cloudUltra, hasProAccess: true))
     }
+
+    @Test("Brilliant Engine v4 rewards real tactical sacrifices (incl. 16...Nxd4!! & co-best sacs) and blocks fork-flee/king-escape false positives")
+    func brilliantEngineV4Calibration() throws {
+        // 1. Exact real-game position: 16...Nxd4!! (knight captures pawn on d4 where Ne2 can capture it; 17. Nxd4 Bc5! pins & wins a1 rook)
+        // Even with #1 = -2.5 vs #2 = -1.9 (4.7% sigmoid gap), it MUST classify as Brilliant!
+        let beforeNxd4 = try ChessBoard(fen: "2kr1b1r/ppp2p1p/2n2p2/3b4/3P4/1P3P2/P3NKPP/RN3B1R b - - 0 16")
+        var afterNxd4 = beforeNxd4
+        let appliedNxd4 = try afterNxd4.apply(uci: "c6d4")
+        let winBeforeNxd4 = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -250), mover: .black)
+        let winSecondNxd4 = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -190), mover: .black)
+        let gapNxd4 = winBeforeNxd4 - winSecondNxd4 // ~4.7%
+        let nxd4Class = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 31,
+            sanPrefix: [],
+            playedUci: "c6d4",
+            bestMoveUci: "c6d4",
+            beforeBoard: beforeNxd4,
+            afterBoard: afterNxd4,
+            moverColor: .black,
+            fromSquare: appliedNxd4.move.from,
+            toSquare: appliedNxd4.move.to,
+            movedPiece: appliedNxd4.piece.type,
+            capturedPiece: appliedNxd4.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: winBeforeNxd4,
+            moverWinAfter: winBeforeNxd4,
+            secondBestGapWin: gapNxd4,
+            hasSecondLine: true
+        ))
+        #expect(nxd4Class == .brilliant)
+
+        // 2. Co-best sacrifice (within <=1.5% winLoss of #1 in a fighting position) also qualifies as Brilliant
+        let coBestClass = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 31,
+            sanPrefix: [],
+            playedUci: "c6d4",
+            bestMoveUci: "f8h6",
+            beforeBoard: beforeNxd4,
+            afterBoard: afterNxd4,
+            moverColor: .black,
+            fromSquare: appliedNxd4.move.from,
+            toSquare: appliedNxd4.move.to,
+            movedPiece: appliedNxd4.piece.type,
+            capturedPiece: appliedNxd4.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: 70.0,
+            moverWinAfter: 69.0,
+            secondBestGapWin: 1.0,
+            hasSecondLine: true
+        ))
+        #expect(coBestClass == .brilliant)
+
+        // 3. Anti-spam: already crushing (+8.0 / 95% win) should NOT award Brilliant without mate
+        let crushingClass = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 31,
+            sanPrefix: [],
+            playedUci: "c6d4",
+            bestMoveUci: "c6d4",
+            beforeBoard: beforeNxd4,
+            afterBoard: afterNxd4,
+            moverColor: .black,
+            fromSquare: appliedNxd4.move.from,
+            toSquare: appliedNxd4.move.to,
+            movedPiece: appliedNxd4.piece.type,
+            capturedPiece: appliedNxd4.captured?.type,
+            promotionPiece: nil,
+            positionRepeated: false,
+            moverWinBefore: 94.5,
+            moverWinAfter: 94.5,
+            secondBestGapWin: 1.0,
+            hasSecondLine: true
+        ))
+        #expect(crushingClass != .brilliant)
+
+        // 4. False-positive guard: saving Queen from a pawn fork while Knight stays hanging is NOT a sacrifice
+        let forkBefore = try ChessBoard(fen: "4k3/8/8/3p4/2Q1N3/8/8/4K3 w - - 0 1")
+        var forkAfter = forkBefore
+        let savedQueen = try forkAfter.apply(uci: "c4d3")
+        #expect(!MoveClassifier.isSacrificeMove(
+            beforeBoard: forkBefore,
+            afterBoard: forkAfter,
+            mover: .white,
+            fromSquare: savedQueen.move.from,
+            toSquare: savedQueen.move.to,
+            movedPiece: savedQueen.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil
+        ))
+
+        // 5. False-positive guard: forced King escape out of check leaving a Rook en prise is NOT a voluntary sacrifice
+        let checkBefore = try ChessBoard(fen: "4k3/8/8/8/1b6/8/R7/4K3 w - - 0 1")
+        var checkAfter = checkBefore
+        let escapedKing = try checkAfter.apply(uci: "e1f1")
+        #expect(!MoveClassifier.isSacrificeMove(
+            beforeBoard: checkBefore,
+            afterBoard: checkAfter,
+            mover: .white,
+            fromSquare: escapedKing.move.from,
+            toSquare: escapedKing.move.to,
+            movedPiece: escapedKing.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil
+        ))
+
+        // 6. Instant v3 -> v4 reclassification promotes stored v3 16...Nxd4 ("best") into "brilliant"
+        let dummyGame = GameRecord(
+            id: "test-nxd4-v3",
+            source: .chesscom,
+            createdAt: 1_700_000_000_000,
+            resultString: "0-1",
+            timeControlLabel: "10+0",
+            pgn: "*",
+            openingName: "Test",
+            white: PlayerInfo(name: "KingElgu", rating: 1310),
+            black: PlayerInfo(name: "Lukedunwell", rating: 1249),
+            userColor: .black
+        )
+        let evalScore = ChessMath.buildEngineScore(cpWhite: -250)
+        let v3Ply = AnalyzedPly(
+            ply: 32,
+            moveNumber: 16,
+            color: .black,
+            san: "Nxd4",
+            uci: "c6d4",
+            from: "c6",
+            to: "d4",
+            promotion: nil,
+            captured: "p",
+            beforeFen: beforeNxd4.fen,
+            afterFen: afterNxd4.fen,
+            clockText: nil,
+            clockSeconds: nil,
+            timeSpentSeconds: nil,
+            clockTag: nil,
+            bestMoveUci: "c6d4",
+            bestMoveSan: "Nxd4",
+            bestPvSan: ["Nxd4", "Nbc3", "Bc5"],
+            topLines: [
+                TopEngineLineSummary(san: "Nxd4", evalDisplay: "-2.5", pvSan: ["Nxd4"]),
+                TopEngineLineSummary(san: "Bh6", evalDisplay: "-1.9", pvSan: ["Bh6"]),
+            ],
+            threatMoveUci: nil,
+            threatMoveSan: nil,
+            evalBefore: evalScore,
+            evalAfter: evalScore,
+            secondBestGapWin: gapNxd4,
+            secondBestGapPawns: nil,
+            isCriticalMoment: false,
+            isClutchSave: false,
+            deepened: false,
+            winLoss: 0.0,
+            accuracy: 100.0,
+            classification: .best,
+            phase: .middlegame,
+            coaching: CoachingExplanation(headline: "Top engine choice", detail: "", tacticalTag: "Precision")
+        )
+        let v3Analyzed = AnalyzedGame(
+            id: dummyGame.id,
+            analyzedAt: 1_700_000_000_000,
+            depth: 8,
+            classificationVersion: 3,
+            game: dummyGame,
+            initialEval: evalScore,
+            plies: [v3Ply],
+            whiteSummary: PlayerAnalysisSummary(accuracy: 90, estimatedElo: 1500, counts: [:], avgWinLoss: 2),
+            blackSummary: PlayerAnalysisSummary(accuracy: 96, estimatedElo: 1900, counts: ["best": 1], avgWinLoss: 0),
+            openingLineDetected: "Test"
+        )
+        let v4Analyzed = GameAnalyzer.reclassifyIfOutdated(v3Analyzed)
+        #expect(v4Analyzed.classificationVersion == MoveClassifier.classificationVersion)
+        #expect(v4Analyzed.plies.first?.classification == .brilliant)
+        #expect(v4Analyzed.blackSummary.count(for: .brilliant) == 1)
+    }
 }

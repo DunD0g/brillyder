@@ -45,7 +45,39 @@ describe('Pass 1 — Brilliant engine, classification, motifs, clocks & Maia pol
     const passiveBefore = '6k1/6b1/8/8/8/8/7Q/R5K1 w - - 0 1';
     const c2 = new Chess(passiveBefore);
     const mv2 = c2.move({ from: 'h2', to: 'h6' });
-    expect(isSacrificeMove(passiveBefore, c2.fen(), 'w', mv2.to, mv2.piece, mv2.captured)).toBe(true);
+    expect(isSacrificeMove(passiveBefore, c2.fen(), 'w', mv2.to, mv2.piece, mv2.captured, undefined, mv2.from)).toBe(true);
+
+    // Real-game 16...Nxd4!! knight sacrifice with 4.7% sigmoid gap (-2.5 vs -1.9) MUST classify as Brilliant
+    const nxd4Before = '2kr1b1r/ppp2p1p/2n2p2/3b4/3P4/1P3P2/P3NKPP/RN3B1R b - - 0 16';
+    const c3 = new Chess(nxd4Before);
+    const mv3 = c3.move({ from: 'c6', to: 'd4' });
+    const nxd4Cls = classifyMove({
+      plyIndex: 31,
+      sanPrefix: [],
+      playedUci: 'c6d4',
+      bestMoveUci: 'c6d4',
+      beforeFen: nxd4Before,
+      afterFen: c3.fen(),
+      moverColor: 'b',
+      fromSquare: mv3.from,
+      toSquare: mv3.to,
+      movedPiece: mv3.piece,
+      capturedPiece: mv3.captured,
+      positionRepeated: false,
+      moverWinBefore: 71.5,
+      moverWinAfter: 71.5,
+      secondBestGapWin: 4.7,
+      hasSecondLine: true,
+      missedMate: false,
+      walkedIntoMate: false,
+    });
+    expect(nxd4Cls).toBe('brilliant');
+
+    // Fork-flee guard: saving Queen from pawn fork while Knight stays hanging is NOT a sacrifice
+    const forkBefore = '4k3/8/8/3p4/2Q1N3/8/8/4K3 w - - 0 1';
+    const c4 = new Chess(forkBefore);
+    const mv4 = c4.move({ from: 'c4', to: 'd3' });
+    expect(isSacrificeMove(forkBefore, c4.fen(), 'w', mv4.to, mv4.piece, mv4.captured, undefined, mv4.from)).toBe(false);
   });
 
   it('never classifies Stockfish #1 best move as blunder even when walkedIntoMate is true', () => {

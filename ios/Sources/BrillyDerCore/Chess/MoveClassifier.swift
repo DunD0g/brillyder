@@ -61,8 +61,10 @@ public struct MoveClassificationInput: Sendable {
     public let openingPlyHint: Int?
     public let playedUci: String
     public let bestMoveUci: String
+    public let beforeBoard: ChessBoard?
     public let afterBoard: ChessBoard
     public let moverColor: PieceColor
+    public let fromSquare: Square?
     public let toSquare: Square
     public let movedPiece: PieceType
     public let capturedPiece: PieceType?
@@ -76,6 +78,7 @@ public struct MoveClassificationInput: Sendable {
     public let missedShortMate: Bool
     public let walkedIntoMate: Bool
     public let forceDrawRepetition: Bool
+    public let deliversForcedMate: Bool
 
     public init(
         plyIndex: Int,
@@ -83,8 +86,10 @@ public struct MoveClassificationInput: Sendable {
         openingPlyHint: Int? = nil,
         playedUci: String,
         bestMoveUci: String,
+        beforeBoard: ChessBoard? = nil,
         afterBoard: ChessBoard,
         moverColor: PieceColor,
+        fromSquare: Square? = nil,
         toSquare: Square,
         movedPiece: PieceType,
         capturedPiece: PieceType? = nil,
@@ -97,15 +102,18 @@ public struct MoveClassificationInput: Sendable {
         missedMate: Bool = false,
         missedShortMate: Bool = false,
         walkedIntoMate: Bool = false,
-        forceDrawRepetition: Bool = false
+        forceDrawRepetition: Bool = false,
+        deliversForcedMate: Bool = false
     ) {
         self.plyIndex = plyIndex
         self.sanPrefix = sanPrefix
         self.openingPlyHint = openingPlyHint
         self.playedUci = playedUci
         self.bestMoveUci = bestMoveUci
+        self.beforeBoard = beforeBoard
         self.afterBoard = afterBoard
         self.moverColor = moverColor
+        self.fromSquare = fromSquare
         self.toSquare = toSquare
         self.movedPiece = movedPiece
         self.capturedPiece = capturedPiece
@@ -119,11 +127,12 @@ public struct MoveClassificationInput: Sendable {
         self.missedShortMate = missedShortMate
         self.walkedIntoMate = walkedIntoMate
         self.forceDrawRepetition = forceDrawRepetition
+        self.deliversForcedMate = deliversForcedMate
     }
 }
 
 public enum MoveClassifier {
-    public static let classificationVersion = 3
+    public static let classificationVersion = 4
     private static let sacrificeMinGain = 2
 
     public struct OpeningBookEntry: Sendable {
@@ -195,8 +204,10 @@ public enum MoveClassifier {
     }
 
     public static func isSacrificeMove(
+        beforeBoard: ChessBoard? = nil,
         afterBoard: ChessBoard,
         mover: PieceColor,
+        fromSquare: Square? = nil,
         toSquare: Square,
         movedPiece: PieceType,
         capturedPiece: PieceType?,
@@ -212,7 +223,7 @@ public enum MoveClassifier {
             promoSurplus = 0
         }
 
-        // 1. Active sacrifice on destination square
+        // 1. Active sacrifice on destination square (kings cannot sacrifice themselves)
         if movedPiece != .king {
             let oppGain = ChessMath.legalCaptureGainOnSquare(board: afterBoard, square: toSquare, maxDepth: 6)
             if oppGain - promoSurplus - capturedValue >= sacrificeMinGain {
@@ -220,7 +231,31 @@ public enum MoveClassifier {
             }
         }
 
-        // 2. Passive sacrifice: leaving another friendly non-pawn piece en prise (accounting for promoSurplus)
+        // 2. Passive sacrifice: voluntarily leaving another friendly non-pawn piece en prise
+        // Guard against false positives:
+        //  (a) Forced king escape out of check is not a voluntary passive sacrifice.
+        if let before = beforeBoard, movedPiece == .king, before.isInCheck(mover) {
+            return false
+        }
+
+        //  (b) Saving a higher-value piece from a fork while a lower-value piece was ALREADY hanging
+        //      is damage control, not a voluntary sacrifice.
+        var oppTurnBefore: ChessBoard? = nil
+        var movedPieceWasHanging = false
+        if let before = beforeBoard, !before.isInCheck(mover.opposite) {
+            var parts = before.fen.split(separator: " ").map(String.init)
+            if parts.count >= 4 {
+                parts[1] = (mover == .white) ? "b" : "w"
+                parts[3] = "-"
+                if let flippedBoard = try? ChessBoard(fen: parts.joined(separator: " ")) {
+                    oppTurnBefore = flippedBoard
+                    if let fromSq = fromSquare {
+                        movedPieceWasHanging = ChessMath.legalCaptureGainOnSquare(board: flippedBoard, square: fromSq, maxDepth: 6) >= sacrificeMinGain
+                    }
+                }
+            }
+        }
+
         for idx in 0..<64 {
             let sq = Square(unchecked: idx)
             guard sq != toSquare,
@@ -230,6 +265,12 @@ public enum MoveClassifier {
                   p.type != .pawn else { continue }
             let oppGain = ChessMath.legalCaptureGainOnSquare(board: afterBoard, square: sq, maxDepth: 6)
             if oppGain - promoSurplus - capturedValue >= sacrificeMinGain {
+                if movedPieceWasHanging,
+                   movedPiece.seeValue > p.type.seeValue,
+                   let oppBefore = oppTurnBefore,
+                   ChessMath.legalCaptureGainOnSquare(board: oppBefore, square: sq, maxDepth: 6) >= sacrificeMinGain {
+                    continue
+                }
                 return true
             }
         }
@@ -262,17 +303,31 @@ public enum MoveClassifier {
         if winLoss > 18.0 { return .mistake }
         if winLoss > 10.0 { return .inaccuracy }
 
-        let isBrilliant = isTopMove
+        let isCoBestSac = !isTopMove && !input.forceDrawRepetition && winLoss <= 1.5
+        let brilliantPositionEligible: Bool = {
+            guard input.moverWinAfter >= 42.0 else { return false }
+            let maxBefore = input.deliversForcedMate ? 95.0 : 92.0
+            guard input.moverWinBefore < maxBefore else { return false }
+            if input.moverWinBefore < 84.0 {
+                // Equal, fighting, or clearly better (up to ~+4.5): a #1 piece sacrifice is Brilliant
+                // even when #2 is also playable; co-best sacrifices (<=1.5% loss) qualify in competitive spots (<80%).
+                return isTopMove || (isCoBestSac && input.moverWinBefore < 80.0)
+            }
+            // Already heavily winning (+4.5 to +6.7): require clear superiority over #2 or forced checkmate
+            return isTopMove && (input.secondBestGapWin >= 2.5 || input.deliversForcedMate)
+        }()
+
+        let isBrilliant = (isTopMove || isCoBestSac)
             && winLoss <= 2.0
             && !input.missedMate
             && !input.positionRepeated
-            && input.moverWinAfter >= 45.0
-            && input.moverWinBefore < 94.0
             && input.hasSecondLine
-            && input.secondBestGapWin >= 6.0
+            && brilliantPositionEligible
             && isSacrificeMove(
+                beforeBoard: input.beforeBoard,
                 afterBoard: input.afterBoard,
                 mover: input.moverColor,
+                fromSquare: input.fromSquare,
                 toSquare: input.toSquare,
                 movedPiece: input.movedPiece,
                 capturedPiece: input.capturedPiece,
@@ -456,9 +511,12 @@ public enum MoveClassifier {
                 tacticalTag: "Opening Theory"
             )
         case .brilliant:
+            let detailText = playedSan.contains("x")
+                ? "\(playedSan) captures while sacrificing material to seize a decisive tactical initiative (\(evalAfterDisplay))."
+                : "\(playedSan) puts material on the line to unleash a winning tactical sequence (\(evalAfterDisplay))."
             return CoachingExplanation(
                 headline: "Brilliant tactical sacrifice!",
-                detail: "\(playedSan) puts material on the line and finds the only winning sequence (\(evalAfterDisplay)).",
+                detail: detailText,
                 tacticalTag: "Sacrifice"
             )
         case .great:

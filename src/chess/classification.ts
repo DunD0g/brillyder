@@ -28,7 +28,15 @@ const SEE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k
 const SEE_MAX_DEPTH = 6;
 const SACRIFICE_MIN_GAIN = 2;
 
-export const CLASSIFICATION_VERSION = 3;
+export const CLASSIFICATION_VERSION = 4;
+
+function flipTurnFen(fen: string): string | null {
+  const parts = fen.split(' ');
+  if (parts.length < 4) return null;
+  parts[1] = parts[1] === 'w' ? 'b' : 'w';
+  parts[3] = '-';
+  return parts.join(' ');
+}
 
 export function fenPositionKey(fen: string): string {
   return fen.split(' ').slice(0, 4).join(' ');
@@ -45,13 +53,14 @@ export function fenPositionKey(fen: string): string {
  *    to pursue a stronger tactical/mating initiative.
  */
 export function isSacrificeMove(
-  _beforeFen: string,
+  beforeFen: string,
   afterFen: string,
   mover: PlayerColor,
   toSquare: string,
   movedPiece: PieceSymbol,
   capturedPiece?: PieceSymbol,
-  promotionPiece?: PieceSymbol
+  promotionPiece?: PieceSymbol,
+  fromSquare?: string
 ): boolean {
   const after = new Chess(afterFen);
   if (after.turn() === mover) return false;
@@ -69,12 +78,47 @@ export function isSacrificeMove(
   }
 
   // 2. Passive sacrifice: leaving another friendly non-pawn piece legally capturable for >= 2 net material
+  let beforeBoard: Chess | null = null;
+  try {
+    beforeBoard = new Chess(beforeFen);
+  } catch {
+    beforeBoard = null;
+  }
+  if (beforeBoard && movedPiece === 'k' && beforeBoard.inCheck()) {
+    return false;
+  }
+
+  let oppTurnBefore: Chess | null = null;
+  let movedPieceWasHanging = false;
+  if (beforeBoard) {
+    const flipped = flipTurnFen(beforeFen);
+    if (flipped) {
+      try {
+        oppTurnBefore = new Chess(flipped);
+        if (fromSquare) {
+          movedPieceWasHanging =
+            legalCaptureGainOnSquare(oppTurnBefore, fromSquare as Square, SEE_MAX_DEPTH) >= SACRIFICE_MIN_GAIN;
+        }
+      } catch {
+        oppTurnBefore = null;
+      }
+    }
+  }
+
   for (const row of after.board()) {
     for (const cell of row) {
       if (!cell || cell.color !== mover || cell.type === 'k' || cell.type === 'p') continue;
       if (cell.square === toSquare) continue;
       const oppGain = legalCaptureGainOnSquare(after, cell.square, SEE_MAX_DEPTH);
-      if (oppGain - capturedValue >= SACRIFICE_MIN_GAIN) {
+      if (oppGain - promoSurplus - capturedValue >= SACRIFICE_MIN_GAIN) {
+        if (
+          movedPieceWasHanging &&
+          SEE_VALUE[movedPiece] > SEE_VALUE[cell.type] &&
+          oppTurnBefore &&
+          legalCaptureGainOnSquare(oppTurnBefore, cell.square, SEE_MAX_DEPTH) >= SACRIFICE_MIN_GAIN
+        ) {
+          continue;
+        }
         return true;
       }
     }
@@ -92,6 +136,7 @@ export function classifyMove(params: {
   beforeFen: string;
   afterFen: string;
   moverColor: PlayerColor;
+  fromSquare?: string;
   toSquare: string;
   movedPiece: PieceSymbol;
   capturedPiece?: PieceSymbol;
@@ -104,6 +149,7 @@ export function classifyMove(params: {
   missedMate: boolean;
   missedShortMate?: boolean;
   walkedIntoMate: boolean;
+  deliversForcedMate?: boolean;
 }): MoveClassification {
   const isTopMove = params.playedUci === params.bestMoveUci;
   const rawLoss = Math.max(0, params.moverWinBefore - params.moverWinAfter);
@@ -124,15 +170,22 @@ export function classifyMove(params: {
   if (winLoss > 18) return 'mistake';
   if (winLoss > 10) return 'inaccuracy';
 
+  const isCoBestSac = !isTopMove && winLoss <= 1.5;
+  const maxBefore = params.deliversForcedMate ? 95 : 92;
+  const brilliantPositionEligible =
+    params.moverWinAfter >= 42 &&
+    params.moverWinBefore < maxBefore &&
+    (params.moverWinBefore < 84
+      ? isTopMove || (isCoBestSac && params.moverWinBefore < 80)
+      : isTopMove && (params.secondBestGapWin >= 2.5 || Boolean(params.deliversForcedMate)));
+
   const brilliant =
-    isTopMove &&
+    (isTopMove || isCoBestSac) &&
     winLoss <= 2 &&
     !params.missedMate &&
     !params.positionRepeated &&
-    params.moverWinAfter >= 45 &&
-    params.moverWinBefore < 94 &&
     params.hasSecondLine &&
-    params.secondBestGapWin >= 6 &&
+    brilliantPositionEligible &&
     isSacrificeMove(
       params.beforeFen,
       params.afterFen,
@@ -140,7 +193,8 @@ export function classifyMove(params: {
       params.toSquare,
       params.movedPiece,
       params.capturedPiece,
-      params.promotionPiece
+      params.promotionPiece,
+      params.fromSquare ?? params.playedUci.slice(0, 2)
     );
 
   if (brilliant) return 'brilliant';
@@ -495,7 +549,7 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
     let isClutchSave = ply.isClutchSave;
     let changed = false;
 
-    if (classification === 'brilliant') {
+    if (classification === 'brilliant' || classification === 'great' || classification === 'best' || classification === 'excellent') {
       const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
       const sacrifice = movedPiece
         ? isSacrificeMove(
@@ -505,23 +559,40 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
             ply.to,
             movedPiece,
             ply.captured as PieceSymbol | undefined,
-            ply.promotion as PieceSymbol | undefined
+            ply.promotion as PieceSymbol | undefined,
+            ply.from
           )
         : false;
+      const isTopMove = ply.uci === ply.bestMoveUci;
+      const isCoBestSac = !isTopMove && ply.winLoss <= 1.5;
+      const deliversForcedMate =
+        ply.evalAfter.mateWhite !== null &&
+        ((ply.color === 'w' && ply.evalAfter.mateWhite > 0) || (ply.color === 'b' && ply.evalAfter.mateWhite < 0));
+      const hasSecondLine = (ply.topLines?.length ?? 2) >= 2;
+      const maxBefore = deliversForcedMate ? 95 : 92;
+      const eligible =
+        moverWinAfter >= 42 &&
+        moverWinBefore < maxBefore &&
+        (moverWinBefore < 84
+          ? isTopMove || (isCoBestSac && moverWinBefore < 80)
+          : isTopMove && (ply.secondBestGapWin >= 2.5 || deliversForcedMate));
+
       const validBrilliant =
         sacrifice &&
         !repeated &&
-        ply.uci === ply.bestMoveUci &&
+        hasSecondLine &&
+        (isTopMove || isCoBestSac) &&
         ply.winLoss <= 2 &&
-        moverWinAfter >= 45 &&
-        moverWinBefore < 94 &&
-        ply.secondBestGapWin >= 6;
+        eligible;
 
-      if (!validBrilliant) {
+      if (validBrilliant && classification !== 'brilliant') {
+        classification = 'brilliant';
+        changed = true;
+      } else if (!validBrilliant && classification === 'brilliant') {
         classification =
-          ply.uci === ply.bestMoveUci && ply.winLoss <= 2 && ply.secondBestGapWin > 10 && moverWinBefore < 95
+          isTopMove && ply.winLoss <= 2 && ply.secondBestGapWin > 10 && moverWinBefore < 95
             ? 'great'
-            : ply.uci === ply.bestMoveUci || ply.winLoss <= 2
+            : isTopMove || ply.winLoss <= 2
               ? 'best'
               : 'excellent';
         changed = true;
