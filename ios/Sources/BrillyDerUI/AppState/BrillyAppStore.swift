@@ -1625,6 +1625,8 @@ public final class BrillyAppStore {
     @ObservationIgnored private var pendingBatchTargets: [GameRecord] = []
     @ObservationIgnored private var pendingBatchPreset: AnalysisDepthPreset? = nil
     @ObservationIgnored private var hasRegisteredBGTasks: Bool = false
+    @ObservationIgnored private var registeredProcessingTaskID: String? = nil
+    @ObservationIgnored private var registeredContinuedTaskID: String? = nil
     @ObservationIgnored private var activeContinuedTask: AnyObject? = nil
     @ObservationIgnored private var activeBGProcessingTask: AnyObject? = nil
     #if canImport(UIKit) && os(iOS)
@@ -1635,16 +1637,8 @@ public final class BrillyAppStore {
         activeContinuedTask != nil || activeBGProcessingTask != nil
     }
 
-    private var bgBundlePrefix: String {
-        Bundle.main.bundleIdentifier ?? (edition == .founderAdmin ? "com.brillyder.admin" : "com.brillyder.app")
-    }
-
-    private var bgProcessingTaskID: String {
-        "\(bgBundlePrefix).batch-processing"
-    }
-
-    private var bgContinuedTaskPrefix: String {
-        "\(bgBundlePrefix).batch-continued"
+    private var permittedBGTaskIdentifiers: [String] {
+        Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
     }
 
     private func persistPendingBatchQueue() {
@@ -1685,25 +1679,66 @@ public final class BrillyAppStore {
         batchCompletedGames = max(UserDefaults.standard.integer(forKey: "brilly_pending_batch_done"), max(0, batchTotalGames - restored.count))
     }
 
-    /// Registers the iOS 18+ `BGProcessingTask` handler once at app launch so iOS can automatically
-    /// wake BrillyDer while idle/charging to finish any paused batch queue.
+    /// Registers the iOS 18+ `BGProcessingTask` and iOS 26+ `BGContinuedProcessingTask` handlers
+    /// strictly once during app launch (before `applicationDidFinishLaunching` completes) so button taps
+    /// never invoke `BGTaskScheduler.register` after launch.
     public func registerBackgroundBatchTasks() {
         #if canImport(BackgroundTasks) && os(iOS)
         guard !hasRegisteredBGTasks else { return }
         hasRegisteredBGTasks = true
-        let processingId = bgProcessingTaskID
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: processingId, using: nil) { [weak self] task in
-            guard let processingTask = task as? BGProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            nonisolated(unsafe) let unsafeTask = processingTask
-            Task { @MainActor [weak self] in
-                guard let self else {
-                    unsafeTask.setTaskCompleted(success: false)
+
+        let permitted = permittedBGTaskIdentifiers
+        if let processingId = permitted.first(where: { $0.hasSuffix(".batch-processing") }) {
+            let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: processingId, using: nil) { [weak self] task in
+                guard let processingTask = task as? BGProcessingTask else {
+                    task.setTaskCompleted(success: false)
                     return
                 }
-                await self.handleBackgroundProcessingWakeup(unsafeTask)
+                nonisolated(unsafe) let unsafeTask = processingTask
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        unsafeTask.setTaskCompleted(success: false)
+                        return
+                    }
+                    await self.handleBackgroundProcessingWakeup(unsafeTask)
+                }
+            }
+            if ok {
+                registeredProcessingTaskID = processingId
+            }
+        }
+
+        if #available(iOS 26.0, *),
+           let bundleId = Bundle.main.bundleIdentifier,
+           let wildcard = permitted.first(where: { $0.hasSuffix(".*") && $0.hasPrefix(bundleId + ".") }) {
+            let concreteId = String(wildcard.dropLast(1)) + "batch"
+            let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: concreteId, using: nil) { [weak self] task in
+                guard let continuedTask = task as? BGContinuedProcessingTask else {
+                    task.setTaskCompleted(success: false)
+                    return
+                }
+                nonisolated(unsafe) let unsafeTask = continuedTask
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        unsafeTask.setTaskCompleted(success: false)
+                        return
+                    }
+                    self.activeContinuedTask = unsafeTask
+                    let totalUnits = Int64(max(1, self.batchTotalGames * 100))
+                    unsafeTask.progress.totalUnitCount = totalUnits
+                    unsafeTask.progress.completedUnitCount = Int64((self.batchProgress * Double(totalUnits)).rounded())
+                    unsafeTask.expirationHandler = { [weak self] in
+                        Task { @MainActor [weak self] in
+                            await self?.pauseBatchForBackgroundExpiry()
+                        }
+                    }
+                    if !self.isBatchAnalyzing && self.pendingBatchTargets.isEmpty {
+                        self.completeActiveExtendedBackgroundTasks(success: true)
+                    }
+                }
+            }
+            if ok {
+                registeredContinuedTaskID = concreteId
             }
         }
         #endif
@@ -1730,40 +1765,14 @@ public final class BrillyAppStore {
     }
     #endif
 
-    /// On iOS 26+, requests a user-initiated `BGContinuedProcessingTask` so batch analysis keeps
-    /// running for minutes in the background instead of pausing after 30 seconds.
+    /// On iOS 26+, submits a pre-registered `BGContinuedProcessingTaskRequest` so batch analysis
+    /// keeps running for minutes in the background without ever calling `register` after launch.
     private func beginContinuedProcessingTaskIfAvailable(preset: AnalysisDepthPreset, totalGames: Int) {
         #if canImport(BackgroundTasks) && os(iOS)
         if #available(iOS 26.0, *) {
-            guard activeContinuedTask == nil, activeBGProcessingTask == nil else { return }
-            let taskId = "\(bgContinuedTaskPrefix).\(UUID().uuidString.prefix(8))"
-            let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: taskId, using: nil) { [weak self] task in
-                guard let continuedTask = task as? BGContinuedProcessingTask else {
-                    task.setTaskCompleted(success: false)
-                    return
-                }
-                nonisolated(unsafe) let unsafeTask = continuedTask
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        unsafeTask.setTaskCompleted(success: false)
-                        return
-                    }
-                    self.activeContinuedTask = unsafeTask
-                    let totalUnits = Int64(max(1, self.batchTotalGames * 100))
-                    unsafeTask.progress.totalUnitCount = totalUnits
-                    unsafeTask.progress.completedUnitCount = Int64((self.batchProgress * Double(totalUnits)).rounded())
-                    unsafeTask.expirationHandler = { [weak self] in
-                        Task { @MainActor [weak self] in
-                            await self?.pauseBatchForBackgroundExpiry()
-                        }
-                    }
-                    // If the batch already finished before iOS invoked the launch handler, close cleanly.
-                    if !self.isBatchAnalyzing && self.pendingBatchTargets.isEmpty {
-                        self.completeActiveExtendedBackgroundTasks(success: true)
-                    }
-                }
-            }
-            guard registered else { return }
+            guard activeContinuedTask == nil,
+                  activeBGProcessingTask == nil,
+                  let taskId = registeredContinuedTaskID else { return }
             let req = BGContinuedProcessingTaskRequest(
                 identifier: taskId,
                 title: "Analyzing \(totalGames) Game\(totalGames == 1 ? "" : "s")",
@@ -1796,8 +1805,8 @@ public final class BrillyAppStore {
 
     private func scheduleBackgroundProcessingFallback() {
         #if canImport(BackgroundTasks) && os(iOS)
-        guard !pendingBatchTargets.isEmpty else { return }
-        let req = BGProcessingTaskRequest(identifier: bgProcessingTaskID)
+        guard !pendingBatchTargets.isEmpty, let processingId = registeredProcessingTaskID else { return }
+        let req = BGProcessingTaskRequest(identifier: processingId)
         req.requiresNetworkConnectivity = false
         req.requiresExternalPower = false
         req.earliestBeginDate = Date(timeIntervalSinceNow: 60)
@@ -1807,7 +1816,9 @@ public final class BrillyAppStore {
 
     private func cancelScheduledBackgroundProcessing() {
         #if canImport(BackgroundTasks) && os(iOS)
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: bgProcessingTaskID)
+        if let processingId = registeredProcessingTaskID {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: processingId)
+        }
         #endif
     }
 
