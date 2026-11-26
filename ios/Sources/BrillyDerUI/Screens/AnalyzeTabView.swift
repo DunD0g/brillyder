@@ -763,6 +763,7 @@ public struct AnalyzeTabView: View {
                             onHold: { jumpToKeyMoment(in: ag, forward: false) }
                         )
                         .opacity(clampedPly == 0 ? 0.35 : 1.0)
+                        .allowsHitTesting(clampedPly > 0)
                         .disabled(clampedPly == 0)
 
                         headerIconBtn(
@@ -772,6 +773,7 @@ public struct AnalyzeTabView: View {
                             onHold: { jumpToKeyMoment(in: ag, forward: true) }
                         )
                         .opacity(clampedPly >= ag.plies.count ? 0.35 : 1.0)
+                        .allowsHitTesting(clampedPly < ag.plies.count)
                         .disabled(clampedPly >= ag.plies.count)
                         headerIconBtn("arrow.up.arrow.down", label: "Flip board", onTap: {
                             orientation = orientation.opposite
@@ -1609,8 +1611,11 @@ public struct AnalyzeTabView: View {
         let cleanRaw = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowerHandles = Set(store.userHandles.map { $0.lowercased() })
         let isOwnHandle = lowerHandles.contains(cleanRaw.lowercased())
-        let isLookupEligible = !isOwnHandle
+        let isSampleGame = store.activeAnalyzedGame?.game.source == .sample
+        let isLookupEligible = !isSampleGame
+            && !isOwnHandle
             && !cleanRaw.isEmpty
+            && cleanRaw.lowercased() != "you"
             && cleanRaw.lowercased() != "white"
             && cleanRaw.lowercased() != "black"
             && cleanRaw.lowercased() != "anonymous"

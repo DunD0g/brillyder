@@ -58,10 +58,17 @@ public struct TrainTabView: View {
                     }
                     .padding(.top, 2)
 
+                    let activeMode: TrainSubMode = {
+                        if !store.hasProAccess && (store.selectedTrainMode == .woodpecker || store.selectedTrainMode == .conversion || store.selectedTrainMode == .labs) {
+                            return .daily
+                        }
+                        return store.selectedTrainMode
+                    }()
+
                     // Compact zero-scroll 5-mode segmented pill bar
                     HStack(spacing: 5) {
                         ForEach(TrainSubMode.allCases) { mode in
-                            let sel = store.selectedTrainMode == mode
+                            let sel = activeMode == mode
                             let isProMode = (mode == .woodpecker || mode == .conversion || mode == .labs)
                             let locked = isProMode && !store.hasProAccess
                             let title: String = {
@@ -108,13 +115,6 @@ public struct TrainTabView: View {
                             .buttonStyle(.plain)
                         }
                     }
-
-                    let activeMode: TrainSubMode = {
-                        if !store.hasProAccess && (store.selectedTrainMode == .woodpecker || store.selectedTrainMode == .conversion || store.selectedTrainMode == .labs) {
-                            return .daily
-                        }
-                        return store.selectedTrainMode
-                    }()
 
                     switch activeMode {
                     case .daily:

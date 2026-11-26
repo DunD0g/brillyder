@@ -26,7 +26,6 @@ private struct BrillyBackupDocument: FileDocument {
 public struct CockpitSettingsSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.requestReview) private var requestReview
 
     @State private var showingExporter = false
     @State private var showingImporter = false
@@ -1134,19 +1133,18 @@ public struct CockpitSettingsSheet: View {
                                     .buttonStyle(BrillyPressScaleStyle())
                                 }
 
-                                Button {
-                                    store.triggerHaptic(.move)
-                                    requestReview()
-                                } label: {
-                                    Label("Rate BrillyDer", systemImage: "star.fill")
-                                        .font(.caption.weight(.bold))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.85)
-                                        .foregroundStyle(BrillyPalette.goldAmber)
-                                        .frame(maxWidth: .infinity, minHeight: 40)
-                                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.goldAmber.opacity(0.14)))
+                                if let supportURL = URL(string: "https://dund0g.github.io/brillyder/support.html") {
+                                    Link(destination: supportURL) {
+                                        Label("Help & FAQ", systemImage: "questionmark.circle.fill")
+                                            .font(.caption.weight(.bold))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.85)
+                                            .foregroundStyle(BrillyPalette.brillyTeal)
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(BrillyPalette.brillyTeal.opacity(0.14)))
+                                    }
+                                    .buttonStyle(BrillyPressScaleStyle())
                                 }
-                                .buttonStyle(BrillyPressScaleStyle())
                             }
 
                             HStack(spacing: 8) {
@@ -1341,7 +1339,11 @@ public struct BrillyPrivacySheet: View {
                         )
                         policyCard(
                             title: "Optional Public Chess API Lookups",
-                            body: "When you choose to sync games, scout an opponent, or probe <=7-piece endgames, your device connects directly over HTTPS to public third-party chess APIs: lichess.org, api.chess.com, and tablebase.lichess.ovh. No developer proxy is involved."
+                            body: "When you choose to sync games, scout an opponent, probe <=7-piece endgames, or use optional Cloud Eval mode, your device connects directly over HTTPS to public third-party chess APIs: lichess.org (including lichess.org/api/cloud-eval for board FEN lookups), api.chess.com, and tablebase.lichess.ovh. No developer proxy is involved."
+                        )
+                        policyCard(
+                            title: "In-App Purchases (Apple StoreKit)",
+                            body: "Optional Brilly/Der Pro subscriptions and Lifetime unlocks are processed solely by Apple through StoreKit 2. BrillyDer never receives your payment details or Apple Account credentials."
                         )
                         policyCard(
                             title: "Photo Library Permission",
@@ -1449,11 +1451,38 @@ private struct BrillyLicensesSheet: View {
                             notice: "On-device game analysis uses Renegade (C++20 ARM64 NEON with pure self-play NNUE weights, MIT License). Permission is hereby granted, free of charge, to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the MIT copyright and permission notice. Provided \"AS IS\" without warranty."
                         )
                         licenseCard(
-                            name: "Fallback Engine, Spaced Repetition & Tablebase Credits",
+                            name: "Fallback Engine, Spaced Repetition & Public Chess APIs",
                             license: "Permissive / Public API",
-                            author: "BrillyNative Swift Engine · FSRS · PeSTO · Lichess Syzygy",
-                            notice: "Interactive bot/sandbox drills and automatic fallback use BrillyNative (pure Swift, MIT) inspired by PeSTO tapered piece-square evaluation tables; opening scheduling implements FSRS-6; optional <=7-piece lookups query Lichess's public Syzygy Tablebase API."
+                            author: "BrillyChess Swift Fallback · FSRS · PeSTO · Lichess Public APIs",
+                            notice: "Interactive bot/sandbox drills and automatic fallback use a pure-Swift engine inspired by PeSTO tapered piece-square tables; opening scheduling implements FSRS-6; optional <=7-piece endgame and Cloud Eval lookups query Lichess's public Syzygy Tablebase and Cloud Eval APIs."
                         )
+                        licenseCard(
+                            name: "Independent Software Notice",
+                            license: "Trademarks",
+                            author: "BrillyDer",
+                            notice: "BrillyDer is an independent application and is not affiliated with, endorsed by, or sponsored by Lichess, Chess.com, or the Stockfish project."
+                        )
+
+                        HStack(spacing: 10) {
+                            if let apacheURL = URL(string: "https://www.apache.org/licenses/LICENSE-2.0") {
+                                Link(destination: apacheURL) {
+                                    Label("Apache 2.0", systemImage: "safari")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                        .frame(maxWidth: .infinity, minHeight: 36)
+                                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                                }
+                            }
+                            if let ccURL = URL(string: "https://creativecommons.org/licenses/by/4.0/") {
+                                Link(destination: ccURL) {
+                                    Label("CC BY 4.0", systemImage: "safari")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                        .frame(maxWidth: .infinity, minHeight: 36)
+                                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                                }
+                            }
+                        }
                     }
                     .padding(16)
                 }

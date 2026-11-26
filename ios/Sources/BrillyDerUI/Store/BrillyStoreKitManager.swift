@@ -87,7 +87,7 @@ public final class BrillyStoreKitManager {
             }
             self.productsByID = mapped
 
-            if let annual = mapped[.annual], let sub = annual.subscription {
+            if let annual = mapped[.annual], let sub = annual.subscription, sub.introductoryOffer != nil {
                 self.isEligibleForAnnualTrial = await sub.isEligibleForIntroOffer
             } else {
                 self.isEligibleForAnnualTrial = false
@@ -110,6 +110,10 @@ public final class BrillyStoreKitManager {
         guard let annual = productsByID[.annual] else { return nil }
         let monthlyPrice = annual.price / Decimal(12)
         return monthlyPrice.formatted(annual.priceFormatStyle)
+    }
+
+    public var hasAnnualIntroOffer: Bool {
+        productsByID[.annual]?.subscription?.introductoryOffer != nil
     }
 
     /// Reads the live Annual introductory offer duration from App Store Connect (e.g., `"7-day"`, `"3-day"`, `"14-day"`),
@@ -144,6 +148,7 @@ public final class BrillyStoreKitManager {
     // MARK: - Purchasing
 
     public func purchase(_ productID: BrillyProProductID) async -> PurchaseOutcome {
+        guard !isPurchasing else { return .cancelled }
         errorMessage = nil
         statusMessage = nil
 
@@ -190,7 +195,6 @@ public final class BrillyStoreKitManager {
     public func refreshEntitlements() async {
         var unlocked: Set<BrillyProProductID> = []
         var latestExpiration: Date? = nil
-        let now = Date()
 
         for await verification in Transaction.currentEntitlements {
             guard let transaction = try? Self.verify(verification),
@@ -198,11 +202,12 @@ public final class BrillyStoreKitManager {
                 continue
             }
             if transaction.revocationDate != nil { continue }
-            if let exp = transaction.expirationDate, exp <= now { continue }
 
             unlocked.insert(pid)
             if let exp = transaction.expirationDate {
-                if latestExpiration == nil || exp > latestExpiration! {
+                if let current = latestExpiration {
+                    if exp > current { latestExpiration = exp }
+                } else {
                     latestExpiration = exp
                 }
             }
@@ -211,8 +216,10 @@ public final class BrillyStoreKitManager {
         self.activeProductIDs = unlocked
         self.activeExpirationDate = unlocked.contains(.lifetime) ? nil : latestExpiration
 
-        if let annual = productsByID[.annual], let sub = annual.subscription {
+        if let annual = productsByID[.annual], let sub = annual.subscription, sub.introductoryOffer != nil {
             self.isEligibleForAnnualTrial = await sub.isEligibleForIntroOffer
+        } else {
+            self.isEligibleForAnnualTrial = false
         }
     }
 

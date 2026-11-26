@@ -1,7 +1,9 @@
 import Foundation
 
 public enum ChessComClient {
-    private static let strictUsernameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    private static let strictUsernameChars = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    )
 
     private struct ArchivesResponse: Decodable {
         let archives: [String]?
@@ -31,12 +33,13 @@ public enum ChessComClient {
     }
 
     public static func fetchRecentGames(username: String, maxGames: Int = 20) async throws -> [GameRecord] {
-        let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.hasPrefix("@") { trimmed.removeFirst() }
         guard !trimmed.isEmpty else { throw SyncError.emptyUsername }
         guard trimmed.unicodeScalars.allSatisfy({ strictUsernameChars.contains($0) }),
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: strictUsernameChars),
               let archivesUrl = URL(string: "https://api.chess.com/pub/player/\(encoded)/games/archives") else {
-            throw SyncError.networkFailure("Invalid Chess.com username.")
+            throw SyncError.networkFailure("Usernames may only contain ASCII letters, numbers, '-' and '_'.")
         }
 
         let targetCount = max(1, min(50, maxGames))
@@ -60,7 +63,17 @@ public enum ChessComClient {
             } catch let syncErr as SyncError {
                 if case .rateLimited = syncErr { throw syncErr }
                 lastError = syncErr
+                if case .networkFailure = syncErr { break }
                 continue
+            } catch let urlErr as URLError {
+                lastError = urlErr
+                switch urlErr.code {
+                case .notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dataNotAllowed:
+                    break
+                default:
+                    continue
+                }
+                break
             } catch {
                 lastError = error
                 continue

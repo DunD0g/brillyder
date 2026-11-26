@@ -143,4 +143,51 @@ struct FSRSAndBackupTests {
         #expect(plan.stage1OpeningCards.count == 1)
         #expect(plan.stage1OpeningCards[0].cardId == validCard.cardId)
     }
+
+    @Test("FSRS-6 ISO-8601 timestamps round-trip with trailing Z and stability strictly grows across subsequent reviews")
+    func fsrsIsoRoundTripAndStabilityGrowth() {
+        let t0 = Date(timeIntervalSince1970: 1_760_000_000)
+        let iso = FSRS6Scheduler.isoString(from: t0)
+        #expect(iso.hasSuffix("Z"))
+        #expect(FSRS6Scheduler.date(fromIso: iso) != nil)
+        // Legacy timezone-less iOS timestamp must also parse cleanly
+        #expect(FSRS6Scheduler.date(fromIso: "2026-11-26T09:00:00.123") != nil)
+
+        let card0 = FSRS6Scheduler.createCard(
+            courseId: "london", lineId: "main", side: .white, fen: ChessBoard.initialFEN,
+            ply: 0, moveSequence: [], expectedSan: "d4", expectedUci: "d2d4", unlocked: true, now: t0
+        )
+        let card1 = FSRS6Scheduler.review(card: card0, attempt: .init(correct: true, responseMs: 2500, hintUsed: false), now: t0).card
+        let t3DaysLater = t0.addingTimeInterval(3 * 86_400)
+        let recall = FSRS6Scheduler.recallProbability(for: card1, now: t3DaysLater)
+        #expect(recall < 99 && recall > 10)
+
+        let card2 = FSRS6Scheduler.review(card: card1, attempt: .init(correct: true, responseMs: 2500, hintUsed: false), now: t3DaysLater).card
+        #expect(card2.fsrsState.stability > card1.fsrsState.stability)
+    }
+
+    @Test("Backup merge safely clamps extreme 1e30 JSON numbers without trapping and rejects unsupported schemaVersion")
+    func backupClampsExtremeNumbers() throws {
+        let hostileJSON = """
+        {
+          "app": "brillyder",
+          "schemaVersion": 2,
+          "stores": {
+            "analyzed_games": [],
+            "prefs": [
+              { "key": "brillyder_rush_best", "value": 1e30, "updatedAt": 1e30 },
+              { "key": "brillyder_mistake_streak", "value": { "current": 1e30, "lastDate": "zzzz" }, "updatedAt": 100 }
+            ],
+            "repertoires": [],
+            "fsrs_cards": [],
+            "woodpecker_cycles": [],
+            "training_logs": []
+          }
+        }
+        """.data(using: .utf8)!
+        let (merged, _) = try LocalVaultStore.mergeBackupJSONWithSummary(hostileJSON, into: VaultSnapshot())
+        #expect(merged.puzzleRushBlitzBest <= 1_000_000)
+        #expect(merged.dailyStreakDays <= 36_500)
+        #expect(merged.lastDailyCompletedDate == nil)
+    }
 }

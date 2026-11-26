@@ -19,8 +19,25 @@ public struct BackupImportSummary: Sendable {
         if repertoires > 0 { parts.append("\(repertoires) courses") }
         if bookmarks > 0 { parts.append("\(bookmarks) bookmarks") }
         if masteredEndgames > 0 { parts.append("\(masteredEndgames) endgames") }
-        return parts.isEmpty ? "Backup synced cleanly." : "Imported " + parts.joined(separator: ", ") + "."
+        if parts.isEmpty {
+            return skippedItems > 0
+                ? "Backup checked (\(skippedItems) incompatible record\(skippedItems == 1 ? "" : "s") skipped)."
+                : "Backup synced cleanly."
+        }
+        return "Imported " + parts.joined(separator: ", ") + "."
     }
+}
+
+fileprivate func safeClampedInt(_ value: Double, min lo: Int = 0, max hi: Int = 1_000_000) -> Int {
+    guard value.isFinite else { return lo }
+    let clamped = min(Double(hi), max(Double(lo), value.rounded()))
+    return Int(clamped)
+}
+
+fileprivate func safeClampedInt64(_ value: Double, min lo: Int64 = 0, max hi: Int64 = 9_000_000_000_000_000) -> Int64 {
+    guard value.isFinite else { return lo }
+    let clamped = min(Double(hi), max(Double(lo), value.rounded()))
+    return Int64(clamped)
 }
 
 /// Exact Web PWA <-> iOS Backup schema (`app: "brillyder"`, `schemaVersion: 2`).
@@ -43,7 +60,7 @@ public struct BrillyBackupPayload: Codable, Sendable {
             if let i = try? c.decode(Int64.self, forKey: .updatedAt) {
                 self.updatedAt = i
             } else if let d = try? c.decode(Double.self, forKey: .updatedAt) {
-                self.updatedAt = Int64(d)
+                self.updatedAt = safeClampedInt64(d)
             } else {
                 self.updatedAt = 0
             }
@@ -233,6 +250,7 @@ public struct VaultSnapshot: Codable, Sendable {
 /// Local-first file vault stored inside Application Support with zero cloud dependencies.
 public actor LocalVaultStore {
     private let fileURL: URL
+    private let backupFileURL: URL
 
     public init(customDirectory: URL? = nil) {
         let base = customDirectory
@@ -241,27 +259,44 @@ public actor LocalVaultStore {
         let dir = base.appendingPathComponent("BrillyDer", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.fileURL = dir.appendingPathComponent("brillyder_vault_v2.json")
+        self.backupFileURL = dir.appendingPathComponent("brillyder_vault_v2.bak.json")
     }
 
     public func load() -> VaultSnapshot {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            return VaultSnapshot()
+        let fm = FileManager.default
+        if fm.fileExists(atPath: fileURL.path) {
+            do {
+                let data = try Data(contentsOf: fileURL)
+                return try JSONDecoder().decode(VaultSnapshot.self, from: data)
+            } catch {
+                // Preserve unreadable file with unique timestamp for recovery, then try rolling .bak.json
+                let stamp = Int(Date().timeIntervalSince1970)
+                let corruptURL = fileURL.deletingLastPathComponent()
+                    .appendingPathComponent("brillyder_vault_v2.\(stamp).corrupt")
+                try? fm.copyItem(at: fileURL, to: corruptURL)
+            }
         }
-        do {
-            let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode(VaultSnapshot.self, from: data)
-        } catch {
-            // Preserve unreadable file for diagnostics/recovery instead of silently destroying it.
-            let backupURL = fileURL.appendingPathExtension("corrupt")
-            try? FileManager.default.removeItem(at: backupURL)
-            try? FileManager.default.copyItem(at: fileURL, to: backupURL)
-            return VaultSnapshot()
+        if fm.fileExists(atPath: backupFileURL.path),
+           let bakData = try? Data(contentsOf: backupFileURL),
+           let recovered = try? JSONDecoder().decode(VaultSnapshot.self, from: bakData) {
+            return recovered
         }
+        return VaultSnapshot()
     }
 
     public func save(_ snapshot: VaultSnapshot) throws {
         let encoder = JSONEncoder()
         let data = try encoder.encode(snapshot)
+        let fm = FileManager.default
+        // Preserve previous known-good vault as rolling backup before replacing primary
+        if fm.fileExists(atPath: fileURL.path) {
+            let tmpBak = backupFileURL.appendingPathExtension("tmp")
+            try? fm.removeItem(at: tmpBak)
+            if (try? fm.copyItem(at: fileURL, to: tmpBak)) != nil {
+                try? fm.removeItem(at: backupFileURL)
+                try? fm.moveItem(at: tmpBak, to: backupFileURL)
+            }
+        }
         #if os(iOS)
         try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         #else
@@ -327,9 +362,10 @@ public actor LocalVaultStore {
         if !snapshot.convertedAdvantageIds.isEmpty {
             let idVals = snapshot.convertedAdvantageIds.sorted().map { JSONValue.string($0) }
             trainingLogs.append(.object([
-                "id": .string("conversion_mastered"),
+                "id": .string("conversion_completed"),
                 "kind": .string("conversion"),
                 "createdAt": .number(Double(nowMs)),
+                "updatedAt": .number(Double(nowMs)),
                 "data": .object([
                     "ids": .array(idVals),
                     "convertedIds": .array(idVals),
@@ -361,6 +397,13 @@ public actor LocalVaultStore {
         _ data: Data,
         into existing: VaultSnapshot
     ) throws -> (snapshot: VaultSnapshot, summary: BackupImportSummary) {
+        guard data.count <= 25 * 1024 * 1024 else {
+            throw NSError(
+                domain: "BrillyDerCore",
+                code: 413,
+                userInfo: [NSLocalizedDescriptionKey: "Backup file is too large (max 25 MB)."]
+            )
+        }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               (root["app"] as? String) == "brillyder",
               let stores = root["stores"] as? [String: Any] else {
@@ -368,6 +411,13 @@ public actor LocalVaultStore {
                 domain: "BrillyDerCore",
                 code: 422,
                 userInfo: [NSLocalizedDescriptionKey: "Unrecognized backup file (expected a BrillyDer JSON backup)."]
+            )
+        }
+        if let rawVersion = root["schemaVersion"] as? Int, !(1...2).contains(rawVersion) {
+            throw NSError(
+                domain: "BrillyDerCore",
+                code: 422,
+                userInfo: [NSLocalizedDescriptionKey: "Unsupported backup schemaVersion (\(rawVersion)). Please update BrillyDer first."]
             )
         }
 
@@ -480,11 +530,11 @@ public actor LocalVaultStore {
                 }
             case "brillyder_rush_best":
                 if case .number(let n) = pref.value {
-                    merged.puzzleRushBlitzBest = max(merged.puzzleRushBlitzBest, Int(n.rounded()))
+                    merged.puzzleRushBlitzBest = max(merged.puzzleRushBlitzBest, safeClampedInt(n))
                 }
             case "brillyder_rush_survival_best":
                 if case .number(let n) = pref.value {
-                    merged.puzzleRushSurvivalBest = max(merged.puzzleRushSurvivalBest, Int(n.rounded()))
+                    merged.puzzleRushSurvivalBest = max(merged.puzzleRushSurvivalBest, safeClampedInt(n))
                 }
             case "brillyder_escape_solved_v1":
                 if case .array(let arr) = pref.value {
@@ -497,7 +547,7 @@ public actor LocalVaultStore {
                     }
                 }
             case "brillyder_daily_done":
-                if case .string(let d) = pref.value, !d.isEmpty {
+                if case .string(let d) = pref.value, parseDayStringToEpochMs(d) != nil {
                     if (merged.lastDailyCompletedDate ?? "") < d {
                         merged.lastDailyCompletedDate = d
                     }
@@ -505,14 +555,14 @@ public actor LocalVaultStore {
             case "brillyder_mistake_streak":
                 if case .object(let obj) = pref.value {
                     if case .number(let cur) = obj["current"] {
-                        merged.dailyStreakDays = max(merged.dailyStreakDays, Int(cur.rounded()))
+                        merged.dailyStreakDays = max(merged.dailyStreakDays, safeClampedInt(cur, min: 0, max: 36_500))
                     }
-                    if case .string(let d) = obj["lastDate"], !d.isEmpty {
+                    if case .string(let d) = obj["lastDate"], parseDayStringToEpochMs(d) != nil {
                         if (merged.lastDailyCompletedDate ?? "") < d {
                             merged.lastDailyCompletedDate = d
                         }
-                    } else if case .number(let ms) = obj["lastSolvedAt"], ms > 0 {
-                        let dayStr = formatDayString(fromEpochMs: Int64(ms))
+                    } else if case .number(let ms) = obj["lastSolvedAt"], ms.isFinite, ms > 0 {
+                        let dayStr = formatDayString(fromEpochMs: safeClampedInt64(ms))
                         if (merged.lastDailyCompletedDate ?? "") < dayStr {
                             merged.lastDailyCompletedDate = dayStr
                         }
@@ -520,7 +570,7 @@ public actor LocalVaultStore {
                 }
             default:
                 if pref.key.hasPrefix("brillyder_vision_best_"), case .number(let n) = pref.value {
-                    merged.boardVisionBestScore = max(merged.boardVisionBestScore, Int(n.rounded()))
+                    merged.boardVisionBestScore = max(merged.boardVisionBestScore, safeClampedInt(n))
                 }
             }
         }

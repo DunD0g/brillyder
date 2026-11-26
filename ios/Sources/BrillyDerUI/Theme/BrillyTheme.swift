@@ -16,7 +16,7 @@ public enum SurfaceStyle: String, Codable, CaseIterable, Sendable, Identifiable 
 
     public var subtitle: String {
         switch self {
-        case .liquidGlass: return "iOS 26 optical lensing & floating glass"
+        case .liquidGlass: return "Adaptive optical lensing & floating glass"
         case .cosmic: return "Deep space hull & dark glassmorphism"
         }
     }

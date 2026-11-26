@@ -25,7 +25,9 @@ public enum LichessInputTarget: Equatable, Sendable {
 }
 
 public enum LichessClient {
-    private static let strictUsernameChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+    private static let strictUsernameChars = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+    )
     private static let reservedPathSegments: Set<String> = [
         "training", "analysis", "study", "tv", "inbox", "player", "team",
         "tournament", "swiss", "broadcast", "editor", "paste", "login",
@@ -140,17 +142,19 @@ public enum LichessClient {
     }
 
     public static func fetchRecentGames(username: String, maxGames: Int = 20) async throws -> [GameRecord] {
-        let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("@") { trimmed.removeFirst() }
         guard !trimmed.isEmpty else { throw SyncError.emptyUsername }
         guard trimmed.unicodeScalars.allSatisfy({ strictUsernameChars.contains($0) }),
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: strictUsernameChars),
               let url = URL(string: "https://lichess.org/api/games/user/\(encoded)?max=\(max(1, min(50, maxGames)))&pgnInJson=true&clocks=true&opening=true&perfType=bullet,blitz,rapid,classical") else {
-            throw SyncError.networkFailure("Invalid Lichess username.")
+            throw SyncError.networkFailure("Usernames may only contain ASCII letters, numbers, '-' and '_'.")
         }
 
         var req = URLRequest(url: url, timeoutInterval: 18)
         req.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-        req.setValue("BrillyDer-iOS/2.6 (local-first chess coach)", forHTTPHeaderField: "User-Agent")
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.11.3"
+        req.setValue("BrillyDer-iOS/\(ver) (local-first chess coach)", forHTTPHeaderField: "User-Agent")
 
         let (data, response): (Data, URLResponse)
         do {
@@ -229,7 +233,12 @@ public enum LichessClient {
                     throw SyncError.networkFailure("Lichess API error (\(http.statusCode)).")
                 }
             }
-            let raw = try JSONDecoder().decode(RawGame.self, from: data)
+            let raw: RawGame
+            do {
+                raw = try JSONDecoder().decode(RawGame.self, from: data)
+            } catch {
+                throw SyncError.networkFailure("Unexpected response from Lichess — check your connection.")
+            }
             var handles = preferredUsernames
             if let u = preferredUsername, !u.isEmpty { handles.append(u) }
             guard let mapped = mapRawGame(raw, handles: handles) else {
@@ -238,12 +247,22 @@ public enum LichessClient {
             return mapped
 
         case .broadcast(let roundId, let gameId):
-            // Try direct chapter PGN first when a specific broadcast gameId is provided; fall back to full round PGN.
+            // Try direct chapter PGN first when a specific broadcast gameId is provided; fall back to full round PGN on 404/invalid only.
             if let gameId,
-               let chapterUrl = URL(string: "https://lichess.org/study/\(roundId)/\(gameId).pgn"),
-               let pgnText = try? await fetchRawPGN(from: chapterUrl),
-               !pgnText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return try parsePastedPGN(pgnText, preferredUsername: preferredUsername, preferredUsernames: preferredUsernames)
+               let chapterUrl = URL(string: "https://lichess.org/study/\(roundId)/\(gameId).pgn") {
+                do {
+                    let pgnText = try await fetchRawPGN(from: chapterUrl)
+                    if !pgnText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return try parsePastedPGN(pgnText, preferredUsername: preferredUsername, preferredUsernames: preferredUsernames)
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch let syncErr as SyncError {
+                    if case .rateLimited = syncErr { throw syncErr }
+                    // Fall through to round PGN on 404/parse error
+                } catch {
+                    throw error
+                }
             }
             guard let roundUrl = URL(string: "https://lichess.org/api/broadcast/round/\(roundId).pgn") else {
                 throw SyncError.networkFailure("Invalid Lichess broadcast URL.")

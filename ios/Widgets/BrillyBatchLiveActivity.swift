@@ -20,7 +20,8 @@ struct BrillyBatchLiveActivityWidget: Widget {
         ActivityConfiguration(for: BrillyBatchActivityAttributes.self) { context in
             // Lock Screen / Notification Center Live Banner
             let state = context.state
-            let isPaused = state.status == "paused"
+            let isStalePaused = context.isStale && state.status == "analyzing"
+            let isPaused = state.status == "paused" || isStalePaused
             let isComplete = state.status == "complete"
             let accent = isPaused ? Self.amber : Self.teal
             let pct = Int((min(1.0, max(0.0, state.progress)) * 100.0).rounded())
@@ -78,7 +79,8 @@ struct BrillyBatchLiveActivityWidget: Widget {
             .widgetURL(URL(string: "brillyder://batch"))
         } dynamicIsland: { context in
             let state = context.state
-            let isPaused = state.status == "paused"
+            let isStalePaused = context.isStale && state.status == "analyzing"
+            let isPaused = state.status == "paused" || isStalePaused
             let isComplete = state.status == "complete"
             let accent = isPaused ? Self.amber : Self.teal
             let pct = Int((min(1.0, max(0.0, state.progress)) * 100.0).rounded())

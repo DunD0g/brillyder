@@ -568,6 +568,7 @@ private struct BoardVisionPanel: View {
                 .frame(maxWidth: .infinity)
             }
             .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: 520)
 
             // Controls
             HStack(spacing: 10) {

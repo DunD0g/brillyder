@@ -25,15 +25,15 @@ public struct EngineScore: Codable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let i = try? c.decode(Int.self, forKey: .cpWhite) {
             self.cpWhite = i
-        } else if let d = try? c.decode(Double.self, forKey: .cpWhite) {
-            self.cpWhite = Int(d.rounded())
+        } else if let d = try? c.decode(Double.self, forKey: .cpWhite), d.isFinite {
+            self.cpWhite = Int(min(100_000.0, max(-100_000.0, d.rounded())))
         } else {
             self.cpWhite = 0
         }
         if let m = try? c.decodeIfPresent(Int.self, forKey: .mateWhite) {
             self.mateWhite = m
-        } else if let md = try? c.decodeIfPresent(Double.self, forKey: .mateWhite) {
-            self.mateWhite = Int(md.rounded())
+        } else if let md = try? c.decodeIfPresent(Double.self, forKey: .mateWhite), md.isFinite {
+            self.mateWhite = Int(min(1000.0, max(-1000.0, md.rounded())))
         } else {
             self.mateWhite = nil
         }

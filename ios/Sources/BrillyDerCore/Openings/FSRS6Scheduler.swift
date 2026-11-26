@@ -56,14 +56,23 @@ public enum FSRS6Scheduler {
     }
 
     public static func isoString(from date: Date) -> String {
-        date.ISO8601Format(.iso8601.year().month().day().time(includingFractionalSeconds: true))
+        Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(date)
     }
 
     public static func date(fromIso iso: String) -> Date? {
         if let d = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(iso) {
             return d
         }
-        return try? Date.ISO8601FormatStyle(includingFractionalSeconds: false).parse(iso)
+        if let d = try? Date.ISO8601FormatStyle(includingFractionalSeconds: false).parse(iso) {
+            return d
+        }
+        // Fallback for legacy iOS timestamps saved without a trailing 'Z'
+        let legacyFrac = Date.ISO8601FormatStyle.iso8601.year().month().day().time(includingFractionalSeconds: true)
+        if let d = try? legacyFrac.parse(iso) {
+            return d
+        }
+        let legacyWhole = Date.ISO8601FormatStyle.iso8601.year().month().day().time(includingFractionalSeconds: false)
+        return try? legacyWhole.parse(iso)
     }
 
     public static func gradeAttempt(_ attempt: OpeningAttemptInput) -> FSRSRating {

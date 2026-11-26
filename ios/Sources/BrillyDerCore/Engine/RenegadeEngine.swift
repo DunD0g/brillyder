@@ -11,6 +11,7 @@ public actor RenegadeEngine: ChessEngine {
     private final class SearchRequestTracker: @unchecked Sendable {
         private let lock = NSLock()
         private var nextId: UInt64 = 1
+        private var lastCompletedId: UInt64 = 0
         private var activeId: UInt64 = 0
         private var cancelledIds: Set<UInt64> = []
 
@@ -27,6 +28,7 @@ public actor RenegadeEngine: ChessEngine {
             lock.lock()
             defer { lock.unlock() }
             if cancelledIds.remove(id) != nil {
+                lastCompletedId = max(lastCompletedId, id)
                 return false
             }
             activeId = id
@@ -39,18 +41,22 @@ public actor RenegadeEngine: ChessEngine {
             if activeId == id {
                 activeId = 0
             }
+            lastCompletedId = max(lastCompletedId, id)
             cancelledIds.remove(id)
         }
 
-        /// Returns true iff `id` is the currently executing C++ search and should be aborted.
-        func cancel(_ id: UInt64) -> Bool {
+        /// Atomically marks `id` cancelled and triggers lock-free C++ abort if active/upcoming.
+        func cancelAndAbort(_ id: UInt64) {
             lock.lock()
             defer { lock.unlock() }
+            if id <= lastCompletedId {
+                return
+            }
             if activeId == id {
-                return true
+                renegade_abort_request(id)
+                return
             }
             cancelledIds.insert(id)
-            return false
         }
     }
 
@@ -60,28 +66,44 @@ public actor RenegadeEngine: ChessEngine {
     )
     private static let requestTracker = SearchRequestTracker()
 
-    private let fallback = BrillyNativeEngine()
+    private var fallbackEngine: BrillyNativeEngine? = nil
     private var isReady: Bool = false
     private var initAttempted: Bool = false
 
     public init() {}
 
-    /// Returns true if the bundled Renegade NNUE weights (`renegade-net-36.bin`)
-    /// are memory-mapped and ready for native C++20 NEON search.
-    public func isNativeNNUEReady() -> Bool {
-        ensureInitialized()
+    private func getFallback() -> BrillyNativeEngine {
+        if let existing = fallbackEngine { return existing }
+        let created = BrillyNativeEngine()
+        fallbackEngine = created
+        return created
     }
 
-    private func ensureInitialized() -> Bool {
+    /// Returns true if the bundled Renegade NNUE weights (`renegade-net-36.bin`)
+    /// are memory-mapped and ready for native C++20 NEON search.
+    public func isNativeNNUEReady() async -> Bool {
+        await ensureInitialized()
+    }
+
+    private func ensureInitialized() async -> Bool {
         if initAttempted { return isReady }
         initAttempted = true
         guard let url = Bundle.module.url(forResource: "renegade-net-36", withExtension: "bin") else {
             isReady = false
             return false
         }
-        isReady = url.path.withCString { cPath in
-            renegade_init(cPath, 16)
+        // Use 8 MB TT on <=4 GB RAM iPhones to maximize iOS background jetsam headroom, 16 MB otherwise.
+        let hashMB: Int32 = ProcessInfo.processInfo.physicalMemory <= 4_500_000_000 ? 8 : 16
+        let path = url.path
+        let ok: Bool = await withCheckedContinuation { continuation in
+            Self.searchQueue.async {
+                let initialized = path.withCString { cPath in
+                    renegade_init(cPath, hashMB)
+                }
+                continuation.resume(returning: initialized)
+            }
         }
+        isReady = ok
         return isReady
     }
 
@@ -102,8 +124,8 @@ public actor RenegadeEngine: ChessEngine {
         maxTimeMs: Int? = 250
     ) async throws -> EngineEval {
         try Task.checkCancellation()
-        guard ensureInitialized() else {
-            return try await fallback.analyze(fen: fen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
+        guard await ensureInitialized() else {
+            return try await getFallback().analyze(fen: fen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
         }
 
         // Validate & normalize FEN via ChessBoard first so 4/5-field FENs and impossible castling rights are sanitized
@@ -124,20 +146,18 @@ public actor RenegadeEngine: ChessEngine {
                     defer { Self.requestTracker.end(requestId) }
                     var out = RenegadeAnalysisResult()
                     let ok = normalizedFen.withCString { cFen in
-                        renegade_analyze(cFen, maxD, pvCount, timeMs, &out)
+                        renegade_analyze(cFen, maxD, pvCount, timeMs, requestId, &out)
                     }
                     continuation.resume(returning: (ok, out))
                 }
             }
         } onCancel: {
-            if Self.requestTracker.cancel(requestId) {
-                renegade_abort()
-            }
+            Self.requestTracker.cancelAndAbort(requestId)
         }
 
         try Task.checkCancellation()
         guard raw.ok else {
-            return try await fallback.analyze(fen: fen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
+            return try await getFallback().analyze(fen: normalizedFen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
         }
 
         let res = raw.result
@@ -184,7 +204,7 @@ public actor RenegadeEngine: ChessEngine {
         }
 
         guard let top = builtLines.first else {
-            return try await fallback.analyze(fen: fen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
+            return try await getFallback().analyze(fen: normalizedFen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
         }
 
         return EngineEval(

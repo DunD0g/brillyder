@@ -16,8 +16,6 @@ public struct BrillyProPaywallSheet: View {
     @State private var showingPrivacySheet = false
     @State private var showingTermsSheet = false
 
-    private static let privacyURL = URL(string: "https://dund0g.github.io/brillyder/privacy.html")!
-    private static let termsURL = URL(string: "https://dund0g.github.io/brillyder/terms.html")!
     private static let appleEulaURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     public init(highlightedFeature: String? = nil) {
@@ -58,6 +56,10 @@ public struct BrillyProPaywallSheet: View {
                 } else {
                     await storeKit.refreshEntitlements()
                 }
+                syncSelectedTierToLoadedProducts()
+            }
+            .onChange(of: storeKit.productsByID.count) { _, _ in
+                syncSelectedTierToLoadedProducts()
             }
             .sheet(isPresented: $showingPrivacySheet) {
                 BrillyPrivacySheet(surfaceStyle: store.surfaceStyle)
@@ -119,7 +121,7 @@ public struct BrillyProPaywallSheet: View {
                             .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.42), lineWidth: 1))
                     )
             } else if let highlightedFeature {
-                Text("Unlock \(highlightedFeature) & the complete on-device chess cockpit.")
+                Text("Unlock \(highlightedFeature) & the complete on-device \(store.copy(cosmic: "chess cockpit", classic: "chess toolkit")).")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BrillyPalette.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -140,7 +142,7 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "clock.badge.checkmark.fill",
                 tint: BrillyPalette.brillyTeal,
-                title: "15m & 25m Daily Orbit Coach + Woodpecker Cycles",
+                title: "15m & 25m \(store.copy(cosmic: "Daily Orbit Coach", classic: "Daily Coach")) + Woodpecker Cycles",
                 subtitle: "Structured blunder-fixing loop, Advantage Conversion & tactical speed cycles"
             )
             benefitRow(
@@ -152,7 +154,7 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "cpu.fill",
                 tint: BrillyPalette.goldAmber,
-                title: "Ultra Offline NNUE (~3300+ Elo) & Cloud SF16 (~3500 Elo) + Unlimited Batch",
+                title: "Ultra Offline NNUE (~3300+ Elo) + Hybrid Cloud Lookup & Unlimited Batch",
                 subtitle: "Remove the 2/day Free cap, unlock Show Threat Arrow, Guided Mistake Review, Opponent Profile Scout & Instant Auto-Sync"
             )
             benefitRow(
@@ -342,6 +344,7 @@ public struct BrillyProPaywallSheet: View {
                         }
                     }
                 } label: {
+                    let selectedLoaded = storeKit.product(for: selectedTier) != nil
                     HStack(spacing: 8) {
                         if storeKit.isPurchasing {
                             ProgressView()
@@ -349,9 +352,12 @@ public struct BrillyProPaywallSheet: View {
                         }
                         Text(storeKit.isPurchasing ? "Confirming with App Store…" : primaryCtaLabel)
                             .font(.headline.weight(.bold))
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.85)
                     }
                     .foregroundStyle(BrillyPalette.voidBg)
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -363,10 +369,10 @@ public struct BrillyProPaywallSheet: View {
                                 )
                             )
                     )
-                    .opacity(storeKit.hasLoadedProducts && !storeKit.isPurchasing ? 1.0 : 0.55)
+                    .opacity(selectedLoaded && !storeKit.isPurchasing ? 1.0 : 0.55)
                 }
                 .buttonStyle(BrillyPressScaleStyle())
-                .disabled(!storeKit.hasLoadedProducts || storeKit.isPurchasing || storeKit.isRestoring)
+                .disabled(storeKit.product(for: selectedTier) == nil || storeKit.isPurchasing || storeKit.isRestoring)
 
                 if selectedTier == .annual && storeKit.isEligibleForAnnualTrial {
                     Text("No payment due today · Cancel anytime in Apple Settings")
@@ -409,18 +415,22 @@ public struct BrillyProPaywallSheet: View {
     private var legalFooterSection: some View {
         VStack(spacing: 8) {
             Text(
-                "Payment will be charged to your Apple Account at confirmation of purchase (or at the end of the \(storeKit.annualTrialDurationLabel) free trial for eligible Annual plans). Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel anytime in App Store Account Settings."
+                storeKit.hasAnnualIntroOffer
+                    ? "Payment will be charged to your Apple Account at confirmation of purchase (or at the end of the \(storeKit.annualTrialDurationLabel) free trial for eligible Annual plans). Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel anytime in App Store Account Settings."
+                    : "Payment will be charged to your Apple Account at confirmation of purchase. Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Manage or cancel anytime in App Store Account Settings."
             )
             .font(.caption2)
             .foregroundStyle(BrillyPalette.inkSecondary)
             .multilineTextAlignment(.center)
 
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Button("Privacy Policy") {
                     showingPrivacySheet = true
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(BrillyPalette.brillyTeal)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
 
                 Text("·")
                     .font(.caption2)
@@ -431,6 +441,8 @@ public struct BrillyProPaywallSheet: View {
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(BrillyPalette.brillyTeal)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
 
                 Text("·")
                     .font(.caption2)
@@ -439,8 +451,19 @@ public struct BrillyProPaywallSheet: View {
                 Link("Apple EULA", destination: Self.appleEulaURL)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkSecondary)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
             }
-            .padding(.top, 2)
+        }
+    }
+
+    private func syncSelectedTierToLoadedProducts() {
+        guard storeKit.product(for: selectedTier) == nil else { return }
+        for fallbackTier in [BrillyProProductID.annual, .monthly, .lifetime] {
+            if storeKit.product(for: fallbackTier) != nil {
+                selectedTier = fallbackTier
+                return
+            }
         }
     }
 
@@ -562,20 +585,42 @@ public struct BrillyTermsSheet: View {
                     VStack(alignment: .leading, spacing: 14) {
                         termsBlock(
                             title: "Brilly/Der Pro Subscriptions & Lifetime",
-                            body: "BrillyDer offers optional Monthly and Annual auto-renewable subscriptions (Annual includes a 7-day free trial for eligible new subscribers) and a one-time Lifetime In-App Purchase via Apple's App Store."
+                            body: "BrillyDer offers optional Monthly and Annual auto-renewable subscriptions (with an introductory free trial for eligible new Annual subscribers where offered) and a one-time Lifetime In-App Purchase via Apple's App Store."
                         )
                         termsBlock(
                             title: "Auto-Renewal & Cancellation",
-                            body: "Payment is charged to your Apple Account upon purchase confirmation (or after the free trial ends). Subscriptions renew automatically unless canceled at least 24 hours before the end of the billing period. Manage or cancel subscriptions anytime in your device's Apple Account settings."
+                            body: "Payment is charged to your Apple Account upon purchase confirmation (or after any eligible free trial ends). Subscriptions renew automatically unless canceled at least 24 hours before the end of the billing period. Manage or cancel subscriptions anytime in your device's Apple Account settings."
                         )
                         termsBlock(
-                            title: "Local-First Software",
-                            body: "All chess analysis, spaced-repetition schedules, and backups are processed locally on your device. Optional Lichess, Chess.com, and Syzygy lookups depend on those third-party public services' availability."
+                            title: "Local-First Software & Independence",
+                            body: "All chess analysis, spaced-repetition schedules, and backups are processed locally on your device. Optional Lichess, Chess.com, Cloud Eval, and Syzygy lookups depend on those public third-party services' availability. BrillyDer is an independent application and is not affiliated with, endorsed by, or sponsored by Lichess, Chess.com, or the Stockfish project."
                         )
                         termsBlock(
                             title: "Standard Apple EULA",
-                            body: "Use of BrillyDer on iOS is also governed by Apple's Standard Licensed Application End User License Agreement (EULA). Full web copy is available at dund0g.github.io/brillyder/terms.html."
+                            body: "Use of BrillyDer on iOS is also governed by Apple's Standard Licensed Application End User License Agreement (EULA)."
                         )
+
+                        if let termsURL = URL(string: "https://dund0g.github.io/brillyder/terms.html") {
+                            Link(destination: termsURL) {
+                                Label("Open Full Online Terms of Use", systemImage: "safari.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            }
+                        }
+
+                        if let eulaURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/") {
+                            Link(destination: eulaURL) {
+                                Label("Read Apple Standard EULA", systemImage: "doc.text.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                            }
+                        }
                     }
                     .padding(16)
                 }

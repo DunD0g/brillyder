@@ -320,13 +320,22 @@ public struct BrillyVaultSheet: View {
                         Button {
                             if let ag = store.analyzedGames.first(where: { $0.id == bm.gameId }) {
                                 dismiss()
-                                store.startAnalysis(for: ag.game, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(320))
+                                    store.startAnalysis(for: ag.game, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
+                                }
                             } else if let rec = store.recentGames.first(where: { $0.id == bm.gameId }) {
                                 dismiss()
-                                store.startAnalysis(for: rec, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(320))
+                                    store.startAnalysis(for: rec, jumpToPly: bm.ply, isManualSelection: true, switchToAnalyze: true)
+                                }
                             } else {
                                 dismiss()
-                                store.openCustomFEN(bm.fen)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(320))
+                                    store.openCustomFEN(bm.fen)
+                                }
                             }
                         } label: {
                             HStack(spacing: 12) {

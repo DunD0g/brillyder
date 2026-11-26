@@ -334,10 +334,11 @@ public enum MoveClassifier {
                     return "Promotion"
                 }
 
-                // Back-rank check or mate threat on rank 1 or 8
+                // Back-rank check or mate threat on rank 1 or 8 (require attacker to land on the back rank)
                 let backRank = opp == .white ? 0 : 7
                 if bestAfter.isInCheck(opp),
                    bestAfter.kingSquare(for: opp).rank == backRank,
+                   appliedBest.move.to.rank == backRank,
                    (appliedBest.piece.type == .rook || appliedBest.piece.type == .queen) {
                     return "Back-Rank"
                 }
@@ -365,13 +366,13 @@ public enum MoveClassifier {
             }
         }
 
-        // 3. Check if any other mover piece (non-pawn) was left completely undefended & attacked
+        // 3. Check if any other mover piece (non-pawn) was left en prise via legal SEE (ignores pinned fake attackers)
         for idx in 0..<64 {
             let sq = Square(unchecked: idx)
             if let p = afterBoard.squares[idx],
                p.color == moverColor,
                p.type != .pawn, p.type != .king,
-               afterBoard.isSquareAttacked(sq, by: opp),
+               ChessMath.legalCaptureGainOnSquare(board: afterBoard, square: sq, maxDepth: 6) > 0,
                !afterBoard.isSquareAttacked(sq, by: moverColor) {
                 return "Hanging Piece"
             }

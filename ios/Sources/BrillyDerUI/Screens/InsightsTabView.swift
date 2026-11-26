@@ -64,7 +64,7 @@ public struct InsightsTabView: View {
                             Text(store.copy(cosmic: "No Telemetry Yet", classic: "No Analytics Yet"))
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
-                            Text("Sync your games and run Batch Analyze in the Games tab to unlock Accuracy Rings, Clock Leaks, Tilt Guard, Missed Motifs, and Endgame Weaknesses.")
+                            Text("Analyze any game (including built-in showcase games) in the Games tab to unlock Accuracy Rings, Clock Leaks, Tilt Guard, Missed Motifs, and Endgame Weaknesses.")
                                 .font(.subheadline)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                 .multilineTextAlignment(.center)
@@ -109,7 +109,7 @@ public struct InsightsTabView: View {
                             .frame(width: 96, height: 96)
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("\(snap.analyzedCount) Analyzed Games")
+                                Text("\(snap.analyzedCount) Analyzed Game\(snap.analyzedCount == 1 ? "" : "s")")
                                     .font(.headline)
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                                 HStack(spacing: 10) {
@@ -229,14 +229,26 @@ public struct InsightsTabView: View {
                                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                         }
                                         Spacer()
-                                        Button("Lab") {
-                                            store.openEndgameLab(category: item.category)
+                                        Button {
+                                            if store.hasProAccess {
+                                                store.openEndgameLab(category: item.category)
+                                            } else {
+                                                store.openProPaywall(feature: "Syzygy Endgame Lab")
+                                            }
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Text("Lab")
+                                                if !store.hasProAccess {
+                                                    Image(systemName: "lock.fill")
+                                                        .font(.system(size: 9, weight: .bold))
+                                                }
+                                            }
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                                         }
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(BrillyPalette.inkPrimary)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
                                         .buttonStyle(.plain)
                                     }
                                 }

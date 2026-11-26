@@ -553,6 +553,7 @@ public struct MistakeDeckPanel: View {
                         }
                         solved = true
                         message = "Spot on! \(p.bestMoveSan) fixes your \(p.playedSan) blunder."
+                        store.recordTrainingActivity()
                         store.triggerHaptic(.success)
                     } else {
                         message = "Try another candidate — you played \(p.playedSan) in the game."

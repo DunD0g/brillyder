@@ -149,13 +149,13 @@ struct PrincipalVariation {
 struct MoveList : StaticVector<ScoredMove, MaxMoveCount> {
 
 	inline void pushUnscored(const Move& move) {
-		assert(count < MaxMoveCount);
+		if (count >= MaxMoveCount) return;
 		items[count] = { move, 0 };
 		count += 1;
 	}
 
 	inline void pushScored(const Move& move, const int score) {
-		assert(count < MaxMoveCount);
+		if (count >= MaxMoveCount) return;
 		items[count] = { move, score };
 		count += 1;
 	}

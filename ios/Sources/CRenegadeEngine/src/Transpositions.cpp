@@ -1,7 +1,7 @@
 #include "Transpositions.h"
 
 Transpositions::Transpositions() {
-	SetSize(1, 1); // set an initial size, it will be resized before using
+	// Table is allocated lazily via SetSize() during engine initialization
 }
 
 Transpositions::~Transpositions() {
@@ -95,7 +95,7 @@ void Transpositions::Prefetch(const uint64_t hash) const {
 #endif
 }
 
-void Transpositions::AllocateTable(const uint64_t clusterCount) {
+bool Transpositions::AllocateTable(const uint64_t clusterCount) {
 	const uint64_t requestedBytes = clusterCount * sizeof(TranspositionCluster);
 
 	#if defined(_MSC_VER) || defined(_WIN32)
@@ -115,14 +115,15 @@ void Transpositions::AllocateTable(const uint64_t clusterCount) {
 		Table = static_cast<TranspositionCluster*>(std::aligned_alloc(64, requestedBytes));
 	#endif
 
-	// Check if successful
+	// Check if successful (never terminate on iOS memory pressure; let caller fall back cleanly)
 	if (Table == nullptr) {
-		cout << "Error: failed to allocate memory for the transposition table" << endl;
-		std::terminate();
+		TableSize = 0;
+		return false;
 	}
 
 	// Set cluster count
 	TableSize = clusterCount;
+	return true;
 }
 
 void Transpositions::FreeTable() {
@@ -131,6 +132,7 @@ void Transpositions::FreeTable() {
 #else
 	if (Table != nullptr) std::free(Table);
 #endif
+	Table = nullptr;
 	TableSize = 0;
 }
 
@@ -138,19 +140,25 @@ void Transpositions::IncreaseAge() {
 	if (CurrentGeneration < 16000) CurrentGeneration += 1;
 }
 
-void Transpositions::SetSize(const int megabytes, const int threadCount) {
+bool Transpositions::SetSize(const int megabytes, const int threadCount) {
 	assert(megabytes > 0);
 	const uint64_t clusterCount = static_cast<uint64_t>(megabytes) * 1024 * 1024 / sizeof(TranspositionCluster);
 	if (TableSize != clusterCount) {
 		FreeTable();
-		AllocateTable(clusterCount);
+		if (!AllocateTable(clusterCount)) return false;
 	}
 	Clear(threadCount);
+	return true;
 }
 
 // Clear entries, potentially in parallel, with as many threads as set to do search
-// This speeds up initialization significantly for large hash sizes
 void Transpositions::Clear(const int threadCount) {
+	if (Table == nullptr || TableSize == 0) return;
+	if (threadCount <= 1) {
+		std::memset(Table, 0, TableSize * sizeof(TranspositionCluster));
+		CurrentGeneration = 0;
+		return;
+	}
 	const uint64_t chunkSize = (TableSize + threadCount - 1) / threadCount; // ceil division
 	std::vector<std::thread> threads;
 

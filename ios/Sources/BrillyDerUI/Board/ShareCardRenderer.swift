@@ -1190,6 +1190,7 @@ public struct BrillyShareCardSheet: View {
                                             .foregroundStyle(BrillyPalette.inkSecondary)
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Clear caption")
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -1281,10 +1282,7 @@ public struct BrillyShareCardSheet: View {
                 return
             }
             do {
-                try await PHPhotoLibrary.shared().performChanges {
-                    let req = PHAssetCreationRequest.forAsset()
-                    req.addResource(with: .photo, data: pngData, options: nil)
-                }
+                try await Self.persistPNGToPhotoLibrary(pngData)
                 saveFailed = false
                 saveNotice = "Saved high-res card to Photos!"
                 store.notePositiveMilestoneForReview(.shareCardExported)
@@ -1292,6 +1290,13 @@ public struct BrillyShareCardSheet: View {
                 saveFailed = true
                 saveNotice = "Could not save photo — try Share Card instead."
             }
+        }
+    }
+
+    private nonisolated static func persistPNGToPhotoLibrary(_ pngData: Data) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            let req = PHAssetCreationRequest.forAsset()
+            req.addResource(with: .photo, data: pngData, options: nil)
         }
     }
     #endif

@@ -25,7 +25,14 @@ public enum GameAnalyzer {
         let parsed = try PGNParser.parse(game.pgn)
         let totalPlies = parsed.moves.count
         let isStandardStart = (parsed.startFen == ChessBoard.initialFEN)
-        let tcInc = PGNParser.parseTimeControl(parsed.headers["TimeControl"])?.incrementSeconds ?? 0.0
+        let parsedTC = PGNParser.parseTimeControl(parsed.headers["TimeControl"])
+        let tcInc = parsedTC?.incrementSeconds ?? 0.0
+        let lowClockLimit: Double = {
+            if let initSec = parsedTC?.initialSeconds, initSec > 0 {
+                return min(60.0, max(10.0, initSec * 0.25))
+            }
+            return game.speed == "bullet" ? 15.0 : 60.0
+        }()
         onProgress?(0, max(1, totalPlies))
         await engine.clearHash()
 
@@ -240,14 +247,20 @@ public enum GameAnalyzer {
             var clockTag: String? = nil
             if let clk = pgnMove.clockSeconds {
                 if let prev = prevClockByColor[mover] {
-                    timeSpent = max(0, prev + tcInc - clk)
+                    let rawDelta = prev + tcInc - clk
+                    // Ignore negative deltas from opponent adding +15s on Lichess
+                    if rawDelta >= -1.0 {
+                        timeSpent = max(0, rawDelta)
+                    }
                 }
-                if clk < 60.0 {
+                if clk < lowClockLimit {
                     clockTag = "time-trouble"
                 } else if let spent = timeSpent, spent < 5.0 && clk > 180.0 {
                     clockTag = "impulse"
                 }
                 prevClockByColor[mover] = clk
+            } else {
+                prevClockByColor[mover] = nil
             }
 
             let phase = MoveClassifier.detectPhase(plyIndex: idx, board: afterBoard, isStandardStart: isStandardStart)
@@ -317,12 +330,12 @@ public enum GameAnalyzer {
 
         for ag in analyzedGames where !ag.game.isCustomFenGame && !ag.plies.isEmpty {
             let userColor = ag.game.resolvedUserColor(handles: handles)
-            let opponent = userColor == .black ? ag.game.white.name : ag.game.black.name
 
             for p in ag.plies {
                 if let userColor, p.color != userColor { continue }
                 guard p.classification == .blunder || p.classification == .mistake else { continue }
                 guard !p.bestMoveUci.isEmpty, p.bestMoveUci != p.uci else { continue }
+                let oppForPly = p.color == .black ? ag.game.white.name : ag.game.black.name
                 puzzles.append(MistakePuzzle(
                     id: "\(ag.id)::ply::\(p.ply)",
                     gameId: ag.id,
@@ -339,7 +352,7 @@ public enum GameAnalyzer {
                     phase: p.phase,
                     tacticalTag: p.coaching.tacticalTag,
                     headline: p.coaching.headline,
-                    opponentName: opponent,
+                    opponentName: oppForPly,
                     openingName: ag.openingLineDetected ?? ag.game.openingName,
                     playedAt: ag.game.createdAt
                 ))
@@ -355,7 +368,13 @@ public enum GameAnalyzer {
         analyzedGames: [AnalyzedGame],
         handles: [String] = []
     ) -> InsightsSnapshot {
-        let validGames = analyzedGames.filter { !$0.game.isCustomFenGame && !$0.plies.isEmpty }
+        // Strictly match VaultService & AdvancedInsightsService: only count games where the user's side is known
+        // so GM broadcasts / imported third-party PGNs never skew personal !! counts, W/D/L, or Avg Accuracy.
+        let validGames: [(ag: AnalyzedGame, color: PieceColor)] = analyzedGames.compactMap { ag in
+            guard !ag.game.isCustomFenGame && !ag.plies.isEmpty else { return nil }
+            guard let color = ag.game.resolvedUserColor(handles: handles) else { return nil }
+            return (ag, color)
+        }
         guard !validGames.isEmpty else {
             return InsightsSnapshot(
                 analyzedCount: 0,
@@ -383,8 +402,7 @@ public enum GameAnalyzer {
         var blunders = 0
         var openingMap: [String: (games: Int, wins: Int, accSum: Double)] = [:]
 
-        for ag in validGames {
-            let color = ag.game.resolvedUserColor(handles: handles) ?? .white
+        for (ag, color) in validGames {
             let summary = color == .white ? ag.whiteSummary : ag.blackSummary
             accSum += summary.accuracy
             brilliants += summary.count(for: .brilliant)
@@ -424,7 +442,11 @@ public enum GameAnalyzer {
                 avgAccuracy: (data.accSum / Double(max(1, data.games)) * 10.0).rounded() / 10.0
             )
         }
-        .sorted { $0.games > $1.games }
+        .sorted { lhs, rhs in
+            if lhs.games != rhs.games { return lhs.games > rhs.games }
+            if lhs.avgAccuracy != rhs.avgAccuracy { return lhs.avgAccuracy > rhs.avgAccuracy }
+            return lhs.name < rhs.name
+        }
         .prefix(5)
 
         return InsightsSnapshot(
@@ -467,12 +489,17 @@ public enum GameAnalyzer {
         else if game.resultString == "0-1" { resScore = color == .black ? 1.0 : 0.0 }
         else { resScore = 0.5 }
 
-        let elo = ChessMath.estimateGameElo(
-            playerRating: color == .white ? game.white.rating : game.black.rating,
-            opponentRating: color == .white ? game.black.rating : game.white.rating,
-            accuracy: acc,
-            resultScore: resScore
-        )
+        let elo: Int
+        if sidePlies.isEmpty {
+            elo = (color == .white ? game.white.rating : game.black.rating) ?? 1500
+        } else {
+            elo = ChessMath.estimateGameElo(
+                playerRating: color == .white ? game.white.rating : game.black.rating,
+                opponentRating: color == .white ? game.black.rating : game.white.rating,
+                accuracy: acc,
+                resultScore: resScore
+            )
+        }
         return PlayerAnalysisSummary(accuracy: acc, estimatedElo: elo, counts: counts, avgWinLoss: avgLoss)
     }
 }

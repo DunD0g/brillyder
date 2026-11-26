@@ -11,7 +11,10 @@ Search::Search() {
 			LateMoveReductionTable[i][j] = static_cast<int>(lmrMultiplier * std::log(std::max(i, 1)) * std::log(std::max(j, 1)) + lmrBase);
 		}
 	}
-	StartThreads(1);
+	// Initialize single ThreadData slot without spawning an idle std::thread
+	// (SearchSinglethreaded runs directly on the caller's dedicated GCD queue).
+	ThreadData& t = Threads.emplace_back();
+	t.threadId = 0;
 }
 
 void ThreadData::ResetStatistics() {

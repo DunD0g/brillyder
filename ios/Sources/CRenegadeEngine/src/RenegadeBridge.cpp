@@ -15,10 +15,15 @@
 
 namespace {
 std::mutex gEngineMutex;
-std::unique_ptr<Search> gSearch;
+Search* gSearch = nullptr;
 std::atomic<Search*> gSearchAtomic{nullptr};
-std::atomic<bool> gExternalAbort{false};
+std::atomic<uint64_t> gActiveRequestId{0};
+std::atomic<uint64_t> gMaxAbortedRequestId{0};
 bool gInitialized = false;
+
+bool isRequestAborted(uint64_t requestId) {
+    return requestId != 0 && gMaxAbortedRequestId.load(std::memory_order_acquire) >= requestId;
+}
 }
 
 bool renegade_init(const char* network_path, int32_t hash_mb) {
@@ -34,10 +39,15 @@ bool renegade_init(const char* network_path, int32_t hash_mb) {
     Settings::Threads = 1;
     Settings::Hash = std::clamp<int>(hash_mb, 4, 64);
 
-    gSearch = std::make_unique<Search>();
-    gSearch->TranspositionTable.SetSize(Settings::Hash, 1);
-    gSearch->ResetState(true);
-    gSearchAtomic.store(gSearch.get(), std::memory_order_release);
+    // Intentionally immortal singleton so GCD searchQueue never hits static-teardown UAF at app exit
+    Search* s = new Search();
+    if (!s->TranspositionTable.SetSize(Settings::Hash, 1)) {
+        delete s;
+        return false;
+    }
+    s->ResetState(false);
+    gSearch = s;
+    gSearchAtomic.store(s, std::memory_order_release);
     gInitialized = true;
     return true;
 }
@@ -49,10 +59,13 @@ void renegade_clear_hash(void) {
     }
 }
 
-void renegade_abort(void) {
-    gExternalAbort.store(true, std::memory_order_release);
+void renegade_abort_request(uint64_t request_id) {
+    if (request_id == 0) return;
+    uint64_t prev = gMaxAbortedRequestId.load(std::memory_order_relaxed);
+    while (prev < request_id && !gMaxAbortedRequestId.compare_exchange_weak(prev, request_id, std::memory_order_release, std::memory_order_relaxed)) {}
+
     Search* s = gSearchAtomic.load(std::memory_order_acquire);
-    if (s) {
+    if (s && gActiveRequestId.load(std::memory_order_acquire) == request_id) {
         s->Aborting.store(true, std::memory_order_relaxed);
     }
 }
@@ -62,15 +75,23 @@ bool renegade_analyze(
     int32_t max_depth,
     int32_t multi_pv,
     int32_t max_time_ms,
+    uint64_t request_id,
     RenegadeAnalysisResult* out_result
 ) {
     if (!fen || !out_result) return false;
     std::memset(out_result, 0, sizeof(RenegadeAnalysisResult));
+    if (isRequestAborted(request_id)) return false;
 
     std::lock_guard<std::mutex> lock(gEngineMutex);
     if (!gInitialized || !gSearch) return false;
+    if (isRequestAborted(request_id)) return false;
 
     Position pos((std::string(fen)));
+    // Renegade's NNUE output buckets are trained for standard <=32-piece chess positions;
+    // reject abnormal >32-piece custom editor positions so caller falls back cleanly.
+    if (Popcount(pos.GetOccupancy()) > 32) {
+        return false;
+    }
     out_result->turn_is_white = (pos.Turn() == Side::White);
 
     MoveList legalMoves{};
@@ -86,7 +107,7 @@ bool renegade_analyze(
     const int clampedPV = std::clamp<int>(multi_pv, 1, std::min<int>(3, static_cast<int>(legalMoves.size())));
     const int clampedDepth = std::clamp<int>(max_depth, 1, 30);
 
-    // Split time budget smoothly across MultiPV lines (65% for PV1, remaining split across PV2..3)
+    // Split time budget smoothly across MultiPV lines (62% for PV1, remaining split across PV2..3)
     auto budgetForLine = [&](int pvIdx) -> int {
         if (max_time_ms <= 0) return 0;
         if (clampedPV == 1) return max_time_ms;
@@ -96,7 +117,14 @@ bool renegade_analyze(
     };
 
     gSearch->RootExcludedMoves.clear();
-    gExternalAbort.store(false, std::memory_order_release);
+    gActiveRequestId.store(request_id, std::memory_order_release);
+
+    struct ActiveRequestGuard {
+        ~ActiveRequestGuard() {
+            gActiveRequestId.store(0, std::memory_order_release);
+            if (gSearch) gSearch->RootExcludedMoves.clear();
+        }
+    } activeGuard;
 
     struct RawLine {
         int rawScore;
@@ -110,8 +138,7 @@ bool renegade_analyze(
     foundLines.reserve(clampedPV);
 
     for (int i = 0; i < clampedPV; ++i) {
-        if (gExternalAbort.load(std::memory_order_acquire)) {
-            gSearch->RootExcludedMoves.clear();
+        if (isRequestAborted(request_id)) {
             return false;
         }
 
@@ -120,8 +147,7 @@ bool renegade_analyze(
         params.movetime = budgetForLine(i);
 
         Results res = gSearch->SearchSinglethreaded(pos, params);
-        if (gExternalAbort.load(std::memory_order_acquire)) {
-            gSearch->RootExcludedMoves.clear();
+        if (isRequestAborted(request_id)) {
             return false;
         }
 

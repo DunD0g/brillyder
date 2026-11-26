@@ -50,8 +50,10 @@ public struct PositionEditorSheet: View {
         var bKing: Square?
         var wCount = 0
         var bCount = 0
+        var totalPieces = 0
         for idx in 0..<64 {
             guard let p = squares[idx] else { continue }
+            totalPieces += 1
             let sq = Square(unchecked: idx)
             if p.type == .pawn && (sq.rank == 0 || sq.rank == 7) {
                 return "Pawns cannot sit on rank 1 or rank 8."
@@ -61,6 +63,7 @@ public struct PositionEditorSheet: View {
                 else { bKing = sq; bCount += 1 }
             }
         }
+        if totalPieces > 32 { return "Standard chess positions allow at most 32 pieces on the board." }
         if wCount != 1 || bCount != 1 { return "Place exactly 1 White king and 1 Black king." }
         if let wk = wKing, let bk = bKing, abs(wk.file - bk.file) <= 1 && abs(wk.rank - bk.rank) <= 1 {
             return "Kings cannot stand on adjacent squares."
@@ -119,6 +122,7 @@ public struct PositionEditorSheet: View {
                             .frame(maxWidth: .infinity)
                         }
                         .aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: 520)
 
                         // Compact 6-wide Piece Palette + Dedicated Eraser Toggle (fits 375pt iPhone SE cleanly)
                         VStack(spacing: 8) {

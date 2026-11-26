@@ -125,8 +125,9 @@ int16_t NeuralEvaluate(const Position& position, const AccumulatorRepresentation
 	// Scale according to material
 	const int gamePhase = position.GetGamePhase();
 	output = output * (52 + std::min(24, gamePhase)) / 64;
-	// Scale according to the halfmove clock
-	output = output * (256 - position.CurrentState().HalfmoveClock) / 256;
+	// Scale according to the halfmove clock (clamped to prevent sign inversion on abnormal custom FENs)
+	const int clampedHalfmove = std::clamp<int>(position.CurrentState().HalfmoveClock, 0, 100);
+	output = output * (256 - clampedHalfmove) / 256;
 #endif
 
 	return std::clamp(output, -MateThreshold + 1, MateThreshold - 1);
@@ -286,9 +287,9 @@ void EvaluationState::UpdateFromBucketCache(const Position& pos, const int accIn
 		featureBits[11] = pos.CurrentState().WhiteKingBits;
 	}
 
-	// Compare it with the cached entry
-	StaticVector<int, 32> featuresToAdd{};
-	StaticVector<int, 32> featuresToSub{};
+	// Compare it with the cached entry (64-element capacity handles any custom FEN safely)
+	StaticVector<int, 64> featuresToAdd{};
+	StaticVector<int, 64> featuresToSub{};
 
 	for (int i = 0; i < 12; i++) {
 		uint64_t toBeAdded = featureBits[i] & ~cache.featureBits[i];

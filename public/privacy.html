@@ -38,12 +38,14 @@
     <p>BrillyDer only contacts external services when you explicitly use optional online lookup features:</p>
     <ul>
       <li><strong>Lichess (<code>lichess.org</code>)</strong> and <strong>Chess.com (<code>api.chess.com</code>)</strong>: When you tap Sync or Scout with a public chess username, your device connects directly over HTTPS to fetch publicly available game PGNs.</li>
+      <li><strong>Lichess Cloud Eval (<code>lichess.org/api/cloud-eval</code>)</strong>: When you explicitly select the optional Cloud SF review mode, your device sends board positions (FEN) directly over HTTPS to Lichess's free public cloud evaluation cache, falling back to the on-device NNUE engine offline or on cache misses.</li>
       <li><strong>Lichess Syzygy Tablebase (<code>tablebase.lichess.ovh</code>)</strong>: When analyzing or drilling endgames with 7 or fewer pieces on the board, your device may query the public tablebase API with the board position (FEN) for exact win/draw/loss lookup.</li>
     </ul>
     <p>No developer proxy sits between your device and these public chess APIs.</p>
 
-    <h2>3. Device Permissions</h2>
+    <h2>3. In-App Purchases &amp; Device Permissions</h2>
     <ul>
+      <li><strong>Apple App Store (StoreKit 2):</strong> Optional Brilly/Der Pro subscriptions and Lifetime unlocks are billed and verified exclusively by Apple. BrillyDer never receives your payment details or Apple Account credentials.</li>
       <li><strong>Photo Library (Add Photos Only):</strong> Requested solely if you tap <em>Save Photo</em> to export a move highlight Share Card to your Camera Roll. BrillyDer never reads your existing photo library.</li>
     </ul>
 

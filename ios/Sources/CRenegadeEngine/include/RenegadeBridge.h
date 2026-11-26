@@ -32,8 +32,8 @@ bool renegade_init(const char* network_path, int32_t hash_mb);
 /// Clears the transposition table and search histories.
 void renegade_clear_hash(void);
 
-/// Signals any active search to abort promptly.
-void renegade_abort(void);
+/// Signals the active search matching `request_id` (or all requests up to `request_id`) to abort promptly.
+void renegade_abort_request(uint64_t request_id);
 
 /// Runs a synchronous MultiPV (1..3) search on `fen` with depth & movetime limits.
 /// Returns true if the position was parsed and analyzed.
@@ -42,6 +42,7 @@ bool renegade_analyze(
     int32_t max_depth,
     int32_t multi_pv,
     int32_t max_time_ms,
+    uint64_t request_id,
     RenegadeAnalysisResult* out_result
 );
 

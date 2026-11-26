@@ -52,17 +52,17 @@ public:
 	bool Probe(const uint64_t hash, TranspositionEntry& entry, const int level) const;
 	void Prefetch(const uint64_t hash) const;
 	void IncreaseAge();
-	void SetSize(const int megabytes, const int threadCount);
+	bool SetSize(const int megabytes, const int threadCount);
 	void Clear(const int threadCount);
 	int GetHashfull() const;
 
 private:
 	TranspositionCluster* Table = nullptr;
 	uint64_t TableSize = 0;
-	uint16_t CurrentGeneration;
+	uint16_t CurrentGeneration = 0;
 
 	// Handles direct memory allocation and freeing, required for multiplatform and performance reasons:
-	void AllocateTable(const uint64_t clusterCount);
+	bool AllocateTable(const uint64_t clusterCount);
 	void FreeTable();
 
 	inline uint64_t GetClusterIndex(const uint64_t hash) const {

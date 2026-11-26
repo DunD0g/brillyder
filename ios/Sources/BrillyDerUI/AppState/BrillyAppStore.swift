@@ -134,8 +134,9 @@ public final class BrillyAppStore {
 
     public func canAnalyzeGame(_ gameId: String) -> Bool {
         let isCached = analyzedGames.contains(where: { $0.id == gameId })
+        let isSample = recentGames.first(where: { $0.id == gameId })?.source == .sample
         return BrillyEntitlementPolicy.canStartNewAnalysis(
-            isAlreadyCached: isCached,
+            isAlreadyCached: isCached || isSample,
             usedToday: freeAnalysesUsedToday,
             hasProAccess: hasProAccess
         )
@@ -400,6 +401,7 @@ public final class BrillyAppStore {
     private let vault = LocalVaultStore()
 
     @ObservationIgnored private var isHydrated: Bool = false
+    @ObservationIgnored private var hydrationTask: Task<Void, Never>? = nil
     @ObservationIgnored private var hasPendingSave: Bool = false
     @ObservationIgnored private var saveDirty: Bool = false
     @ObservationIgnored private var saveLoopTask: Task<Void, Never>? = nil
@@ -627,8 +629,9 @@ public final class BrillyAppStore {
 
         self.starterCourses = (try? CourseRepository.loadStarterCourses()) ?? []
         self.recentGames = LichessClient.sampleGames()
+        self.launchOverlayStatusText = self.vibeMode == .cosmic ? "Warming up cockpit…" : "Loading BrillyDer…"
 
-        Task {
+        self.hydrationTask = Task {
             await hydrateFromDisk()
         }
     }
@@ -806,27 +809,24 @@ public final class BrillyAppStore {
             hasPendingSave = false
             persistToDisk()
         }
+        cleanupOrphanedLiveActivitiesIfIdle()
 
-        // Launch transition & optional Pro Auto-Sync on cold open
+        // Never block the cold-launch overlay on slow/captive networks: dismiss promptly and sync in background.
         let hasSavedHandle = !lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-        if hasCompletedOnboarding && effectiveAutoSyncOnLaunch && hasSavedHandle {
-            self.launchOverlayStatusText = copy(cosmic: "Syncing latest trajectory…", classic: "Syncing latest game…")
+        if hasCompletedOnboarding && selectedTab == .analyze && !hasPinnedManualGameSelection {
+            autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
+        }
+        if isShowingLaunchOverlay {
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.runQuietAutoSyncIfEligible(isColdLaunch: true)
-                self.dismissLaunchOverlay()
+                try? await Task.sleep(for: .milliseconds(280))
+                self?.dismissLaunchOverlay()
             }
-        } else {
-            if hasCompletedOnboarding && selectedTab == .analyze && !hasPinnedManualGameSelection {
-                autoLoadLatestGameIfAppropriate(switchToAnalyze: false)
-            }
-            if isShowingLaunchOverlay {
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .milliseconds(320))
-                    self?.dismissLaunchOverlay()
-                }
+        }
+        if hasCompletedOnboarding && effectiveAutoSyncOnLaunch && hasSavedHandle {
+            Task { @MainActor [weak self] in
+                await self?.runQuietAutoSyncIfEligible(isColdLaunch: true)
             }
         }
     }
@@ -904,12 +904,24 @@ public final class BrillyAppStore {
         guard saveLoopTask == nil else { return }
         saveLoopTask = Task {
             while saveDirty {
+                // Coalesce burst writes (e.g. batch analysis games / FSRS cards) to avoid JSON RAM spikes
+                try? await Task.sleep(for: .milliseconds(900))
+                if Task.isCancelled { break }
                 saveDirty = false
                 let snap = currentSnapshot()
                 try? await vault.save(snap)
             }
             saveLoopTask = nil
         }
+    }
+
+    public func flushToDiskAndWait() async {
+        guard isHydrated else { return }
+        saveLoopTask?.cancel()
+        saveLoopTask = nil
+        saveDirty = false
+        let snap = currentSnapshot()
+        try? await vault.save(snap)
     }
 
     public func flushToDiskNow() {
@@ -1331,6 +1343,7 @@ public final class BrillyAppStore {
         }
         activeSandboxFen = nil
         let wasAlreadyCached = analyzedGames.contains(where: { $0.id == game.id })
+        let isSampleGame = game.source == .sample
         if !forceReanalyze, let cached = analyzedGames.first(where: { $0.id == game.id }) {
             activeAnalyzedGame = cached
             pendingAnalyzePly = jumpToPly
@@ -1340,7 +1353,7 @@ public final class BrillyAppStore {
             return
         }
 
-        if !wasAlreadyCached && !canAnalyzeGame(game.id) {
+        if !wasAlreadyCached && !isSampleGame && !canAnalyzeGame(game.id) {
             openProPaywall(feature: "Unlimited Game Analysis (2/day Free limit reached)")
             return
         }
@@ -1385,7 +1398,7 @@ public final class BrillyAppStore {
                     self.pendingAnalyzePly = jumpToPly
                     self.isAnalyzing = false
                     self.analysisProgress = 1.0
-                    if !wasAlreadyCached {
+                    if !wasAlreadyCached && !isSampleGame {
                         self.recordFreeAnalysisConsumed()
                     }
                     self.triggerHaptic(.success)
@@ -1622,32 +1635,104 @@ public final class BrillyAppStore {
         }
     }
 
+    #if canImport(BackgroundTasks) && os(iOS)
+    /// Atomic once-guard guaranteeing every `BGTask` calls `setTaskCompleted(success:)` at least once and at most once.
+    private final class BGTaskOnceBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private let task: BGTask
+        private var finished: Bool = false
+
+        init(_ task: BGTask) {
+            self.task = task
+        }
+
+        func complete(success: Bool) {
+            lock.lock()
+            let shouldComplete = !finished
+            finished = true
+            lock.unlock()
+            if shouldComplete {
+                task.setTaskCompleted(success: success)
+            }
+        }
+
+        @available(iOS 26.0, *)
+        var asContinued: BGContinuedProcessingTask? {
+            task as? BGContinuedProcessingTask
+        }
+    }
+
+    /// `nonisolated static` wrapper so Swift 6 NEVER injects `@MainActor` `swift_task_isCurrentExecutor`
+    /// assertions into `BGTaskScheduler.register` launchHandler or `task.expirationHandler` (both execute on background queues).
+    private nonisolated static func registerNonIsolatedBGTask(
+        identifier: String,
+        onLaunch: @escaping @Sendable (BGTaskOnceBox) -> Void,
+        onExpire: @escaping @Sendable (BGTaskOnceBox) -> Void
+    ) -> Bool {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+            let box = BGTaskOnceBox(task)
+            // Assign expirationHandler SYNCHRONOUSLY inside launchHandler before returning (BGTask.h requirement)
+            task.expirationHandler = {
+                onExpire(box)
+            }
+            onLaunch(box)
+        }
+    }
+
+    private nonisolated static func submitBGTaskRequestOffMain(_ request: BGTaskRequest) {
+        nonisolated(unsafe) let req = request
+        Task.detached(priority: .utility) {
+            try? BGTaskScheduler.shared.submit(req)
+        }
+    }
+    #endif
+
     @ObservationIgnored private var pendingBatchTargets: [GameRecord] = []
     @ObservationIgnored private var pendingBatchPreset: AnalysisDepthPreset? = nil
-    @ObservationIgnored private var hasRegisteredBGTasks: Bool = false
+    @ObservationIgnored private static var hasRegisteredBGTasksProcessWide: Bool = false
     @ObservationIgnored private var registeredProcessingTaskID: String? = nil
     @ObservationIgnored private var registeredContinuedTaskID: String? = nil
-    @ObservationIgnored private var activeContinuedTask: AnyObject? = nil
-    @ObservationIgnored private var activeBGProcessingTask: AnyObject? = nil
+    @ObservationIgnored private var isPausingForExpiry: Bool = false
+    #if canImport(BackgroundTasks) && os(iOS)
+    @ObservationIgnored private var activeContinuedBox: BGTaskOnceBox? = nil
+    @ObservationIgnored private var activeBGProcessingBox: BGTaskOnceBox? = nil
+    #endif
     #if canImport(UIKit) && os(iOS)
     @ObservationIgnored private var batchBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     #endif
 
     private var hasActiveExtendedBackgroundTask: Bool {
-        activeContinuedTask != nil || activeBGProcessingTask != nil
+        #if canImport(BackgroundTasks) && os(iOS)
+        return activeContinuedBox != nil || activeBGProcessingBox != nil
+        #else
+        return false
+        #endif
     }
 
     private var permittedBGTaskIdentifiers: [String] {
         Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
     }
 
+    private static var pendingBatchFileURL: URL? {
+        guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let folder = dir.appendingPathComponent("BrillyDer", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent("pending_batch_targets.json")
+    }
+
     private func persistPendingBatchQueue() {
-        let ids = pendingBatchTargets.map(\.id)
+        let targets = pendingBatchTargets
+        let ids = targets.map(\.id)
         if ids.isEmpty {
             UserDefaults.standard.removeObject(forKey: "brilly_pending_batch_ids")
             UserDefaults.standard.removeObject(forKey: "brilly_pending_batch_preset")
             UserDefaults.standard.removeObject(forKey: "brilly_pending_batch_total")
             UserDefaults.standard.removeObject(forKey: "brilly_pending_batch_done")
+            if let url = Self.pendingBatchFileURL {
+                try? FileManager.default.removeItem(at: url)
+            }
         } else {
             UserDefaults.standard.set(ids, forKey: "brilly_pending_batch_ids")
             if let preset = pendingBatchPreset {
@@ -1655,19 +1740,34 @@ public final class BrillyAppStore {
             }
             UserDefaults.standard.set(batchTotalGames, forKey: "brilly_pending_batch_total")
             UserDefaults.standard.set(batchCompletedGames, forKey: "brilly_pending_batch_done")
+            if let url = Self.pendingBatchFileURL,
+               let data = try? JSONEncoder().encode(targets) {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 
     private func restorePendingBatchQueueIfNeeded() {
         guard pendingBatchTargets.isEmpty else { return }
-        guard let savedIds = UserDefaults.standard.stringArray(forKey: "brilly_pending_batch_ids"),
-              !savedIds.isEmpty else { return }
         let analyzedIds = Set(analyzedGames.map(\.id))
-        let gamesById = Dictionary(uniqueKeysWithValues: recentGames.map { ($0.id, $0) })
-        let restored = savedIds.compactMap { id -> GameRecord? in
-            guard !analyzedIds.contains(id) else { return nil }
-            return gamesById[id]
+
+        // Prefer full persisted GameRecord array (works even on cold BGProcessingTask wakeups!)
+        var restored: [GameRecord] = []
+        if let url = Self.pendingBatchFileURL,
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([GameRecord].self, from: data) {
+            restored = decoded.filter { !analyzedIds.contains($0.id) }
         }
+        if restored.isEmpty,
+           let savedIds = UserDefaults.standard.stringArray(forKey: "brilly_pending_batch_ids"),
+           !savedIds.isEmpty {
+            let gamesById = Dictionary(recentGames.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            restored = savedIds.compactMap { id -> GameRecord? in
+                guard !analyzedIds.contains(id) else { return nil }
+                return gamesById[id]
+            }
+        }
+
         guard !restored.isEmpty else {
             persistPendingBatchQueue()
             return
@@ -1680,29 +1780,36 @@ public final class BrillyAppStore {
     }
 
     /// Registers the iOS 18+ `BGProcessingTask` and iOS 26+ `BGContinuedProcessingTask` handlers
-    /// strictly once during app launch (before `applicationDidFinishLaunching` completes) so button taps
-    /// never invoke `BGTaskScheduler.register` after launch.
+    /// strictly once per process during app launch using `nonisolated` Swift-6-safe callbacks.
     public func registerBackgroundBatchTasks() {
         #if canImport(BackgroundTasks) && os(iOS)
-        guard !hasRegisteredBGTasks else { return }
-        hasRegisteredBGTasks = true
+        guard !Self.hasRegisteredBGTasksProcessWide else { return }
+        Self.hasRegisteredBGTasksProcessWide = true
 
         let permitted = permittedBGTaskIdentifiers
         if let processingId = permitted.first(where: { $0.hasSuffix(".batch-processing") }) {
-            let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: processingId, using: nil) { [weak self] task in
-                guard let processingTask = task as? BGProcessingTask else {
-                    task.setTaskCompleted(success: false)
-                    return
-                }
-                nonisolated(unsafe) let unsafeTask = processingTask
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        unsafeTask.setTaskCompleted(success: false)
-                        return
+            let ok = Self.registerNonIsolatedBGTask(
+                identifier: processingId,
+                onLaunch: { [weak self] box in
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            box.complete(success: false)
+                            return
+                        }
+                        await self.handleBackgroundProcessingWakeup(box)
                     }
-                    await self.handleBackgroundProcessingWakeup(unsafeTask)
+                },
+                onExpire: { [weak self] box in
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            box.complete(success: false)
+                            return
+                        }
+                        await self.pauseBatchForBackgroundExpiry()
+                        box.complete(success: false)
+                    }
                 }
-            }
+            )
             if ok {
                 registeredProcessingTaskID = processingId
             }
@@ -1712,31 +1819,40 @@ public final class BrillyAppStore {
            let bundleId = Bundle.main.bundleIdentifier,
            let wildcard = permitted.first(where: { $0.hasSuffix(".*") && $0.hasPrefix(bundleId + ".") }) {
             let concreteId = String(wildcard.dropLast(1)) + "batch"
-            let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: concreteId, using: nil) { [weak self] task in
-                guard let continuedTask = task as? BGContinuedProcessingTask else {
-                    task.setTaskCompleted(success: false)
-                    return
-                }
-                nonisolated(unsafe) let unsafeTask = continuedTask
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        unsafeTask.setTaskCompleted(success: false)
-                        return
-                    }
-                    self.activeContinuedTask = unsafeTask
-                    let totalUnits = Int64(max(1, self.batchTotalGames * 100))
-                    unsafeTask.progress.totalUnitCount = totalUnits
-                    unsafeTask.progress.completedUnitCount = Int64((self.batchProgress * Double(totalUnits)).rounded())
-                    unsafeTask.expirationHandler = { [weak self] in
-                        Task { @MainActor [weak self] in
-                            await self?.pauseBatchForBackgroundExpiry()
+            let ok = Self.registerNonIsolatedBGTask(
+                identifier: concreteId,
+                onLaunch: { [weak self] box in
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            box.complete(success: false)
+                            return
+                        }
+                        // Never overwrite an uncompleted previous task
+                        if let prev = self.activeContinuedBox {
+                            prev.complete(success: false)
+                        }
+                        self.activeContinuedBox = box
+                        if let continued = box.asContinued {
+                            let totalUnits = Int64(max(1, self.batchTotalGames * 100))
+                            continued.progress.totalUnitCount = totalUnits
+                            continued.progress.completedUnitCount = Int64((self.batchProgress * Double(totalUnits)).rounded())
+                        }
+                        if !self.isBatchAnalyzing && self.pendingBatchTargets.isEmpty {
+                            self.completeActiveExtendedBackgroundTasks(success: true)
                         }
                     }
-                    if !self.isBatchAnalyzing && self.pendingBatchTargets.isEmpty {
-                        self.completeActiveExtendedBackgroundTasks(success: true)
+                },
+                onExpire: { [weak self] box in
+                    Task { @MainActor [weak self] in
+                        guard let self else {
+                            box.complete(success: false)
+                            return
+                        }
+                        await self.pauseBatchForBackgroundExpiry()
+                        box.complete(success: false)
                     }
                 }
-            }
+            )
             if ok {
                 registeredContinuedTaskID = concreteId
             }
@@ -1745,12 +1861,14 @@ public final class BrillyAppStore {
     }
 
     #if canImport(BackgroundTasks) && os(iOS)
-    private func handleBackgroundProcessingWakeup(_ task: BGProcessingTask) async {
-        activeBGProcessingTask = task
-        task.expirationHandler = { [weak self] in
-            Task { @MainActor [weak self] in
-                await self?.pauseBatchForBackgroundExpiry()
-            }
+    private func handleBackgroundProcessingWakeup(_ box: BGTaskOnceBox) async {
+        if let prev = activeBGProcessingBox {
+            prev.complete(success: false)
+        }
+        activeBGProcessingBox = box
+        // Ensure disk vault is hydrated before inspecting analyzedGames / pending queue
+        if let h = hydrationTask {
+            await h.value
         }
         restorePendingBatchQueueIfNeeded()
         if pendingBatchTargets.isEmpty {
@@ -1761,17 +1879,21 @@ public final class BrillyAppStore {
         if let running = batchTask {
             await running.value
         }
-        completeActiveExtendedBackgroundTasks(success: pendingBatchTargets.isEmpty)
+        // If expirationHandler is mid-cleanup, let pauseBatchForBackgroundExpiry call setTaskCompleted after flushing disk
+        if !isPausingForExpiry {
+            await flushToDiskAndWait()
+            completeActiveExtendedBackgroundTasks(success: pendingBatchTargets.isEmpty)
+        }
     }
     #endif
 
-    /// On iOS 26+, submits a pre-registered `BGContinuedProcessingTaskRequest` so batch analysis
-    /// keeps running for minutes in the background without ever calling `register` after launch.
+    /// On iOS 26+, submits a pre-registered `BGContinuedProcessingTaskRequest` off the main thread
+    /// so batch analysis keeps running for minutes in the background.
     private func beginContinuedProcessingTaskIfAvailable(preset: AnalysisDepthPreset, totalGames: Int) {
         #if canImport(BackgroundTasks) && os(iOS)
         if #available(iOS 26.0, *) {
-            guard activeContinuedTask == nil,
-                  activeBGProcessingTask == nil,
+            guard activeContinuedBox == nil,
+                  activeBGProcessingBox == nil,
                   let taskId = registeredContinuedTaskID else { return }
             let req = BGContinuedProcessingTaskRequest(
                 identifier: taskId,
@@ -1779,7 +1901,7 @@ public final class BrillyAppStore {
                 subtitle: "\(preset.title) · \(preset.eloEstimate)"
             )
             req.strategy = .queue
-            try? BGTaskScheduler.shared.submit(req)
+            Self.submitBGTaskRequestOffMain(req)
         }
         #endif
     }
@@ -1791,7 +1913,7 @@ public final class BrillyAppStore {
         progress: Double
     ) {
         #if canImport(BackgroundTasks) && os(iOS)
-        if #available(iOS 26.0, *), let task = activeContinuedTask as? BGContinuedProcessingTask {
+        if #available(iOS 26.0, *), let task = activeContinuedBox?.asContinued {
             let totalUnits = Int64(max(1, totalGames * 100))
             task.progress.totalUnitCount = totalUnits
             task.progress.completedUnitCount = min(totalUnits, max(0, Int64((progress * Double(totalUnits)).rounded())))
@@ -1810,7 +1932,7 @@ public final class BrillyAppStore {
         req.requiresNetworkConnectivity = false
         req.requiresExternalPower = false
         req.earliestBeginDate = Date(timeIntervalSinceNow: 60)
-        try? BGTaskScheduler.shared.submit(req)
+        Self.submitBGTaskRequestOffMain(req)
         #endif
     }
 
@@ -1819,53 +1941,84 @@ public final class BrillyAppStore {
         if let processingId = registeredProcessingTaskID {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: processingId)
         }
+        if activeContinuedBox == nil, let continuedId = registeredContinuedTaskID {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: continuedId)
+        }
         #endif
     }
 
     private func completeActiveExtendedBackgroundTasks(success: Bool) {
         #if canImport(BackgroundTasks) && os(iOS)
-        if #available(iOS 26.0, *), let continued = activeContinuedTask as? BGContinuedProcessingTask {
-            activeContinuedTask = nil
-            continued.setTaskCompleted(success: success)
+        if let continued = activeContinuedBox {
+            activeContinuedBox = nil
+            continued.complete(success: success)
         }
-        if let processing = activeBGProcessingTask as? BGProcessingTask {
-            activeBGProcessingTask = nil
-            processing.setTaskCompleted(success: success)
+        if let processing = activeBGProcessingBox {
+            activeBGProcessingBox = nil
+            processing.complete(success: success)
         }
         #endif
     }
+
     #if canImport(ActivityKit) && os(iOS)
     @ObservationIgnored private var batchLiveActivityId: String? = nil
+    @ObservationIgnored private var liveActivitySeq: UInt64 = 0
 
-    private nonisolated static func updateActivity(
-        id: String,
-        state: BrillyBatchActivityAttributes.ContentState,
-        staleDate: Date?
-    ) async {
-        guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
-        await activity.update(ActivityContent(state: state, staleDate: staleDate))
+    private actor LiveActivitySerialQueue {
+        private var lastAppliedSeq: UInt64 = 0
+
+        func update(
+            id: String,
+            seq: UInt64,
+            state: BrillyBatchActivityAttributes.ContentState,
+            staleDate: Date?
+        ) async {
+            guard seq >= lastAppliedSeq else { return }
+            lastAppliedSeq = seq
+            guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+            await activity.update(ActivityContent(state: state, staleDate: staleDate))
+        }
+
+        func end(
+            id: String,
+            seq: UInt64,
+            state: BrillyBatchActivityAttributes.ContentState?,
+            dismissAfterSeconds: TimeInterval?
+        ) async {
+            guard seq >= lastAppliedSeq else { return }
+            lastAppliedSeq = seq
+            guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+            let content = state.map { ActivityContent(state: $0, staleDate: nil) }
+            let policy: ActivityUIDismissalPolicy = dismissAfterSeconds.map { .after(Date().addingTimeInterval($0)) } ?? .immediate
+            await activity.end(content, dismissalPolicy: policy)
+        }
+
+        func endAllOrphans(except keepId: String?) async {
+            for activity in Activity<BrillyBatchActivityAttributes>.activities where activity.id != keepId {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
     }
 
-    private nonisolated static func endActivity(
-        id: String,
-        state: BrillyBatchActivityAttributes.ContentState?,
-        dismissAfterSeconds: TimeInterval?
-    ) async {
-        guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
-        let content = state.map { ActivityContent(state: $0, staleDate: nil) }
-        let policy: ActivityUIDismissalPolicy = dismissAfterSeconds.map { .after(Date().addingTimeInterval($0)) } ?? .immediate
-        await activity.end(content, dismissalPolicy: policy)
-    }
+    private static let liveActivityQueue = LiveActivitySerialQueue()
     #endif
+
+    private func cleanupOrphanedLiveActivitiesIfIdle() {
+        #if canImport(ActivityKit) && os(iOS)
+        guard !isBatchAnalyzing else { return }
+        let keepId = batchLiveActivityId
+        Task.detached(priority: .utility) {
+            await Self.liveActivityQueue.endAllOrphans(except: keepId)
+        }
+        #endif
+    }
 
     private func startBatchLiveActivity(preset: AnalysisDepthPreset, totalGames: Int) {
         #if canImport(ActivityKit) && os(iOS)
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if let existingId = batchLiveActivityId {
-            batchLiveActivityId = nil
-            Task.detached {
-                await Self.endActivity(id: existingId, state: nil, dismissAfterSeconds: nil)
-            }
+        batchLiveActivityId = nil
+        Task.detached {
+            await Self.liveActivityQueue.endAllOrphans(except: nil)
         }
         let attrs = BrillyBatchActivityAttributes(
             presetTitle: preset.title,
@@ -1881,7 +2034,7 @@ public final class BrillyAppStore {
             progress: 0.02,
             status: "analyzing"
         )
-        let content = ActivityContent(state: initialState, staleDate: Date().addingTimeInterval(300))
+        let content = ActivityContent(state: initialState, staleDate: Date().addingTimeInterval(120))
         if let created = try? Activity.request(attributes: attrs, content: content, pushType: nil) {
             batchLiveActivityId = created.id
         }
@@ -1898,19 +2051,22 @@ public final class BrillyAppStore {
         status: String
     ) {
         #if canImport(ActivityKit) && os(iOS)
-        guard let id = batchLiveActivityId else { return }
-        let state = BrillyBatchActivityAttributes.ContentState(
-            completedGames: completedGames,
-            currentGameIndex: currentGameIndex,
-            currentPly: currentPly,
-            totalPlies: totalPlies,
-            matchup: matchup,
-            progress: min(1.0, max(0.0, progress)),
-            status: status
-        )
-        let stale = Date().addingTimeInterval(300)
-        Task.detached {
-            await Self.updateActivity(id: id, state: state, staleDate: stale)
+        if let id = batchLiveActivityId {
+            liveActivitySeq &+= 1
+            let seq = liveActivitySeq
+            let state = BrillyBatchActivityAttributes.ContentState(
+                completedGames: completedGames,
+                currentGameIndex: currentGameIndex,
+                currentPly: currentPly,
+                totalPlies: totalPlies,
+                matchup: matchup,
+                progress: min(1.0, max(0.0, progress)),
+                status: status
+            )
+            let stale = Date().addingTimeInterval(120)
+            Task.detached {
+                await Self.liveActivityQueue.update(id: id, seq: seq, state: state, staleDate: stale)
+            }
         }
         #endif
         updateContinuedProcessingProgress(
@@ -1930,6 +2086,8 @@ public final class BrillyAppStore {
         #if canImport(ActivityKit) && os(iOS)
         guard let id = batchLiveActivityId else { return }
         batchLiveActivityId = nil
+        liveActivitySeq &+= 1
+        let seq = liveActivitySeq
         let finalState = BrillyBatchActivityAttributes.ContentState(
             completedGames: completedGames,
             currentGameIndex: totalGames,
@@ -1939,11 +2097,15 @@ public final class BrillyAppStore {
             progress: status == "complete" ? 1.0 : batchProgress,
             status: status
         )
-        await Self.endActivity(id: id, state: finalState, dismissAfterSeconds: dismissAfterSeconds)
+        await Self.liveActivityQueue.end(id: id, seq: seq, state: finalState, dismissAfterSeconds: dismissAfterSeconds)
         #endif
     }
 
     private func pauseBatchForBackgroundExpiry() async {
+        guard !isPausingForExpiry else { return }
+        isPausingForExpiry = true
+        defer { isPausingForExpiry = false }
+
         let remaining = pendingBatchTargets.count
         let done = batchCompletedGames
         let total = batchTotalGames
@@ -1955,12 +2117,14 @@ public final class BrillyAppStore {
         #if canImport(UIKit) && os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
-        flushToDiskNow()
+        await flushToDiskAndWait()
         persistPendingBatchQueue()
         if remaining > 0 {
             scheduleBackgroundProcessingFallback()
             #if canImport(ActivityKit) && os(iOS)
             if let id = batchLiveActivityId {
+                liveActivitySeq &+= 1
+                let seq = liveActivitySeq
                 let pausedState = BrillyBatchActivityAttributes.ContentState(
                     completedGames: done,
                     currentGameIndex: min(total, done + 1),
@@ -1970,7 +2134,7 @@ public final class BrillyAppStore {
                     progress: Double(done) / Double(max(1, total)),
                     status: "paused"
                 )
-                await Self.updateActivity(id: id, state: pausedState, staleDate: nil)
+                await Self.liveActivityQueue.update(id: id, seq: seq, state: pausedState, staleDate: nil)
             }
             #endif
             await postBatchNotification(

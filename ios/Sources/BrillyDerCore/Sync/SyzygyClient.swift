@@ -23,7 +23,10 @@ public struct SyzygyProbeResult: Codable, Hashable, Sendable {
     public var humanLabel: String {
         switch category {
         case "win":
-            if let dtm { return "Forced Mate in \(dtm.magnitude)" }
+            if let dtm {
+                let fullMoves = max(1, (Int(dtm.magnitude) + 1) / 2)
+                return "Forced Mate in \(fullMoves)"
+            }
             if let dtz { return "Winning (DTZ \(dtz.magnitude))" }
             return "Tablebase Win"
         case "maybe-win": return "Likely Win"
@@ -32,7 +35,10 @@ public struct SyzygyProbeResult: Codable, Hashable, Sendable {
         case "blessed-loss": return "Blessed Loss (50-move)"
         case "maybe-loss": return "Likely Loss"
         case "loss":
-            if let dtm { return "Mated in \(dtm.magnitude)" }
+            if let dtm {
+                let fullMoves = max(1, (Int(dtm.magnitude) + 1) / 2)
+                return "Mated in \(fullMoves)"
+            }
             if let dtz { return "Losing (DTZ \(dtz.magnitude))" }
             return "Tablebase Loss"
         default: return category.capitalized

@@ -26,7 +26,18 @@ public enum LichessCloudEvalClient {
     private actor Cache {
         private var store: [String: EngineEval] = [:]
         private var order: [String] = []
+        private var backoffUntil: Date? = nil
         private let maxEntries = 512
+
+        func isBackedOff() -> Bool {
+            if let until = backoffUntil, Date() < until { return true }
+            backoffUntil = nil
+            return false
+        }
+
+        func setBackoff(seconds: TimeInterval) {
+            backoffUntil = Date().addingTimeInterval(seconds)
+        }
 
         func get(_ key: String) -> EngineEval? {
             store[key]
@@ -56,6 +67,9 @@ public enum LichessCloudEvalClient {
         if let cached = await cache.get(key) {
             return .hit(cached)
         }
+        if await cache.isBackedOff() {
+            return .rateLimited
+        }
         var components = URLComponents(string: "https://lichess.org/api/cloud-eval")
         components?.queryItems = [
             URLQueryItem(name: "fen", value: fen),
@@ -71,7 +85,10 @@ public enum LichessCloudEvalClient {
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse {
-                if http.statusCode == 429 { return .rateLimited }
+                if http.statusCode == 429 {
+                    await cache.setBackoff(seconds: 180)
+                    return .rateLimited
+                }
                 guard (200..<300).contains(http.statusCode) else { return .miss }
             }
             if let decoded = decodeCloudEval(data: data, fen: fen) {
@@ -79,6 +96,14 @@ public enum LichessCloudEvalClient {
                 return .hit(decoded)
             }
             return .miss
+        } catch let urlErr as URLError {
+            switch urlErr.code {
+            case .notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dataNotAllowed:
+                await cache.setBackoff(seconds: 45)
+                return .rateLimited
+            default:
+                return .miss
+            }
         } catch {
             return .miss
         }

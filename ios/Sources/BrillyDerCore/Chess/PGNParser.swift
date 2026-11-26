@@ -40,8 +40,9 @@ public enum PGNParser {
         }
 
         let rawFen = headers["FEN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let startFen = rawFen.isEmpty ? ChessBoard.initialFEN : rawFen
-        var board = try ChessBoard(fen: startFen)
+        let startFenInput = rawFen.isEmpty ? ChessBoard.initialFEN : rawFen
+        var board = try ChessBoard(fen: startFenInput)
+        let normalizedStartFen = board.fen
         let movetext = bodyLines.joined(separator: "\n")
         let tokens = tokenizeMovetext(movetext)
 
@@ -79,7 +80,7 @@ public enum PGNParser {
 
         return ParsedPGNGame(
             headers: headers,
-            startFen: startFen,
+            startFen: normalizedStartFen,
             moves: parsedMoves,
             finalBoard: board,
             result: parsedResult
@@ -94,7 +95,7 @@ public enum PGNParser {
         return match
             .replacingOccurrences(of: "[%clk", with: "")
             .replacingOccurrences(of: "]", with: "")
-            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public static func parseClockSeconds(_ clockText: String) -> Double? {
@@ -114,7 +115,7 @@ public enum PGNParser {
 
     public static func parseTimeControl(_ raw: String?) -> (initialSeconds: Double, incrementSeconds: Double)? {
         guard let raw else { return nil }
-        let parts = raw.split(separator: "+")
+        let parts = raw.split(separator: "+").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         guard let initial = parts.first.flatMap({ Double($0) }),
               initial.isFinite, initial >= 0, initial < 1e8 else { return nil }
         let incRaw = parts.count > 1 ? (Double(parts[1]) ?? 0) : 0

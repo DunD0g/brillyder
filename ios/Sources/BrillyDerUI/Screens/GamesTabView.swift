@@ -133,6 +133,7 @@ public struct GamesTabView: View {
                                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
 
+                                let syncDisabled = store.isSyncing || store.activeHandleForSelectedPlatform.isEmpty
                                 Button {
                                     commitAndSyncHandle()
                                 } label: {
@@ -147,10 +148,11 @@ public struct GamesTabView: View {
                                             .foregroundStyle(BrillyPalette.voidBg)
                                             .frame(width: 96, height: 40)
                                             .background(RoundedRectangle(cornerRadius: 12).fill(BrillyPalette.brillyTeal))
+                                            .opacity(syncDisabled ? 0.45 : 1.0)
                                     }
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(store.isSyncing || store.activeHandleForSelectedPlatform.isEmpty)
+                                .disabled(syncDisabled)
                             }
                         }
 
@@ -455,9 +457,11 @@ public struct GamesTabView: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
                 .foregroundStyle(BrillyPalette.brillyTeal)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 38)
+                .padding(.horizontal, 6)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
         }
         .buttonStyle(.plain)
@@ -491,20 +495,30 @@ public struct GamesTabView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
+                    let pgnEmpty = pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button {
                         let draft = pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                         if LichessClient.isDirectLichessURLOrID(draft) {
                             showingPgnSheet = false
                             pgnDraft = ""
                             pgnError = nil
-                            Task { await store.importLichessGameURL(draft) }
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(320))
+                                await store.importLichessGameURL(draft)
+                            }
                         } else {
-                            if store.importAndAnalyzePGN(draft) {
+                            do {
+                                _ = try LichessClient.parsePastedPGN(draft, preferredUsernames: store.userHandles)
                                 showingPgnSheet = false
                                 pgnDraft = ""
                                 pgnError = nil
-                            } else {
-                                pgnError = store.syncErrorMessage ?? "Invalid PGN format."
+                                // Wait for PGN sheet dismissal so any Pro paywall modal presents cleanly
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(320))
+                                    _ = store.importAndAnalyzePGN(draft)
+                                }
+                            } catch {
+                                pgnError = error.localizedDescription
                             }
                         }
                     } label: {
@@ -514,9 +528,10 @@ public struct GamesTabView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
                             .background(RoundedRectangle(cornerRadius: 14).fill(BrillyPalette.brillyTeal))
+                            .opacity(pgnEmpty ? 0.45 : 1.0)
                     }
                     .buttonStyle(.plain)
-                    .disabled(pgnDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(pgnEmpty)
                 }
                 .padding(16)
             }
