@@ -78,6 +78,12 @@ describe('Pass 1 — Brilliant engine, classification, motifs, clocks & Maia pol
     const c4 = new Chess(forkBefore);
     const mv4 = c4.move({ from: 'c4', to: 'd3' });
     expect(isSacrificeMove(forkBefore, c4.fen(), 'w', mv4.to, mv4.piece, mv4.captured, undefined, mv4.from)).toBe(false);
+
+    // Counterthreat guard: 8...Nd4 attacking Qe2 while Ne4 is attacked by f3 is Best, NOT Brilliant
+    const nd4Before = 'r1b1kb1r/ppp2ppp/2n5/3pq3/4n3/1B3PP1/PPPPQ2P/RNB1K2R b KQkq - 0 8';
+    const c5 = new Chess(nd4Before);
+    const mv5 = c5.move({ from: 'c6', to: 'd4' });
+    expect(isSacrificeMove(nd4Before, c5.fen(), 'b', mv5.to, mv5.piece, mv5.captured, undefined, mv5.from)).toBe(false);
   });
 
   it('never classifies Stockfish #1 best move as blunder even when walkedIntoMate is true', () => {

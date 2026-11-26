@@ -146,10 +146,10 @@ struct EngineAndClassificationTests {
         #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.cloudUltra, hasProAccess: true))
     }
 
-    @Test("Brilliant Engine v4 rewards real tactical sacrifices (incl. 16...Nxd4!! & co-best sacs) and blocks fork-flee/king-escape false positives")
-    func brilliantEngineV4Calibration() throws {
+    @Test("Brilliant Engine v5 matches Chess.com: rewards 16...Nxd4!! and rejects 8...Nd4 counterthreat, already-winning positions & fork-flee/king-escape false positives")
+    func brilliantEngineV5Calibration() throws {
         // 1. Exact real-game position: 16...Nxd4!! (knight captures pawn on d4 where Ne2 can capture it; 17. Nxd4 Bc5! pins & wins a1 rook)
-        // Even with #1 = -2.5 vs #2 = -1.9 (4.7% sigmoid gap), it MUST classify as Brilliant!
+        // With #1 = -2.5 vs #2 = -1.9 (4.7% sigmoid gap, secondBestWin = 66.8% < 78%), it MUST classify as Brilliant!
         let beforeNxd4 = try ChessBoard(fen: "2kr1b1r/ppp2p1p/2n2p2/3b4/3P4/1P3P2/P3NKPP/RN3B1R b - - 0 16")
         var afterNxd4 = beforeNxd4
         let appliedNxd4 = try afterNxd4.apply(uci: "c6d4")
@@ -177,29 +177,45 @@ struct EngineAndClassificationTests {
         ))
         #expect(nxd4Class == .brilliant)
 
-        // 2. Co-best sacrifice (within <=1.5% winLoss of #1 in a fighting position) also qualifies as Brilliant
-        let coBestClass = MoveClassifier.classify(MoveClassificationInput(
-            plyIndex: 31,
+        // 2. Exact real-game false positive from RonaldRaborg: 8...Nd4 counter-attacking White's Qe2
+        // while Ne4 is attacked by f3 (and Black is already -5.7 vs #2 -4.5). MUST be Best, NOT Brilliant!
+        let beforeNd4 = try ChessBoard(fen: "r1b1kb1r/ppp2ppp/2n5/3pq3/4n3/1B3PP1/PPPPQ2P/RNB1K2R b KQkq - 0 8")
+        var afterNd4 = beforeNd4
+        let appliedNd4 = try afterNd4.apply(uci: "c6d4")
+        #expect(MoveClassifier.detectSacrificeKind(
+            beforeBoard: beforeNd4,
+            afterBoard: afterNd4,
+            mover: .black,
+            fromSquare: appliedNd4.move.from,
+            toSquare: appliedNd4.move.to,
+            movedPiece: appliedNd4.piece.type,
+            capturedPiece: nil,
+            promotionPiece: nil
+        ) == .none)
+        let nd4Win = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -570), mover: .black)
+        let nd4Second = ChessMath.moverWinPercent(ChessMath.buildEngineScore(cpWhite: -450), mover: .black)
+        let nd4Class = MoveClassifier.classify(MoveClassificationInput(
+            plyIndex: 15,
             sanPrefix: [],
             playedUci: "c6d4",
-            bestMoveUci: "f8h6",
-            beforeBoard: beforeNxd4,
-            afterBoard: afterNxd4,
+            bestMoveUci: "c6d4",
+            beforeBoard: beforeNd4,
+            afterBoard: afterNd4,
             moverColor: .black,
-            fromSquare: appliedNxd4.move.from,
-            toSquare: appliedNxd4.move.to,
-            movedPiece: appliedNxd4.piece.type,
-            capturedPiece: appliedNxd4.captured?.type,
+            fromSquare: appliedNd4.move.from,
+            toSquare: appliedNd4.move.to,
+            movedPiece: appliedNd4.piece.type,
+            capturedPiece: nil,
             promotionPiece: nil,
             positionRepeated: false,
-            moverWinBefore: 70.0,
-            moverWinAfter: 69.0,
-            secondBestGapWin: 1.0,
+            moverWinBefore: nd4Win,
+            moverWinAfter: nd4Win,
+            secondBestGapWin: nd4Win - nd4Second,
             hasSecondLine: true
         ))
-        #expect(coBestClass == .brilliant)
+        #expect(nd4Class == .best)
 
-        // 3. Anti-spam: already crushing (+8.0 / 95% win) should NOT award Brilliant without mate
+        // 3. Anti-spam: already crushing (+4.8 / 85% win, #2 already 80%) should NOT award Brilliant
         let crushingClass = MoveClassifier.classify(MoveClassificationInput(
             plyIndex: 31,
             sanPrefix: [],
@@ -214,9 +230,9 @@ struct EngineAndClassificationTests {
             capturedPiece: appliedNxd4.captured?.type,
             promotionPiece: nil,
             positionRepeated: false,
-            moverWinBefore: 94.5,
-            moverWinAfter: 94.5,
-            secondBestGapWin: 1.0,
+            moverWinBefore: 85.0,
+            moverWinAfter: 85.0,
+            secondBestGapWin: 5.0,
             hasSecondLine: true
         ))
         #expect(crushingClass != .brilliant)

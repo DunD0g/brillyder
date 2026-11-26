@@ -28,7 +28,9 @@ const SEE_VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k
 const SEE_MAX_DEPTH = 6;
 const SACRIFICE_MIN_GAIN = 2;
 
-export const CLASSIFICATION_VERSION = 4;
+export const CLASSIFICATION_VERSION = 5;
+
+export type SacrificeKind = 'none' | 'active' | 'passive';
 
 function flipTurnFen(fen: string): string | null {
   const parts = fen.split(' ');
@@ -52,7 +54,7 @@ export function fenPositionKey(fen: string): string {
  *    (net legal capture gain >= SACRIFICE_MIN_GAIN beyond any material captured on this move)
  *    to pursue a stronger tactical/mating initiative.
  */
-export function isSacrificeMove(
+export function detectSacrificeKind(
   beforeFen: string,
   afterFen: string,
   mover: PlayerColor,
@@ -61,9 +63,9 @@ export function isSacrificeMove(
   capturedPiece?: PieceSymbol,
   promotionPiece?: PieceSymbol,
   fromSquare?: string
-): boolean {
+): SacrificeKind {
   const after = new Chess(afterFen);
-  if (after.turn() === mover) return false;
+  if (after.turn() === mover) return 'none';
 
   const capturedValue = capturedPiece ? SEE_VALUE[capturedPiece] : 0;
   // On a pawn promotion (e.g. bxa8=Q), the mover only risked a pawn (1), not a queen (9)
@@ -74,7 +76,7 @@ export function isSacrificeMove(
   if (movedPiece !== 'k') {
     const opponentGainOnDest = legalCaptureGainOnSquare(after, toSquare as Square, SEE_MAX_DEPTH);
     const netRiskedOnDest = opponentGainOnDest - promoSurplus - capturedValue;
-    if (netRiskedOnDest >= SACRIFICE_MIN_GAIN) return true;
+    if (netRiskedOnDest >= SACRIFICE_MIN_GAIN) return 'active';
   }
 
   // 2. Passive sacrifice: leaving another friendly non-pawn piece legally capturable for >= 2 net material
@@ -85,7 +87,7 @@ export function isSacrificeMove(
     beforeBoard = null;
   }
   if (beforeBoard && movedPiece === 'k' && beforeBoard.inCheck()) {
-    return false;
+    return 'none';
   }
 
   let oppTurnBefore: Chess | null = null;
@@ -105,6 +107,25 @@ export function isSacrificeMove(
     }
   }
 
+  // Counterthreat filter: counter-attacking an opponent piece of >= value (e.g. Nd4 attacking Qe2
+  // while Ne4 is attacked by f3) is a counterthreat, NOT a sacrifice.
+  let maxCounterThreatGain = 0;
+  const flippedAfter = flipTurnFen(afterFen);
+  if (flippedAfter) {
+    try {
+      const moverTurnAfter = new Chess(flippedAfter);
+      for (const row of moverTurnAfter.board()) {
+        for (const cell of row) {
+          if (!cell || cell.color === mover || cell.type === 'k' || cell.type === 'p') continue;
+          const gain = legalCaptureGainOnSquare(moverTurnAfter, cell.square, SEE_MAX_DEPTH);
+          if (gain > maxCounterThreatGain) maxCounterThreatGain = gain;
+        }
+      }
+    } catch {
+      maxCounterThreatGain = 0;
+    }
+  }
+
   for (const row of after.board()) {
     for (const cell of row) {
       if (!cell || cell.color !== mover || cell.type === 'k' || cell.type === 'p') continue;
@@ -119,12 +140,39 @@ export function isSacrificeMove(
         ) {
           continue;
         }
-        return true;
+        if (maxCounterThreatGain >= oppGain) {
+          continue;
+        }
+        return 'passive';
       }
     }
   }
 
-  return false;
+  return 'none';
+}
+
+export function isSacrificeMove(
+  beforeFen: string,
+  afterFen: string,
+  mover: PlayerColor,
+  toSquare: string,
+  movedPiece: PieceSymbol,
+  capturedPiece?: PieceSymbol,
+  promotionPiece?: PieceSymbol,
+  fromSquare?: string
+): boolean {
+  return (
+    detectSacrificeKind(
+      beforeFen,
+      afterFen,
+      mover,
+      toSquare,
+      movedPiece,
+      capturedPiece,
+      promotionPiece,
+      fromSquare
+    ) !== 'none'
+  );
 }
 
 export function classifyMove(params: {
@@ -170,32 +218,30 @@ export function classifyMove(params: {
   if (winLoss > 18) return 'mistake';
   if (winLoss > 10) return 'inaccuracy';
 
-  const isCoBestSac = !isTopMove && winLoss <= 1.5;
-  const maxBefore = params.deliversForcedMate ? 95 : 92;
-  const brilliantPositionEligible =
-    params.moverWinAfter >= 42 &&
-    params.moverWinBefore < maxBefore &&
-    (params.moverWinBefore < 84
-      ? isTopMove || (isCoBestSac && params.moverWinBefore < 80)
-      : isTopMove && (params.secondBestGapWin >= 2.5 || Boolean(params.deliversForcedMate)));
+  const secondBestWin = params.moverWinBefore - params.secondBestGapWin;
+  const sacKind = detectSacrificeKind(
+    params.beforeFen,
+    params.afterFen,
+    params.moverColor,
+    params.toSquare,
+    params.movedPiece,
+    params.capturedPiece,
+    params.promotionPiece,
+    params.fromSquare ?? params.playedUci.slice(0, 2)
+  );
+  const minGapForSac = sacKind === 'active' ? 3.0 : 6.5;
 
   const brilliant =
-    (isTopMove || isCoBestSac) &&
+    isTopMove &&
     winLoss <= 2 &&
     !params.missedMate &&
     !params.positionRepeated &&
     params.hasSecondLine &&
-    brilliantPositionEligible &&
-    isSacrificeMove(
-      params.beforeFen,
-      params.afterFen,
-      params.moverColor,
-      params.toSquare,
-      params.movedPiece,
-      params.capturedPiece,
-      params.promotionPiece,
-      params.fromSquare ?? params.playedUci.slice(0, 2)
-    );
+    sacKind !== 'none' &&
+    params.moverWinAfter >= 45 &&
+    params.moverWinBefore < 84 &&
+    secondBestWin < 78 &&
+    params.secondBestGapWin >= minGapForSac;
 
   if (brilliant) return 'brilliant';
   if (
@@ -551,8 +597,8 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
 
     if (classification === 'brilliant' || classification === 'great' || classification === 'best' || classification === 'excellent') {
       const movedPiece = new Chess(ply.beforeFen).get(ply.from as Square)?.type;
-      const sacrifice = movedPiece
-        ? isSacrificeMove(
+      const sacKind: SacrificeKind = movedPiece
+        ? detectSacrificeKind(
             ply.beforeFen,
             ply.afterFen,
             ply.color,
@@ -562,28 +608,22 @@ export function refreshBrilliantClassifications(analyzed: AnalyzedGame): Analyze
             ply.promotion as PieceSymbol | undefined,
             ply.from
           )
-        : false;
+        : 'none';
       const isTopMove = ply.uci === ply.bestMoveUci;
-      const isCoBestSac = !isTopMove && ply.winLoss <= 1.5;
-      const deliversForcedMate =
-        ply.evalAfter.mateWhite !== null &&
-        ((ply.color === 'w' && ply.evalAfter.mateWhite > 0) || (ply.color === 'b' && ply.evalAfter.mateWhite < 0));
       const hasSecondLine = (ply.topLines?.length ?? 2) >= 2;
-      const maxBefore = deliversForcedMate ? 95 : 92;
-      const eligible =
-        moverWinAfter >= 42 &&
-        moverWinBefore < maxBefore &&
-        (moverWinBefore < 84
-          ? isTopMove || (isCoBestSac && moverWinBefore < 80)
-          : isTopMove && (ply.secondBestGapWin >= 2.5 || deliversForcedMate));
+      const secondBestWin = moverWinBefore - ply.secondBestGapWin;
+      const minGapForSac = sacKind === 'active' ? 3.0 : 6.5;
 
       const validBrilliant =
-        sacrifice &&
+        sacKind !== 'none' &&
         !repeated &&
         hasSecondLine &&
-        (isTopMove || isCoBestSac) &&
+        isTopMove &&
         ply.winLoss <= 2 &&
-        eligible;
+        moverWinAfter >= 45 &&
+        moverWinBefore < 84 &&
+        secondBestWin < 78 &&
+        ply.secondBestGapWin >= minGapForSac;
 
       if (validBrilliant && classification !== 'brilliant') {
         classification = 'brilliant';
