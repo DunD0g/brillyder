@@ -290,14 +290,15 @@ public struct AnalyzeTabView: View {
                 Text("\(store.analysisStatusText) · \(pct)%")
                     .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(BrillyPalette.brillyTeal)
+                let activeHUDPreset = store.effectiveAnalysisPreset
                 Label(
-                    store.analysisPreset.usesCloudEval
-                        ? "Hybrid Cloud SF16 + BrillyChess Ultra"
-                        : "On-device BrillyChess \(store.analysisPreset.title) · \(store.analysisPreset.eloEstimate)",
-                    systemImage: store.analysisPreset.sfSymbol
+                    activeHUDPreset.usesCloudEval
+                        ? "Hybrid Cloud SF16 + BrillyChess NNUE Ultra"
+                        : "On-device BrillyChess \(activeHUDPreset.title) · \(activeHUDPreset.eloEstimate)",
+                    systemImage: activeHUDPreset.sfSymbol
                 )
                 .font(.caption.weight(.medium))
-                .foregroundStyle(store.analysisPreset.usesCloudEval ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
+                .foregroundStyle(activeHUDPreset.usesCloudEval ? BrillyPalette.brillyTeal : BrillyPalette.inkSecondary)
             }
 
             TractorBeamProgressBar(progress: store.analysisProgress, height: 11)
@@ -503,7 +504,7 @@ public struct AnalyzeTabView: View {
                 if let ev = sandboxEval {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("BrillyNative Engine (Depth \(ev.depth)) · \(ev.score.display)")
+                            Text("Live Local Eval (Depth \(ev.depth)) · \(ev.score.display)")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(BrillyPalette.brillyTeal)
                             Spacer()
@@ -700,7 +701,7 @@ public struct AnalyzeTabView: View {
                         .foregroundStyle(BrillyPalette.inkPrimary)
                         .lineLimit(1)
 
-                    let activePreset = store.analysisPreset
+                    let activePreset = store.effectiveAnalysisPreset
                     let depthPillTint: Color = activePreset.usesCloudEval
                         ? BrillyPalette.warpPurpleText
                         : (activePreset == .ultra ? BrillyPalette.goldAmber : BrillyPalette.brillyTeal)
@@ -820,9 +821,10 @@ public struct AnalyzeTabView: View {
                                 if !showThreatArrow { threatArrow = nil }
                                 store.triggerHaptic(.move)
                             } label: {
+                                let threatActive = showThreatArrow && store.hasProAccess
                                 Label(
-                                    showThreatArrow ? "Hide Threat Arrow" : (store.hasProAccess ? "Show Threat Arrow" : "Show Threat Arrow (Pro)"),
-                                    systemImage: showThreatArrow ? "exclamationmark.triangle.fill" : (store.hasProAccess ? "exclamationmark.triangle" : "lock.fill")
+                                    threatActive ? "Hide Threat Arrow" : (store.hasProAccess ? "Show Threat Arrow" : "Show Threat Arrow (Pro)"),
+                                    systemImage: threatActive ? "exclamationmark.triangle.fill" : (store.hasProAccess ? "exclamationmark.triangle" : "lock.fill")
                                 )
                             }
                             Divider()

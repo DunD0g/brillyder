@@ -131,7 +131,7 @@ targets:
           - Info-Admin.plist
     dependencies:
       - package: BrillyDer
-        product: BrillyDerCore
+        product: BrillyDerActivityKit
     info:
       path: Widgets/Info.plist
       properties:
@@ -159,7 +159,7 @@ targets:
           - Info-Admin.plist
     dependencies:
       - package: BrillyDer
-        product: BrillyDerCore
+        product: BrillyDerActivityKit
     info:
       path: Widgets/Info-Admin.plist
       properties:

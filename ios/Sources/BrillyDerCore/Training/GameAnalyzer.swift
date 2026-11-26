@@ -26,6 +26,7 @@ public enum GameAnalyzer {
         let isStandardStart = (parsed.startFen == ChessBoard.initialFEN)
         let tcInc = PGNParser.parseTimeControl(parsed.headers["TimeControl"])?.incrementSeconds ?? 0.0
         onProgress?(0, max(1, totalPlies))
+        await engine.clearHash()
 
         var cloudEnabled = preset.usesCloudEval
         var consecutiveCloudMisses = 0

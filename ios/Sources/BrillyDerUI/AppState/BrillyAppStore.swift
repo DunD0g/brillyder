@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Observation
 import BrillyDerCore
+import BrillyDerActivityKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -93,6 +94,14 @@ public final class BrillyAppStore {
 
     public var effectiveDailyDuration: DailyDurationMinutes {
         isDurationUnlocked(dailyDuration) ? dailyDuration : .ten
+    }
+
+    public var effectiveAnalysisPreset: AnalysisDepthPreset {
+        isAnalysisPresetUnlocked(analysisPreset) ? analysisPreset : .deep
+    }
+
+    public func isAnalysisPresetUnlocked(_ preset: AnalysisDepthPreset) -> Bool {
+        BrillyEntitlementPolicy.isAnalysisPresetUnlocked(preset, hasProAccess: hasProAccess)
     }
 
     public var freeAnalysesUsedToday: Int {
@@ -1348,7 +1357,7 @@ public final class BrillyAppStore {
             selectedTab = .analyze
         }
 
-        let preset = analysisPreset
+        let preset = effectiveAnalysisPreset
         let engineRef = engine
 
         analysisTask = Task.detached(priority: .userInitiated) {

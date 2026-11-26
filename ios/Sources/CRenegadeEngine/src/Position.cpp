@@ -110,8 +110,18 @@ Position::Position(const std::string& fen) {
 		}
 	}
 
-	board.HalfmoveClock = std::stoi(parts[4]);
-	board.FullmoveClock = std::stoi(parts[5]);
+	auto safeParseInt = [](const std::string& s, int fallback) -> int {
+		if (s.empty()) return fallback;
+		int val = 0;
+		for (char c : s) {
+			if (c < '0' || c > '9') return fallback;
+			val = val * 10 + (c - '0');
+			if (val > 100000) return fallback;
+		}
+		return val;
+	};
+	board.HalfmoveClock = (parts.size() >= 5) ? safeParseInt(parts[4], 0) : 0;
+	board.FullmoveClock = (parts.size() >= 6) ? std::max(1, safeParseInt(parts[5], 1)) : 1;
 	board.Threats = CalculateAttackedSquares(!Turn());
 }
 

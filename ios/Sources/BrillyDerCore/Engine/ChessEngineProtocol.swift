@@ -105,7 +105,7 @@ public enum AnalysisDepthPreset: Int, Codable, CaseIterable, Sendable, Identifia
         case .balanced:   return "~2900 Elo"
         case .deep:       return "~3100 Elo"
         case .ultra:      return "~3300+ Elo"
-        case .cloudUltra: return "~3500 Elo*"
+        case .cloudUltra: return "~3500 Elo"
         }
     }
 
@@ -143,4 +143,11 @@ public protocol ChessEngine: Sendable {
         multiPV: Int,
         maxTimeMs: Int?
     ) async throws -> EngineEval
+
+    /// Optional hook to reset transposition tables & search histories between unrelated games.
+    func clearHash() async
+}
+
+public extension ChessEngine {
+    func clearHash() async {}
 }

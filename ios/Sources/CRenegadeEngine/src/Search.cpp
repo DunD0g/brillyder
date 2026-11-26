@@ -306,16 +306,17 @@ void Search::SearchMoves(ThreadData& t) {
 		if (t.Nodes >= Constraints.SoftNodes && Constraints.SoftNodes != -1) finished = true;
 
 		const bool aborting = Aborting.load(std::memory_order_relaxed);
-		if (aborting && !t.singlethreaded && t.RootDepth > 1) {
+		const int64_t elapsedNs = std::max<int64_t>((currentTime - StartSearchTime).count(), 1);
+		if (aborting && t.RootDepth > 1) {
 			t.result.nodes = t.Nodes;
 			t.result.time = elapsedMs;
-			t.result.nps = static_cast<uint64_t>(t.Nodes * 1e9 / (currentTime - StartSearchTime).count());
+			t.result.nps = static_cast<uint64_t>(t.Nodes * 1e9 / elapsedNs);
 			t.result.hashfull = TranspositionTable.GetHashfull();
 			break;
 		}
 
-		// Save info
-		if (!t.singlethreaded || !aborting) {
+		// Save info (always preserve completed Depth-1 result even if abort fires right after)
+		if (!aborting || t.RootDepth == 1) {
 			t.result.score = score;
 			t.result.depth = t.RootDepth;
 			t.result.pv = t.GeneratePVLine();
@@ -323,7 +324,7 @@ void Search::SearchMoves(ThreadData& t) {
 		t.result.seldepth = t.SelDepth;
 		t.result.nodes = t.Nodes;
 		t.result.time = elapsedMs;
-		t.result.nps = static_cast<uint64_t>(t.Nodes * 1e9 / (currentTime - StartSearchTime).count());
+		t.result.nps = static_cast<uint64_t>(t.Nodes * 1e9 / elapsedNs);
 		t.result.hashfull = TranspositionTable.GetHashfull();
 
 		// Display search information
@@ -707,8 +708,8 @@ int Search::SearchRecursive(ThreadData& t, int depth, const int level, int alpha
 		}
 	}
 
-	// Update evaluation correction history
-	if (!aborting && !singularSearch) {
+	// Update evaluation correction history (skip root when MultiPV excluded moves are active)
+	if (!aborting && !singularSearch && !(rootNode && !RootExcludedMoves.empty())) {
 		const bool updateCorrection = [&] {
 			if (inCheck) return false;
 			if (!bestMove.IsNull() && !position.IsMoveQuiet(bestMove)) return false;

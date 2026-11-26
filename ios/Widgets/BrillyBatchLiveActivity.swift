@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 import ActivityKit
-import BrillyDerCore
+import BrillyDerActivityKit
 
 @main
 struct BrillyDerWidgetBundle: WidgetBundle {

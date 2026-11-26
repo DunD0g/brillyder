@@ -152,7 +152,7 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "cpu.fill",
                 tint: BrillyPalette.goldAmber,
-                title: "Ultra Offline NNUE (~3300+ Elo) & Cloud SF16 (~3500 Elo*) + Unlimited Batch",
+                title: "Ultra Offline NNUE (~3300+ Elo) & Cloud SF16 (~3500 Elo) + Unlimited Batch",
                 subtitle: "Remove the 2/day Free cap, unlock Show Threat Arrow, Guided Mistake Review, Opponent Profile Scout & Instant Auto-Sync"
             )
             benefitRow(

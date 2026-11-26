@@ -6,6 +6,7 @@
 #include "Settings.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -15,6 +16,8 @@
 namespace {
 std::mutex gEngineMutex;
 std::unique_ptr<Search> gSearch;
+std::atomic<Search*> gSearchAtomic{nullptr};
+std::atomic<bool> gExternalAbort{false};
 bool gInitialized = false;
 }
 
@@ -34,6 +37,7 @@ bool renegade_init(const char* network_path, int32_t hash_mb) {
     gSearch = std::make_unique<Search>();
     gSearch->TranspositionTable.SetSize(Settings::Hash, 1);
     gSearch->ResetState(true);
+    gSearchAtomic.store(gSearch.get(), std::memory_order_release);
     gInitialized = true;
     return true;
 }
@@ -46,8 +50,10 @@ void renegade_clear_hash(void) {
 }
 
 void renegade_abort(void) {
-    if (gSearch) {
-        gSearch->Aborting.store(true, std::memory_order_relaxed);
+    gExternalAbort.store(true, std::memory_order_release);
+    Search* s = gSearchAtomic.load(std::memory_order_acquire);
+    if (s) {
+        s->Aborting.store(true, std::memory_order_relaxed);
     }
 }
 
@@ -90,6 +96,7 @@ bool renegade_analyze(
     };
 
     gSearch->RootExcludedMoves.clear();
+    gExternalAbort.store(false, std::memory_order_release);
 
     struct RawLine {
         int rawScore;
@@ -103,21 +110,25 @@ bool renegade_analyze(
     foundLines.reserve(clampedPV);
 
     for (int i = 0; i < clampedPV; ++i) {
+        if (gExternalAbort.load(std::memory_order_acquire)) {
+            gSearch->RootExcludedMoves.clear();
+            return false;
+        }
+
         SearchParams params{};
         params.depth = clampedDepth;
         params.movetime = budgetForLine(i);
 
         Results res = gSearch->SearchSinglethreaded(pos, params);
+        if (gExternalAbort.load(std::memory_order_acquire)) {
+            gSearch->RootExcludedMoves.clear();
+            return false;
+        }
+
         Move bm = res.BestMove();
         if (bm.IsNull()) {
-            // Fallback to first non-excluded legal move if aborted at depth 0
-            for (const auto& entry : legalMoves) {
-                if (std::find(gSearch->RootExcludedMoves.begin(), gSearch->RootExcludedMoves.end(), entry.move) == gSearch->RootExcludedMoves.end()) {
-                    bm = entry.move;
-                    break;
-                }
-            }
-            if (bm.IsNull()) break;
+            // Do not fabricate a bogus 0cp move if search produced no move
+            break;
         }
 
         RawLine line{};

@@ -125,5 +125,24 @@ struct EngineAndClassificationTests {
         #expect(checkmated.score.isCheckmate == true)
         #expect(checkmated.score.cpWhite == 10000)
         #expect(checkmated.bestMoveUci.isEmpty)
+
+        // 6. 4-field FEN + impossible castling flags must be normalized safely without crashing C++ Position
+        let shortFen = try await engine.analyze(
+            fen: "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w KQkq -",
+            depth: 8,
+            multiPV: 1,
+            maxTimeMs: 250
+        )
+        #expect(shortFen.bestMoveUci == "d1d8")
+        #expect(shortFen.score.mateWhite == 1)
+
+        // 7. Analysis preset Pro gating: Fast/Balanced/Deep are Free, Ultra & Cloud SF require Pro
+        #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.fast, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.balanced, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.deep, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.ultra, hasProAccess: false))
+        #expect(!BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.cloudUltra, hasProAccess: false))
+        #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.ultra, hasProAccess: true))
+        #expect(BrillyEntitlementPolicy.isAnalysisPresetUnlocked(.cloudUltra, hasProAccess: true))
     }
 }

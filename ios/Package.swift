@@ -10,6 +10,10 @@ let package = Package(
     ],
     products: [
         .library(
+            name: "BrillyDerActivityKit",
+            targets: ["BrillyDerActivityKit"]
+        ),
+        .library(
             name: "BrillyDerCore",
             targets: ["BrillyDerCore"]
         ),
@@ -19,6 +23,10 @@ let package = Package(
         ),
     ],
     targets: [
+        .target(
+            name: "BrillyDerActivityKit",
+            path: "Sources/BrillyDerActivityKit"
+        ),
         .target(
             name: "CRenegadeEngine",
             path: "Sources/CRenegadeEngine",
@@ -42,7 +50,7 @@ let package = Package(
         ),
         .target(
             name: "BrillyDerUI",
-            dependencies: ["BrillyDerCore"],
+            dependencies: ["BrillyDerCore", "BrillyDerActivityKit"],
             path: "Sources/BrillyDerUI",
             resources: [
                 .process("Resources/Pieces"),

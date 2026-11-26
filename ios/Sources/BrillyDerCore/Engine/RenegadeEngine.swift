@@ -8,10 +8,57 @@ public actor RenegadeEngine: ChessEngine {
     public nonisolated let engineName = "BrillyChess NNUE (Renegade MIT)"
     public nonisolated let engineLicense = "MIT License (Copyright © 2022–2026 Krisztián Peőcz)"
 
+    private final class SearchRequestTracker: @unchecked Sendable {
+        private let lock = NSLock()
+        private var nextId: UInt64 = 1
+        private var activeId: UInt64 = 0
+        private var cancelledIds: Set<UInt64> = []
+
+        func allocate() -> UInt64 {
+            lock.lock()
+            defer { lock.unlock() }
+            let id = nextId
+            nextId &+= 1
+            return id
+        }
+
+        /// Returns false if this request was already cancelled before entering C++ search.
+        func begin(_ id: UInt64) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if cancelledIds.remove(id) != nil {
+                return false
+            }
+            activeId = id
+            return true
+        }
+
+        func end(_ id: UInt64) {
+            lock.lock()
+            defer { lock.unlock() }
+            if activeId == id {
+                activeId = 0
+            }
+            cancelledIds.remove(id)
+        }
+
+        /// Returns true iff `id` is the currently executing C++ search and should be aborted.
+        func cancel(_ id: UInt64) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if activeId == id {
+                return true
+            }
+            cancelledIds.insert(id)
+            return false
+        }
+    }
+
     private static let searchQueue = DispatchQueue(
         label: "com.brillyder.renegade.engine",
         qos: .userInitiated
     )
+    private static let requestTracker = SearchRequestTracker()
 
     private let fallback = BrillyNativeEngine()
     private var isReady: Bool = false
@@ -38,9 +85,13 @@ public actor RenegadeEngine: ChessEngine {
         return isReady
     }
 
-    public func clearHash() {
-        if isReady {
-            renegade_clear_hash()
+    public func clearHash() async {
+        guard isReady else { return }
+        await withCheckedContinuation { continuation in
+            Self.searchQueue.async {
+                renegade_clear_hash()
+                continuation.resume()
+            }
         }
     }
 
@@ -55,24 +106,33 @@ public actor RenegadeEngine: ChessEngine {
             return try await fallback.analyze(fen: fen, depth: depth, multiPV: multiPV, maxTimeMs: maxTimeMs)
         }
 
-        // Validate FEN via ChessBoard first so malformed FENs throw ChessError cleanly
+        // Validate & normalize FEN via ChessBoard first so 4/5-field FENs and impossible castling rights are sanitized
         let board = try ChessBoard(fen: fen)
+        let normalizedFen = board.fen
         let timeMs = Int32(max(20, maxTimeMs ?? 250))
         let maxD = Int32(max(1, min(30, depth)))
         let pvCount = Int32(max(1, min(3, multiPV)))
+        let requestId = Self.requestTracker.allocate()
 
         let raw: (ok: Bool, result: RenegadeAnalysisResult) = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 Self.searchQueue.async {
+                    guard Self.requestTracker.begin(requestId) else {
+                        continuation.resume(returning: (false, RenegadeAnalysisResult()))
+                        return
+                    }
+                    defer { Self.requestTracker.end(requestId) }
                     var out = RenegadeAnalysisResult()
-                    let ok = fen.withCString { cFen in
+                    let ok = normalizedFen.withCString { cFen in
                         renegade_analyze(cFen, maxD, pvCount, timeMs, &out)
                     }
                     continuation.resume(returning: (ok, out))
                 }
             }
         } onCancel: {
-            renegade_abort()
+            if Self.requestTracker.cancel(requestId) {
+                renegade_abort()
+            }
         }
 
         try Task.checkCancellation()

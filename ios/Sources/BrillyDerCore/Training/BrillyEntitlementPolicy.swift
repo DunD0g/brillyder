@@ -61,7 +61,7 @@ public enum BrillyEntitlementPolicy {
     /// Default Mind-Blown (`🤯 / 🤦`) emoji pair is Free; extra emoji packs & custom Share Card captions require Pro.
     public static let freeEmojiPackRawValue: String = "mindBlown"
 
-    /// Classic 4 board themes are Free; premium themes (Obsidian, Championship Gold, Cyber Violet) require Pro.
+    /// Classic 4 board themes are Free; 6 premium themes (Obsidian, Championship Gold, Cyber Violet, Seasonal, Prism, Marble) require Pro.
     public static let freeBoardThemeRawValues: Set<String> = [
         "slate", "emerald", "walnut", "neon"
     ]
@@ -87,6 +87,11 @@ public enum BrillyEntitlementPolicy {
 
     public static func isBoardThemeUnlocked(rawValue: String, hasProAccess: Bool) -> Bool {
         hasProAccess || freeBoardThemeRawValues.contains(rawValue)
+    }
+
+    /// Fast, Balanced, and Deep are unlocked on Free; single-game Ultra (~3300+ Elo offline) & Cloud SF16 require Pro.
+    public static func isAnalysisPresetUnlocked(_ preset: AnalysisDepthPreset, hasProAccess: Bool) -> Bool {
+        hasProAccess || !preset.isSingleGameOnly
     }
 
     /// Automatic sync on app launch / foreground resume is a Pro convenience perk; manual sync is always unlimited & free.

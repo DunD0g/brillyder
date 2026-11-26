@@ -478,7 +478,7 @@ public struct CockpitSettingsSheet: View {
                                         }
                                     }
 
-                                    Text("*Cloud SF queries Lichess's free Stockfish 16 cloud cache when online (marked with ☁️) and falls back to Ultra on-device when offline. Switch anytime via the depth pill next to Analyze.")
+                                    Text("Cloud SF queries Lichess's free Stockfish 16 cloud cache when online and automatically falls back to Ultra NNUE (~3300+ Elo) on-device when offline. Ultra & Cloud SF are Pro single-game modes — switch anytime via the depth pill next to Analyze.")
                                         .font(.system(size: 10))
                                         .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
                                         .padding(.top, 2)
@@ -1010,7 +1010,7 @@ public struct CockpitSettingsSheet: View {
                                             .foregroundStyle(BrillyPalette.inkSecondary)
                                     }
                                 } else {
-                                    Text("Free Plan · \(store.remainingFreeAnalysesToday) of \(BrillyEntitlementPolicy.freeDailyAnalysisLimit) daily game analyses left today. Upgrade for unlimited batch analysis, all 16 opening courses (incl. QGD, QGA & Pro Gambits), Woodpecker, Never Give Up & Endgame Labs, and all 4 piece sets.")
+                                    Text("Free Plan · \(store.remainingFreeAnalysesToday) of \(BrillyEntitlementPolicy.freeDailyAnalysisLimit) daily game analyses left today. Upgrade for Ultra NNUE (~3300+ Elo) & Cloud SF16 review, unlimited batch analysis, all 16 opening courses (incl. QGD, QGA & Pro Gambits), Woodpecker, Never Give Up & Endgame Labs, and all 4 piece sets.")
                                         .font(.caption)
                                         .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
@@ -1095,8 +1095,8 @@ public struct CockpitSettingsSheet: View {
 
                             Text(
                                 store.edition == .founderAdmin
-                                    ? "BrillyDer Founder Admin · BrillyNative Swift Engine · 100% On-Device"
-                                    : "BrillyDer · BrillyNative Swift Engine · 100% On-Device & Local-First"
+                                    ? "BrillyDer Founder Admin · BrillyChess NNUE (~3300+ Elo) · 100% On-Device"
+                                    : "BrillyDer · BrillyChess NNUE (~3300+ Elo) · 100% On-Device & Local-First"
                             )
                             .font(.caption)
                             .foregroundStyle(BrillyPalette.inkSecondary)

@@ -20,7 +20,7 @@ bool LoadNetworkFromPath(const char* path) {
 	if (fd < 0) return false;
 
 	struct stat st{};
-	if (::fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) < sizeof(NetworkRepresentation)) {
+	if (::fstat(fd, &st) != 0 || st.st_size <= 0 || static_cast<size_t>(st.st_size) < sizeof(NetworkRepresentation)) {
 		::close(fd);
 		return false;
 	}
@@ -83,7 +83,7 @@ int16_t NeuralEvaluate(const Position& position, const AccumulatorRepresentation
 		sum = _mm256_add_epi32(sum, p);
 	}
 	output = HorizontalSum(sum);
-#elif defined(__ARM_NEON) || defined(__aarch64__)
+#elif defined(__aarch64__)
 	// Handwritten ARM64 NEON SIMD SCReLU for Apple Silicon (4x-8x faster than scalar!)
 	const int16x8_t vMin = vdupq_n_s16(0);
 	const int16x8_t vMax = vdupq_n_s16(static_cast<int16_t>(QA));
