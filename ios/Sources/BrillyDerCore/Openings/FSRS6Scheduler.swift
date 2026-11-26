@@ -192,7 +192,7 @@ public enum FSRS6Scheduler {
         if !newStability.isFinite { newStability = 1.0 }
         newStability = ChessMath.clamp(newStability, min: 0.1, max: maxIntervalDays)
         if !nextIntervalDays.isFinite { nextIntervalDays = 1.0 }
-        nextIntervalDays = ChessMath.clamp(nextIntervalDays, min: 5.0 / 1440.0, max: maxIntervalDays)
+        nextIntervalDays = ChessMath.clamp(nextIntervalDays, min: 1.0 / 1440.0, max: maxIntervalDays)
 
         let nextDueDate = now.addingTimeInterval(nextIntervalDays * 86_400.0)
         let rawMs = nextDueDate.timeIntervalSince1970 * 1000.0

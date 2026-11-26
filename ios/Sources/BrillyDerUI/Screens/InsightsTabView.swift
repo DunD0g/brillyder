@@ -253,7 +253,7 @@ public struct InsightsTabView: View {
                                         .font(.headline)
                                         .foregroundStyle(BrillyPalette.inkPrimary)
                                     Spacer()
-                                    Text("Tap to drill")
+                                    Text("Tap to inspect game")
                                         .font(.caption2.weight(.semibold))
                                         .foregroundStyle(BrillyPalette.inkSecondary)
                                 }
@@ -363,9 +363,18 @@ public struct InsightsTabView: View {
                             }
                         }
                         .contentShape(Rectangle())
+                        .onTapGesture { location in
+                            let pad: CGFloat = 8
+                            let usableW = max(1, geo.size.width - pad * 2)
+                            let norm = ChessMath.clamp(Double((location.x - pad) / usableW), min: 0.0, max: 1.0)
+                            let idx = Int((norm * Double(accPoints.count - 1)).rounded())
+                            selectedTrendIndex = idx
+                            store.triggerHaptic(.move)
+                        }
                         .gesture(
-                            DragGesture(minimumDistance: 0)
+                            DragGesture(minimumDistance: 10)
                                 .onChanged { val in
+                                    guard abs(val.translation.width) > abs(val.translation.height) else { return }
                                     let pad: CGFloat = 8
                                     let usableW = max(1, geo.size.width - pad * 2)
                                     let norm = ChessMath.clamp(Double((val.location.x - pad) / usableW), min: 0.0, max: 1.0)

@@ -51,14 +51,15 @@ public enum LichessCloudEvalClient {
     }
 
     public static func probe(fen: String, multiPV: Int = 2) async -> ProbeOutcome {
-        let key = normalizedKey(for: fen)
+        let clampedPV = max(1, min(3, multiPV))
+        let key = "\(normalizedKey(for: fen))|pv\(clampedPV)"
         if let cached = await cache.get(key) {
             return .hit(cached)
         }
         var components = URLComponents(string: "https://lichess.org/api/cloud-eval")
         components?.queryItems = [
             URLQueryItem(name: "fen", value: fen),
-            URLQueryItem(name: "multiPv", value: String(max(1, min(3, multiPV))))
+            URLQueryItem(name: "multiPv", value: String(clampedPV))
         ]
         guard let url = components?.url else { return .miss }
 

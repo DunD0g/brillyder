@@ -315,19 +315,14 @@ public enum MoveClassifier {
 
         let opp = moverColor.opposite
 
-        // 1. Check if the played move hung the moved piece (or left a major/minor piece en prise)
+        // 1. Check if the played move hung the moved piece via real SEE (avoids false positives on equal Q/R trades)
         if let movedPiece = afterBoard.squares[playedToSquare.rawValue],
            movedPiece.color == moverColor,
            movedPiece.type != .pawn,
            movedPiece.type != .king,
-           afterBoard.isSquareAttacked(playedToSquare, by: opp) {
-            let defended = afterBoard.isSquareAttacked(playedToSquare, by: moverColor)
-            if !defended {
-                return "Hanging Piece"
-            }
-            if movedPiece.type == .queen || movedPiece.type == .rook {
-                return "Hanging Piece"
-            }
+           afterBoard.isSquareAttacked(playedToSquare, by: opp),
+           ChessMath.legalCaptureGainOnSquare(board: afterBoard, square: playedToSquare, maxDepth: 6) > 0 {
+            return "Hanging Piece"
         }
 
         // 2. Inspect the missed best move on a copy of beforeBoard

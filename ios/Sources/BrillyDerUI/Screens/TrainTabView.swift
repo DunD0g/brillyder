@@ -1173,7 +1173,7 @@ public struct DailyOpeningsPickerSheet: View {
 
                     Button {
                         if !unlocked {
-                            paywallFeature = "\(course.name) & All 8 Starter Openings"
+                            paywallFeature = "\(course.name) & All \(store.starterCourses.count) Starter Openings"
                             showingPaywall = true
                             return
                         }

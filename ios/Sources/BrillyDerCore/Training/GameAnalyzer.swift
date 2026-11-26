@@ -45,6 +45,7 @@ public enum GameAnalyzer {
                     }
                 }
             }
+            try Task.checkCancellation()
             let localEval = try await engine.analyze(
                 fen: fen,
                 depth: preset.searchDepth,
@@ -84,20 +85,25 @@ public enum GameAnalyzer {
         var prevClockByColor: [PieceColor: Double] = [:]
 
         for (idx, pgnMove) in parsed.moves.enumerated() {
+            try Task.checkCancellation()
             let applied = pgnMove.applied
             var evalBefore = evalByPlyIndex[idx]
             var evalAfter = evalByPlyIndex[idx + 1]
-            // Eliminate cross-engine eval cliff on cloud→local transition ply by re-evaluating
-            // beforeFen with the local engine so winBefore and winAfter share the exact same scale.
+            // Eliminate cross-engine eval cliffs on BOTH cloud→local and local→cloud transition plies
             if evalWasCloud[idx] && !evalWasCloud[idx + 1] {
-                if let localBefore = try? await engine.analyze(
+                evalBefore = try await engine.analyze(
                     fen: applied.beforeFen,
                     depth: preset.searchDepth,
                     multiPV: 2,
                     maxTimeMs: preset.maxTimeMs
-                ) {
-                    evalBefore = localBefore
-                }
+                )
+            } else if !evalWasCloud[idx] && evalWasCloud[idx + 1] {
+                evalAfter = try await engine.analyze(
+                    fen: applied.afterFen,
+                    depth: preset.searchDepth,
+                    multiPV: 2,
+                    maxTimeMs: preset.maxTimeMs
+                )
             }
             let beforeBoard = (try? ChessBoard(fen: applied.beforeFen)) ?? ChessBoard()
             let afterBoard = (try? ChessBoard(fen: applied.afterFen)) ?? ChessBoard()

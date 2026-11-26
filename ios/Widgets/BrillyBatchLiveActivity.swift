@@ -75,6 +75,7 @@ struct BrillyBatchLiveActivityWidget: Widget {
             .padding(14)
             .activityBackgroundTint(Self.voidBg.opacity(0.92))
             .activitySystemActionForegroundColor(Self.teal)
+            .widgetURL(URL(string: "brillyder://batch"))
         } dynamicIsland: { context in
             let state = context.state
             let isPaused = state.status == "paused"
@@ -151,6 +152,7 @@ struct BrillyBatchLiveActivityWidget: Widget {
                 .tint(accent)
             }
             .keylineTint(accent)
+            .widgetURL(URL(string: "brillyder://batch"))
         }
     }
 }

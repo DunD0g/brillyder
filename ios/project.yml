@@ -42,6 +42,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         LSRequiresIPhoneOS: true
         NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.brillyder.app
+            CFBundleURLSchemes:
+              - brillyder
         NSPhotoLibraryAddUsageDescription: "Save BrillyDer chess position share cards to your Photo Library."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -88,6 +93,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         LSRequiresIPhoneOS: true
         NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.brillyder.app
+            CFBundleURLSchemes:
+              - brillyder
         NSPhotoLibraryAddUsageDescription: "Save BrillyDer chess position share cards to your Photo Library."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false

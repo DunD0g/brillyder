@@ -224,6 +224,7 @@ public actor BrillyNativeEngine: ChessEngine {
         let ttSlot = Int(board.zobristHash & UInt64(Self.ttMask))
         let ttMove = (storeRootTT && tt[ttSlot].key == board.zobristHash) ? tt[ttSlot].bestMove : nil
         let ordered = orderMoves(candidates, board: board, ttMove: ttMove, ply: 0)
+        staticEvalStack[0] = board.isInCheck() ? Int.min : evaluate(board)
 
         var alpha = aspiration?.0 ?? (-Self.mateScore - 100)
         var beta = aspiration?.1 ?? (Self.mateScore + 100)
@@ -344,8 +345,8 @@ public actor BrillyNativeEngine: ChessEngine {
         var ttMove: ChessMove? = nil
         if entry.key == board.zobristHash {
             ttMove = entry.bestMove
-            // Skip TT cutoffs on PV nodes so full PV lines never get truncated
-            if !isPVNode && Int(entry.depth) >= effectiveDepth && ply > 0 {
+            // Skip TT cutoffs on PV nodes and at effectiveDepth <= 0 (preserves horizon stalemate guard!)
+            if !isPVNode && effectiveDepth > 0 && Int(entry.depth) >= effectiveDepth && ply > 0 {
                 let s = adjustMateScoreFromTT(Int(entry.score), ply: ply)
                 switch entry.bound {
                 case .exact: return s
@@ -374,17 +375,19 @@ public actor BrillyNativeEngine: ChessEngine {
         // Static eval + Improving flag for RFP, Razoring, NMP, Futility & LMP
         var staticEval: Int? = nil
         var improving = false
-        if !inCheck {
+        if inCheck {
+            if ply < 64 { staticEvalStack[ply] = Int.min }
+        } else {
             let ev = evaluate(board)
             staticEval = ev
             if ply < 64 {
                 staticEvalStack[ply] = ev
-                if ply >= 2 {
+                if ply >= 2 && staticEvalStack[ply - 2] != Int.min {
                     improving = ev > staticEvalStack[ply - 2]
                 }
             }
 
-            if !isPVNode && abs(beta) < Self.mateThreshold && abs(origAlpha) < Self.mateThreshold {
+            if !isPVNode && abs(beta) < Self.mateThreshold && abs(alpha) < Self.mateThreshold {
                 // Reverse Futility Pruning (Static Null Move Pruning) — tighter when improving
                 let rfpMargin = (improving ? 90 : 120) * effectiveDepth
                 if effectiveDepth <= 4 && ev - rfpMargin >= beta {
@@ -400,10 +403,11 @@ public actor BrillyNativeEngine: ChessEngine {
                     }
                 }
 
-                // Dynamic Null-Move Pruning (NMP) — huge branching-factor reduction when side has non-pawn material
+                // Dynamic Null-Move Pruning (NMP) — push hash so repetition stride(by: -2) parity stays intact!
                 if allowNull && effectiveDepth >= 3 && ev >= beta && board.hasNonPawnMaterial(for: board.turn) {
                     var nullBoard = board
                     nullBoard.makeNullMove()
+                    pathHashes.append(nullBoard.zobristHash)
                     let R = 2 + effectiveDepth / 4 + min(2, max(0, (ev - beta) / 220))
                     var nullPV: [ChessMove] = []
                     let nullScore = -negamax(
@@ -416,6 +420,7 @@ public actor BrillyNativeEngine: ChessEngine {
                         prevMoveKey: -1,
                         pv: &nullPV
                     )
+                    pathHashes.removeLast()
                     if aborted { return 0 }
                     if nullScore >= beta && nullScore < Self.mateThreshold {
                         return beta
@@ -448,8 +453,8 @@ public actor BrillyNativeEngine: ChessEngine {
             next.makeMoveUnchecked(move)
             let givesCheck = next.isInCheck()
 
-            // Futility Pruning & Late Move Pruning (LMP) — single board copy (no duplicate checkProbe!)
-            if !isPVNode && !inCheck && !isTactical && !givesCheck && index > 0 {
+            // Futility Pruning & Late Move Pruning (LMP) — guard mate scores so quiet mates aren't pruned
+            if !isPVNode && !inCheck && !isTactical && !givesCheck && index > 0 && abs(alpha) < Self.mateThreshold {
                 if effectiveDepth <= 2, let ev = staticEval, ev + 135 * effectiveDepth <= alpha {
                     quietCount += 1
                     continue
@@ -545,10 +550,10 @@ public actor BrillyNativeEngine: ChessEngine {
         if bestScore <= origAlpha { bound = .upper }
         else if bestScore >= beta { bound = .lower }
         else { bound = .exact }
-        // Store unextended `depth` in TT to prevent check-extension depth inflation
+        // Store min(depth, effectiveDepth) so neither check extensions nor IIR inflate TT depth
         storeTT(
             key: board.zobristHash,
-            depth: depth,
+            depth: min(depth, effectiveDepth),
             score: adjustMateScoreForTT(bestScore, ply: ply),
             bound: bound,
             bestMove: bestMove
@@ -580,10 +585,10 @@ public actor BrillyNativeEngine: ChessEngine {
         var alpha = origAlpha
         let inCheck = board.isInCheck()
 
-        // TT probe in Quiescence Search (depth 0) — cuts 20–35% of tactical capture tree nodes
+        // TT probe in Quiescence Search (stored at depth -1 so it never collides with negamax stalemate guard)
         let ttIndex = Int(board.zobristHash & UInt64(Self.ttMask))
         let ttEntry = tt[ttIndex]
-        if ttEntry.key == board.zobristHash && ttEntry.depth >= 0 {
+        if ttEntry.key == board.zobristHash && ttEntry.depth >= -1 {
             let s = adjustMateScoreFromTT(Int(ttEntry.score), ply: ply)
             switch ttEntry.bound {
             case .exact: return s
@@ -600,7 +605,7 @@ public actor BrillyNativeEngine: ChessEngine {
             if evasions.isEmpty {
                 return -Self.mateScore + ply
             }
-            if ply >= 24 { return evaluate(board) }
+            if ply >= 63 { return evaluate(board) }
             var scores = scoreMoves(evasions, board: board, ttMove: ttEntry.key == board.zobristHash ? ttEntry.bestMove : nil, countermove: nil, ply: min(ply, 63))
             var bestScore = -Self.mateScore - 100
             var bestMove: ChessMove? = nil
@@ -615,14 +620,14 @@ public actor BrillyNativeEngine: ChessEngine {
                     bestMove = move
                 }
                 if score >= beta {
-                    storeTT(key: board.zobristHash, depth: 0, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
+                    storeTT(key: board.zobristHash, depth: -1, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
                     return beta
                 }
                 if score > alpha { alpha = score }
             }
             storeTT(
                 key: board.zobristHash,
-                depth: 0,
+                depth: -1,
                 score: adjustMateScoreForTT(bestScore, ply: ply),
                 bound: bestScore > origAlpha ? .exact : .upper,
                 bestMove: bestMove
@@ -633,7 +638,7 @@ public actor BrillyNativeEngine: ChessEngine {
         let standPat = evaluate(board)
         if standPat >= beta { return beta }
         if standPat > alpha { alpha = standPat }
-        if ply >= 24 { return standPat }
+        if ply >= 63 { return standPat }
 
         var captures = board.legalMoves(capturesOnly: true)
         if captures.isEmpty { return standPat }
@@ -653,13 +658,13 @@ public actor BrillyNativeEngine: ChessEngine {
                 if standPat + victim.type.centipawnValue + 200 < alpha {
                     continue
                 }
-                // Static Exchange Evaluation (SEE) pruning: skip losing captures (e.g. QxP defended by pawn)
-                if quickSEE(move, on: board) < 0 {
-                    continue
-                }
             }
             var next = board
             next.makeMoveUnchecked(move)
+            // Static Exchange Evaluation (SEE) pruning: skip losing NON-CHECKING captures (never prune Qxf7#!)
+            if move.promotion == nil && !next.isInCheck() && quickSEE(move, on: board) < 0 {
+                continue
+            }
             let score = -quiescence(board: next, alpha: -beta, beta: -alpha, ply: ply + 1)
             if aborted { return 0 }
             if score > bestScore {
@@ -667,14 +672,14 @@ public actor BrillyNativeEngine: ChessEngine {
                 bestMove = move
             }
             if score >= beta {
-                storeTT(key: board.zobristHash, depth: 0, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
+                storeTT(key: board.zobristHash, depth: -1, score: adjustMateScoreForTT(score, ply: ply), bound: .lower, bestMove: move)
                 return beta
             }
             if score > alpha { alpha = score }
         }
         storeTT(
             key: board.zobristHash,
-            depth: 0,
+            depth: -1,
             score: adjustMateScoreForTT(bestScore, ply: ply),
             bound: bestScore > origAlpha ? .exact : .upper,
             bestMove: bestMove
@@ -731,7 +736,8 @@ public actor BrillyNativeEngine: ChessEngine {
     @inline(__always)
     private func quickSEE(_ move: ChessMove, on board: ChessBoard) -> Int {
         guard let attacker = board[move.from] else { return 0 }
-        let victimVal = board[move.to]?.type.centipawnValue ?? (move.to == board.enPassantSquare ? 100 : 0)
+        let isEp = attacker.type == .pawn && move.to == board.enPassantSquare
+        let victimVal = board[move.to]?.type.centipawnValue ?? (isEp ? 100 : 0)
         let promoBonus = (move.promotion?.centipawnValue ?? 0) - (move.promotion != nil ? 100 : 0)
         let attackerVal = attacker.type.centipawnValue
         // Capturing an equal or more valuable piece (or promoting) is immediately non-losing
@@ -1227,8 +1233,8 @@ public actor BrillyNativeEngine: ChessEngine {
         let whiteDiffMg = mgWhite - mgBlack
         var whiteDiffEg = egWhite - egBlack
 
-        // Opposite-colored bishops endgame drawishness scaling
-        if majorCount == 0 && whiteBishops == 1 && blackBishops == 1 && whiteBishopLight != blackBishopLight {
+        // Opposite-colored bishops endgame drawishness scaling (pure OCB without majors or knights)
+        if majorCount == 0 && whiteKnights == 0 && blackKnights == 0 && whiteBishops == 1 && blackBishops == 1 && whiteBishopLight != blackBishopLight {
             whiteDiffEg = (whiteDiffEg * 62) / 100
         }
 

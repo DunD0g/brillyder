@@ -1171,6 +1171,7 @@ public struct AnalyzeTabView: View {
                                 default: return "Final Move · End of Recorded Game"
                                 }
                             }()
+                            let mistakeCount = ag.plies.filter { $0.classification == .mistake || $0.classification == .blunder }.count
                             HStack(spacing: 6) {
                                 Image(systemName: "flag.checkered")
                                     .font(.caption2.weight(.bold))
@@ -1178,7 +1179,27 @@ public struct AnalyzeTabView: View {
                                 Text(endBannerText)
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(BrillyPalette.goldAmber)
-                                Spacer(minLength: 0)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                Spacer(minLength: 4)
+                                if mistakeCount > 0 {
+                                    Button {
+                                        if !store.hasProAccess {
+                                            store.openProPaywall(feature: "Guided Mistake Review Mode")
+                                            return
+                                        }
+                                        showingMistakeReview = true
+                                        store.triggerHaptic(.move)
+                                    } label: {
+                                        Label("Fix \(mistakeCount)", systemImage: store.hasProAccess ? "wand.and.stars" : "lock.fill")
+                                            .font(.caption2.weight(.black))
+                                            .foregroundStyle(BrillyPalette.voidBg)
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(BrillyPalette.goldAmber))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)

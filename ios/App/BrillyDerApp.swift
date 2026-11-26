@@ -24,6 +24,11 @@ struct BrillyDerApp: App {
                 .environment(store)
                 .environment(\.brillyPieceSet, store.effectivePieceSet)
                 .preferredColorScheme(.dark)
+                .onOpenURL { url in
+                    if url.scheme == "brillyder" && url.host == "batch" {
+                        store.selectedTab = .games
+                    }
+                }
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

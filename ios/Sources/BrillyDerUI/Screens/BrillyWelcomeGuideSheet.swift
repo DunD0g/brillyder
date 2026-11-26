@@ -184,7 +184,7 @@ public struct BrillyWelcomeGuideSheet: View {
                     icon: "brain.head.profile",
                     tint: BrillyPalette.warpPurpleText,
                     title: "FSRS Openings, Mistakes & Labs",
-                    detail: "Build your daily streak in Train → FSRS, drill your own blunders, or press & hold any course in Openings to build your custom repertoire."
+                    detail: "Build your daily streak in Train → FSRS, drill your own blunders, or tap Daily on any of the 16 courses in Openings to customize your repertoire."
                 )
                 guideCard(
                     icon: "square.and.arrow.up",
@@ -529,8 +529,9 @@ public struct BrillyWelcomeGuideSheet: View {
                     .foregroundStyle(BrillyPalette.brillyTeal)
 
                 HStack(spacing: 8) {
+                    let effectiveBatchPreset: AnalysisDepthPreset = store.analysisPreset.isSingleGameOnly ? .deep : store.analysisPreset
                     ForEach(AnalysisDepthPreset.batchPresets) { preset in
-                        let selected = store.analysisPreset == preset
+                        let selected = effectiveBatchPreset == preset
                         Button {
                             withAnimation(.snappy(duration: 0.2)) {
                                 store.analysisPreset = preset

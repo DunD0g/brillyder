@@ -146,13 +146,13 @@ public struct BrillyProPaywallSheet: View {
             benefitRow(
                 "book.closed.fill",
                 tint: BrillyPalette.warpPurpleText,
-                title: "All 12 Opening Courses (incl. Alien & Stafford Gambits) + Custom PGNs",
-                subtitle: "Spaced-repetition FSRS drills graded on recall speed across 12 repertoires & your own PGNs"
+                title: "All 16 Opening Courses (incl. QGD, QGA & Pro Gambits) + Custom PGNs",
+                subtitle: "Spaced-repetition FSRS drills & 32 counter/refutation guides across 16 repertoires & your own PGNs"
             )
             benefitRow(
                 "cpu.fill",
                 tint: BrillyPalette.goldAmber,
-                title: "Ultra On-Device (~2550 Elo) & Cloud SF16 (~3500 Elo) + Unlimited Batch",
+                title: "Ultra On-Device (~2550 Elo) & Cloud SF16 (~3500 Elo*) + Unlimited Batch",
                 subtitle: "Remove the 2/day Free cap, unlock Show Threat Arrow, Guided Mistake Review, Opponent Profile Scout & Instant Auto-Sync"
             )
             benefitRow(

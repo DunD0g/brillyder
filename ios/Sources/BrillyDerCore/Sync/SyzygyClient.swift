@@ -131,8 +131,8 @@ public actor SyzygyClient {
                     uci: m.uci,
                     san: m.san,
                     category: Self.invertOpponentCategory(m.category),
-                    dtz: m.dtz,
-                    dtm: m.dtm,
+                    dtz: m.dtz.map { -$0 },
+                    dtm: m.dtm.map { -$0 },
                     checkmate: m.checkmate,
                     stalemate: m.stalemate
                 )

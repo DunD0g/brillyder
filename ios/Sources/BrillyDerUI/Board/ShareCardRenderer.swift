@@ -941,6 +941,7 @@ public struct BrillyShareCardSheet: View {
     @State private var storyMode: Bool
     @State private var showingCaptionField: Bool = false
     @State private var showingProPaywall: Bool = false
+    @State private var proPaywallFeature: String = "Pro Share Studio"
     @State private var saveNotice: String? = nil
     @State private var saveFailed: Bool = false
     @State private var containerWidth: CGFloat = 390
@@ -1000,9 +1001,10 @@ public struct BrillyShareCardSheet: View {
                             .frame(width: 400 * previewScale, height: naturalCardHeight * previewScale, alignment: .top)
                             .padding(.top, 4)
 
-                        // Quick Customizers Row
-                        HStack(spacing: 8) {
-                            Button {
+                        // Quick Customizers Row (horizontally scrollable so 375pt iPhones never wrap)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                Button {
                                 switch calloutStyle {
                                 case .brillyDer:
                                     calloutStyle = .standard
@@ -1059,6 +1061,7 @@ public struct BrillyShareCardSheet: View {
                             }
                             Button {
                                 if !store.hasProAccess {
+                                    proPaywallFeature = "Custom Share Card Captions"
                                     showingProPaywall = true
                                     return
                                 }
@@ -1067,10 +1070,11 @@ public struct BrillyShareCardSheet: View {
                                 }
                             } label: {
                                 Label(
-                                    store.hasProAccess ? "Caption" : "Caption",
+                                    "Caption",
                                     systemImage: store.hasProAccess ? "pencil.line" : "lock.fill"
                                 )
                                 .font(.caption.weight(.bold))
+                                .lineLimit(1)
                                 .foregroundStyle(
                                     showingCaptionField && store.hasProAccess
                                         ? BrillyPalette.voidBg
@@ -1090,13 +1094,15 @@ public struct BrillyShareCardSheet: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 16)
                         }
-                        .padding(.horizontal, 16)
 
                         // Pro Share Studio Row: 9:16 Story Format + Blur Player Names
                         HStack(spacing: 8) {
                             Button {
                                 if !store.hasProAccess {
+                                    proPaywallFeature = "9:16 Story Share Cards"
                                     showingProPaywall = true
                                     return
                                 }
@@ -1133,6 +1139,7 @@ public struct BrillyShareCardSheet: View {
 
                             Button {
                                 if !store.hasProAccess {
+                                    proPaywallFeature = "Blur Player Names on Share Cards"
                                     showingProPaywall = true
                                     return
                                 }
@@ -1246,7 +1253,7 @@ public struct BrillyShareCardSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .sheet(isPresented: $showingProPaywall) {
-                BrillyProPaywallSheet(highlightedFeature: "Custom Share Card Captions & Emoji Packs")
+                BrillyProPaywallSheet(highlightedFeature: proPaywallFeature)
                     .environment(store)
             }
             .toolbar {

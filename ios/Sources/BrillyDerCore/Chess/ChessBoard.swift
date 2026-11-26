@@ -600,7 +600,6 @@ public struct ChessBoard: Hashable, Sendable {
             zobristHash ^= Zobrist.epFileKeys[oldEp.file]
         }
         enPassantSquare = nil
-        halfmoveClock += 1
         turn = turn.opposite
         zobristHash ^= Zobrist.sideKey
     }

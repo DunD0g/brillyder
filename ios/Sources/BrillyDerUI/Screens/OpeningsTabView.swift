@@ -16,11 +16,17 @@ public struct OpeningsTabView: View {
         store.allCourses.filter { $0.side == .black }.count
     }
 
+    private var isSearching: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var courses: [OpeningCourse] {
-        let bySide = store.allCourses.filter { $0.side == sideFilter }
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return bySide }
-        return bySide.filter { c in
+        guard !q.isEmpty else {
+            return store.allCourses.filter { $0.side == sideFilter }
+        }
+        // Search across BOTH White & Black courses so typing "QGD" or "Caro-Kann" on the White tab always finds them!
+        return store.allCourses.filter { c in
             c.name.lowercased().contains(q)
                 || c.tagline.lowercased().contains(q)
                 || c.codename.lowercased().contains(q)
@@ -98,9 +104,32 @@ public struct OpeningsTabView: View {
                     }
                     .padding(.horizontal, 4)
 
-                    LazyVStack(spacing: 12) {
-                        ForEach(courses) { course in
-                            courseCard(course)
+                    if courses.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.title2)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
+                            Text("No matching openings for \"\(searchQuery)\"")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                            Button("Clear Search") {
+                                searchQuery = ""
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(24)
+                        .brillySurface(store.surfaceStyle, cornerRadius: 18)
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(courses) { course in
+                                courseCard(course)
+                            }
                         }
                     }
                 }
@@ -135,10 +164,20 @@ public struct OpeningsTabView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(store.copy(cosmic: course.codename.uppercased(), classic: course.difficulty.uppercased()))
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.8)
-                        .foregroundStyle(unlocked ? BrillyPalette.brillyTeal : BrillyPalette.warpPurpleText)
+                    HStack(spacing: 6) {
+                        Text(store.copy(cosmic: course.codename.uppercased(), classic: course.difficulty.uppercased()))
+                            .font(.caption2.weight(.bold))
+                            .tracking(0.8)
+                            .foregroundStyle(unlocked ? BrillyPalette.brillyTeal : BrillyPalette.warpPurpleText)
+                        if isSearching {
+                            Text(course.side == .white ? "WHITE" : "BLACK")
+                                .font(.system(size: 8.5, weight: .black))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.white.opacity(0.12)))
+                        }
+                    }
                     Text(course.name)
                         .font(.headline.weight(.bold))
                         .foregroundStyle(BrillyPalette.inkPrimary)
@@ -293,7 +332,7 @@ public struct OpeningsTabView: View {
                 }
             } else {
                 Button {
-                    store.openProPaywall(feature: "\(course.name) & All 8 Starter Openings")
+                    store.openProPaywall(feature: "\(course.name) & All \(store.starterCourses.count) Starter Openings")
                 } label: {
                     Label("Unlock with Brilly/Der Pro", systemImage: "crown.fill")
                 }
@@ -402,6 +441,7 @@ private struct CourseDetailSheet: View {
     @State private var selectedLineIndex: Int = 0
     @State private var selectedCounterIndex: Int = 0
     @State private var counterStep: Int = 0
+    @State private var hasInitializedCounterStep: Bool = false
     @State private var selectedTreeFen: String? = nil
     @State private var cachedTreeRoots: [RepertoireTreeNode] = []
     @State private var confirmingDelete: Bool = false
@@ -741,8 +781,9 @@ private struct CourseDetailSheet: View {
             }
         }
         .onAppear {
-            if counterStep == 0, let first = counters.first {
+            if !hasInitializedCounterStep, let first = counters.first {
                 counterStep = min(6, first.moves.count)
+                hasInitializedCounterStep = true
             }
         }
     }
