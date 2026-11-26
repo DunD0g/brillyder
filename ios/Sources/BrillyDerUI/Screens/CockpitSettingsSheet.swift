@@ -325,8 +325,8 @@ public struct CockpitSettingsSheet: View {
 
                         // MARK: - 2. Copy Vibe, Engine Depth, Sound, Haptics & Celebrations
                         VStack(alignment: .leading, spacing: 14) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Coach Vibe")
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Menu & Coach Labels")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
                                 Picker("Vibe", selection: $bindableStore.vibeMode) {
@@ -335,6 +335,13 @@ public struct CockpitSettingsSheet: View {
                                     }
                                 }
                                 .pickerStyle(.segmented)
+                                Text(
+                                    store.vibeMode == .classic
+                                        ? "Standard chess wording (e.g., Daily Improvement Plan, 60-Second Warmup, Time Management)."
+                                        : "Playful space-probe wording (e.g., Daily Flight Plan, 60s Gravity Check, Clock Leaks)."
+                                )
+                                .font(.caption2)
+                                .foregroundStyle(BrillyPalette.inkSecondary)
                             }
 
                             VStack(alignment: .leading, spacing: 6) {

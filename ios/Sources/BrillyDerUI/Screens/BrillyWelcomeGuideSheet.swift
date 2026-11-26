@@ -343,11 +343,10 @@ public struct BrillyWelcomeGuideSheet: View {
         }
     }
 
-    // MARK: - Step 3: Mascot, Emoji Pack & Coach Vibe
+    // MARK: - Step 3: Mascot & Emoji Pack
 
     private var mascotAndStylePage: some View {
-        @Bindable var bindableStore = store
-        return VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("PICK YOUR MASCOT & CALLOUTS")
                     .font(.caption.weight(.bold))
@@ -452,21 +451,6 @@ public struct BrillyWelcomeGuideSheet: View {
                 onDismiss: {}
             )
             .allowsHitTesting(false)
-
-            // Coach Copy Vibe
-            VStack(alignment: .leading, spacing: 6) {
-                Text("COACH COPY VIBE")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.0)
-                    .foregroundStyle(BrillyPalette.brillyTeal)
-                Picker("Coach Copy Vibe", selection: $bindableStore.vibeMode) {
-                    Text("Classic Chess").tag(VibeMode.classic)
-                    Text("Cosmic Cockpit").tag(VibeMode.cosmic)
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(14)
-            .brillySurface(store.surfaceStyle, cornerRadius: 18)
         }
     }
 
