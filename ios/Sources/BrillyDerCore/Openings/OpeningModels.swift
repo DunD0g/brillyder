@@ -116,6 +116,22 @@ public struct MothershipSetup: Codable, Hashable, Sendable {
     public let goldenRules: [String]
 }
 
+public struct OpeningCounterLine: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let title: String
+    public let badge: String // e.g. "Main Defense", "Refutation", "Counter-Attack", "Solid Equalizer"
+    public let moves: [String]
+    public let keyIdea: String
+
+    public init(id: String, title: String, badge: String, moves: [String], keyIdea: String) {
+        self.id = id
+        self.title = title
+        self.badge = badge
+        self.moves = moves
+        self.keyIdea = keyIdea
+    }
+}
+
 public struct OpeningCourse: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -126,6 +142,31 @@ public struct OpeningCourse: Codable, Hashable, Sendable, Identifiable {
     public let source: String?
     public let mothershipSetup: MothershipSetup
     public let lines: [OpeningLine]
+    public let counterGuide: [OpeningCounterLine]?
+
+    public init(
+        id: String,
+        name: String,
+        codename: String,
+        side: RepertoireSide,
+        difficulty: String,
+        tagline: String,
+        source: String? = nil,
+        mothershipSetup: MothershipSetup,
+        lines: [OpeningLine],
+        counterGuide: [OpeningCounterLine]? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.codename = codename
+        self.side = side
+        self.difficulty = difficulty
+        self.tagline = tagline
+        self.source = source
+        self.mothershipSetup = mothershipSetup
+        self.lines = lines
+        self.counterGuide = counterGuide
+    }
 }
 
 public struct FsrsCardState: Codable, Hashable, Sendable {

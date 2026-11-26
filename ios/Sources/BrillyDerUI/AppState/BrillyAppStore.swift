@@ -8,6 +8,9 @@ import UIKit
 #if canImport(UserNotifications)
 import UserNotifications
 #endif
+#if canImport(ActivityKit) && os(iOS)
+import ActivityKit
+#endif
 
 public enum BrillyTab: String, CaseIterable, Hashable, Identifiable {
     case train
@@ -1451,14 +1454,27 @@ public final class BrillyAppStore {
         }
         #endif
 
+        startBatchLiveActivity(preset: preset, totalGames: totalGames)
+
         batchTask = Task.detached(priority: .userInitiated) {
             for (idx, game) in targets.enumerated() {
                 if Task.isCancelled { break }
-                await MainActor.run {
-                    guard self.batchGeneration == gen else { return }
+                let matchupText: String = await MainActor.run {
+                    guard self.batchGeneration == gen else { return "" }
                     let whiteLabel = self.maskedPlayerName(game.white.name, side: .white).text
                     let blackLabel = self.maskedPlayerName(game.black.name, side: .black).text
-                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(preset.title) · \(whiteLabel) vs \(blackLabel)"
+                    let m = "\(whiteLabel) vs \(blackLabel)"
+                    self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) · \(preset.title) · \(m)"
+                    self.updateBatchLiveActivity(
+                        completedGames: idx,
+                        currentGameIndex: idx + 1,
+                        currentPly: 0,
+                        totalPlies: 0,
+                        matchup: m,
+                        progress: Double(idx) / Double(max(1, totalGames)),
+                        status: "analyzing"
+                    )
+                    return m
                 }
                 do {
                     let result = try await GameAnalyzer.analyze(
@@ -1468,10 +1484,22 @@ public final class BrillyAppStore {
                     ) { donePlies, totalPlies in
                         let sub = Double(donePlies) / Double(max(1, totalPlies))
                         let overall = (Double(idx) + sub) / Double(max(1, totalGames))
+                        let shouldPushLive = (donePlies == totalPlies) || (donePlies % 6 == 0)
                         Task { @MainActor in
                             guard self.batchGeneration == gen else { return }
                             self.batchProgress = overall
                             self.batchCurrentLabel = "Game \(idx + 1)/\(totalGames) (\(preset.title)) · Ply \(donePlies)/\(totalPlies)"
+                            if shouldPushLive {
+                                self.updateBatchLiveActivity(
+                                    completedGames: idx,
+                                    currentGameIndex: idx + 1,
+                                    currentPly: donePlies,
+                                    totalPlies: totalPlies,
+                                    matchup: matchupText,
+                                    progress: overall,
+                                    status: "analyzing"
+                                )
+                            }
                         }
                     }
                     if Task.isCancelled { break }
@@ -1485,6 +1513,15 @@ public final class BrillyAppStore {
                         self.pendingBatchTargets.removeAll { $0.id == result.id }
                         self.batchCompletedGames = idx + 1
                         self.batchProgress = Double(idx + 1) / Double(max(1, totalGames))
+                        self.updateBatchLiveActivity(
+                            completedGames: idx + 1,
+                            currentGameIndex: min(totalGames, idx + 2),
+                            currentPly: 0,
+                            totalPlies: 0,
+                            matchup: matchupText,
+                            progress: self.batchProgress,
+                            status: "analyzing"
+                        )
                         self.persistToDisk()
                     }
                 } catch is CancellationError {
@@ -1510,6 +1547,12 @@ public final class BrillyAppStore {
                 #endif
                 Task { @MainActor in
                     if !cancelled {
+                        await self.endBatchLiveActivity(
+                            completedGames: doneCount,
+                            totalGames: totalGames,
+                            status: "complete",
+                            dismissAfterSeconds: 8
+                        )
                         await self.postBatchNotification(
                             title: "BrillyDer Batch Scan Complete",
                             body: "Analyzed \(doneCount) game\(doneCount == 1 ? "" : "s") at \(preset.title) depth. Tap to review your mistakes & !! moves."
@@ -1526,6 +1569,108 @@ public final class BrillyAppStore {
     #if canImport(UIKit) && os(iOS)
     @ObservationIgnored private var batchBackgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     #endif
+    #if canImport(ActivityKit) && os(iOS)
+    @ObservationIgnored private var batchLiveActivityId: String? = nil
+
+    private nonisolated static func updateActivity(
+        id: String,
+        state: BrillyBatchActivityAttributes.ContentState,
+        staleDate: Date?
+    ) async {
+        guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+        await activity.update(ActivityContent(state: state, staleDate: staleDate))
+    }
+
+    private nonisolated static func endActivity(
+        id: String,
+        state: BrillyBatchActivityAttributes.ContentState?,
+        dismissAfterSeconds: TimeInterval?
+    ) async {
+        guard let activity = Activity<BrillyBatchActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+        let content = state.map { ActivityContent(state: $0, staleDate: nil) }
+        let policy: ActivityUIDismissalPolicy = dismissAfterSeconds.map { .after(Date().addingTimeInterval($0)) } ?? .immediate
+        await activity.end(content, dismissalPolicy: policy)
+    }
+    #endif
+
+    private func startBatchLiveActivity(preset: AnalysisDepthPreset, totalGames: Int) {
+        #if canImport(ActivityKit) && os(iOS)
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        if let existingId = batchLiveActivityId {
+            batchLiveActivityId = nil
+            Task.detached {
+                await Self.endActivity(id: existingId, state: nil, dismissAfterSeconds: nil)
+            }
+        }
+        let attrs = BrillyBatchActivityAttributes(
+            presetTitle: preset.title,
+            presetElo: preset.eloEstimate,
+            totalGames: totalGames
+        )
+        let initialState = BrillyBatchActivityAttributes.ContentState(
+            completedGames: 0,
+            currentGameIndex: 1,
+            currentPly: 0,
+            totalPlies: 0,
+            matchup: "Starting \(totalGames)-game scan…",
+            progress: 0.02,
+            status: "analyzing"
+        )
+        let content = ActivityContent(state: initialState, staleDate: Date().addingTimeInterval(300))
+        if let created = try? Activity.request(attributes: attrs, content: content, pushType: nil) {
+            batchLiveActivityId = created.id
+        }
+        #endif
+    }
+
+    private func updateBatchLiveActivity(
+        completedGames: Int,
+        currentGameIndex: Int,
+        currentPly: Int,
+        totalPlies: Int,
+        matchup: String,
+        progress: Double,
+        status: String
+    ) {
+        #if canImport(ActivityKit) && os(iOS)
+        guard let id = batchLiveActivityId else { return }
+        let state = BrillyBatchActivityAttributes.ContentState(
+            completedGames: completedGames,
+            currentGameIndex: currentGameIndex,
+            currentPly: currentPly,
+            totalPlies: totalPlies,
+            matchup: matchup,
+            progress: min(1.0, max(0.0, progress)),
+            status: status
+        )
+        let stale = Date().addingTimeInterval(300)
+        Task.detached {
+            await Self.updateActivity(id: id, state: state, staleDate: stale)
+        }
+        #endif
+    }
+
+    private func endBatchLiveActivity(
+        completedGames: Int,
+        totalGames: Int,
+        status: String,
+        dismissAfterSeconds: TimeInterval?
+    ) async {
+        #if canImport(ActivityKit) && os(iOS)
+        guard let id = batchLiveActivityId else { return }
+        batchLiveActivityId = nil
+        let finalState = BrillyBatchActivityAttributes.ContentState(
+            completedGames: completedGames,
+            currentGameIndex: totalGames,
+            currentPly: 0,
+            totalPlies: 0,
+            matchup: status == "complete" ? "All \(completedGames) games ready to review" : "Scan cancelled",
+            progress: status == "complete" ? 1.0 : batchProgress,
+            status: status
+        )
+        await Self.endActivity(id: id, state: finalState, dismissAfterSeconds: dismissAfterSeconds)
+        #endif
+    }
 
     private func pauseBatchForBackgroundExpiry() async {
         let remaining = pendingBatchTargets.count
@@ -1541,6 +1686,20 @@ public final class BrillyAppStore {
         #endif
         flushToDiskNow()
         if remaining > 0 {
+            #if canImport(ActivityKit) && os(iOS)
+            if let id = batchLiveActivityId {
+                let pausedState = BrillyBatchActivityAttributes.ContentState(
+                    completedGames: done,
+                    currentGameIndex: min(total, done + 1),
+                    currentPly: 0,
+                    totalPlies: 0,
+                    matchup: "\(remaining) game\(remaining == 1 ? "" : "s") remaining — tap to resume",
+                    progress: Double(done) / Double(max(1, total)),
+                    status: "paused"
+                )
+                await Self.updateActivity(id: id, state: pausedState, staleDate: nil)
+            }
+            #endif
             await postBatchNotification(
                 title: "BrillyDer Batch Paused (\(done)/\(total) Done)",
                 body: "iOS paused background time. Open BrillyDer to auto-resume the remaining \(remaining) game\(remaining == 1 ? "" : "s")."
@@ -1598,6 +1757,11 @@ public final class BrillyAppStore {
         #if canImport(UIKit) && os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
         #endif
+        let done = batchCompletedGames
+        let total = batchTotalGames
+        Task { @MainActor in
+            await self.endBatchLiveActivity(completedGames: done, totalGames: total, status: "cancelled", dismissAfterSeconds: nil)
+        }
         endBatchBackgroundTask()
     }
 

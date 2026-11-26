@@ -7,15 +7,20 @@ struct StarterCoursesValidationTests {
     @Test("Every previewMoves, line moves, and wrongMoveTraps punishmentLine in starterCourses.json is 100% legal")
     func validateAllStarterCourses() throws {
         let courses = try CourseRepository.loadStarterCourses()
-        #expect(courses.count >= 12)
+        #expect(courses.count >= 16)
         let ids = Set(courses.map(\.id))
         #expect(ids.contains("alien-gambit-core"))
         #expect(ids.contains("vienna-gambit-core"))
         #expect(ids.contains("stafford-gambit-core"))
         #expect(ids.contains("englund-gambit-core"))
+        #expect(ids.contains("ruy-lopez-core"))
+        #expect(ids.contains("caro-kann-core"))
+        #expect(ids.contains("queens-gambit-declined-core"))
+        #expect(ids.contains("queens-gambit-accepted-core"))
 
         var totalPliesValidated = 0
         var totalTrapsValidated = 0
+        var totalCounterLinesValidated = 0
 
         for course in courses {
             // 1. Validate mothershipSetup.previewMoves
@@ -60,10 +65,24 @@ struct StarterCoursesValidationTests {
                 )
                 #expect(!cards.isEmpty)
             }
+
+            // 4. Validate every counterGuide line is 100% legal SAN
+            let counters = course.counterGuide ?? []
+            #expect(!counters.isEmpty, "Course \(course.id) should include counterGuide lines")
+            for counter in counters {
+                var cBoard = ChessBoard()
+                #expect(!counter.moves.isEmpty, "Empty counter line in \(course.id)/\(counter.id)")
+                for san in counter.moves {
+                    _ = try cBoard.apply(san: san)
+                    totalPliesValidated += 1
+                }
+                totalCounterLinesValidated += 1
+            }
         }
 
-        #expect(totalPliesValidated > 400)
+        #expect(totalPliesValidated > 700)
         #expect(totalTrapsValidated > 0)
+        #expect(totalCounterLinesValidated >= 32)
     }
 
     @Test("Fallback 60-Second Gravity Check flashes all have 100% legal expected moves")

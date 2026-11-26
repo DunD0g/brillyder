@@ -4,11 +4,29 @@ import BrillyDerCore
 public struct OpeningsTabView: View {
     @Environment(BrillyAppStore.self) private var store
     @State private var sideFilter: RepertoireSide = .white
+    @State private var searchQuery: String = ""
     @State private var selectedCourse: OpeningCourse? = nil
     @State private var showingImportSheet: Bool = false
 
+    private var whiteCount: Int {
+        store.allCourses.filter { $0.side == .white }.count
+    }
+
+    private var blackCount: Int {
+        store.allCourses.filter { $0.side == .black }.count
+    }
+
     private var courses: [OpeningCourse] {
-        store.allCourses.filter { $0.side == sideFilter }
+        let bySide = store.allCourses.filter { $0.side == sideFilter }
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return bySide }
+        return bySide.filter { c in
+            c.name.lowercased().contains(q)
+                || c.tagline.lowercased().contains(q)
+                || c.codename.lowercased().contains(q)
+                || c.lines.contains(where: { $0.title.lowercased().contains(q) })
+                || (c.counterGuide?.contains(where: { $0.title.lowercased().contains(q) }) ?? false)
+        }
     }
 
     public var body: some View {
@@ -19,8 +37,8 @@ public struct OpeningsTabView: View {
                 VStack(spacing: 14) {
                     HStack(spacing: 10) {
                         Picker("Side", selection: $sideFilter) {
-                            Text("White").tag(RepertoireSide.white)
-                            Text("Black").tag(RepertoireSide.black)
+                            Text("White (\(whiteCount))").tag(RepertoireSide.white)
+                            Text("Black (\(blackCount))").tag(RepertoireSide.black)
                         }
                         .pickerStyle(.segmented)
 
@@ -45,11 +63,35 @@ public struct OpeningsTabView: View {
                         .buttonStyle(.plain)
                     }
 
+                    // Quick Openings Search Bar
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkSecondary)
+                        TextField("Search QGD, QGA, Caro-Kann, Ruy Lopez…", text: $searchQuery)
+                            .textFieldStyle(.plain)
+                            .font(.subheadline)
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                        if !searchQuery.isEmpty {
+                            Button {
+                                searchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .brillySurface(store.surfaceStyle, cornerRadius: 14)
+
                     HStack(spacing: 6) {
                         Image(systemName: "hand.tap.fill")
                             .font(.caption2)
                             .foregroundStyle(BrillyPalette.brillyTeal)
-                        Text("Tap Daily or press & hold any opening to include it in Daily FSRS.")
+                        Text("Tap any opening for lines, FSRS drill & how to counter it.")
                             .font(.caption2)
                             .foregroundStyle(BrillyPalette.inkSecondary)
                         Spacer(minLength: 0)
@@ -66,6 +108,7 @@ public struct OpeningsTabView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 36)
             }
+            .scrollDismissesKeyboard(.interactively)
             .brillySoftScrollEdge()
         }
         .navigationTitle("Openings")
@@ -152,6 +195,20 @@ public struct OpeningsTabView: View {
                 .foregroundStyle(BrillyPalette.inkSecondary)
                 .lineLimit(2)
 
+            if let counters = course.counterGuide, !counters.isEmpty {
+                HStack(spacing: 6) {
+                    Label("\(course.lines.count) Lines", systemImage: "book.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.6))
+                    Label("\(counters.count) Counters / Defenses", systemImage: "shield.lefthalf.filled")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                }
+            }
+
             if !unlocked {
                 HStack(spacing: 8) {
                     Text("\(course.lines.count) FSRS lines · Upgrade to unlock")
@@ -212,7 +269,7 @@ public struct OpeningsTabView: View {
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture {
             if !unlocked {
-                store.openProPaywall(feature: "\(course.name) & All 8 Starter Openings")
+                store.openProPaywall(feature: "\(course.name) & All 16 Starter Openings")
                 return
             }
             selectedCourse = course
@@ -330,8 +387,9 @@ private struct CourseDetailSheet: View {
 
     enum CourseTab: String, CaseIterable {
         case setup = "Setup"
-        case walkthrough = "Walkthrough"
-        case drill = "FSRS Drill"
+        case walkthrough = "Walk"
+        case drill = "Drill"
+        case counters = "Counters"
     }
 
     enum WalkLayout: String, CaseIterable {
@@ -342,6 +400,8 @@ private struct CourseDetailSheet: View {
     @State private var activeTab: CourseTab = .setup
     @State private var walkLayout: WalkLayout = .line
     @State private var selectedLineIndex: Int = 0
+    @State private var selectedCounterIndex: Int = 0
+    @State private var counterStep: Int = 0
     @State private var selectedTreeFen: String? = nil
     @State private var cachedTreeRoots: [RepertoireTreeNode] = []
     @State private var confirmingDelete: Bool = false
@@ -392,6 +452,8 @@ private struct CourseDetailSheet: View {
                             walkthroughView
                         case .drill:
                             drillView
+                        case .counters:
+                            countersView
                         }
                     }
                     .padding(16)
@@ -510,6 +572,192 @@ private struct CourseDetailSheet: View {
             .padding(14)
             .brillySurface(store.surfaceStyle, cornerRadius: 18)
         }
+    }
+
+    // MARK: - 1.5. Counter & Defend Against This Opening
+
+    private var countersView: some View {
+        let counters = course.counterGuide ?? []
+        let counterSide = course.side.pieceColor.opposite
+        let counterSideName = counterSide == .white ? "White" : "Black"
+
+        return VStack(alignment: .leading, spacing: 14) {
+            if counters.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.title2)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                    Text("No counter lines attached to this custom course yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .brillySurface(store.surfaceStyle, cornerRadius: 18)
+            } else {
+                let safeIdx = min(selectedCounterIndex, counters.count - 1)
+                let active = counters[safeIdx]
+                let clampedStep = min(counterStep, active.moves.count)
+                let replay = replayPrefix(moves: active.moves, count: clampedStep)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("HOW TO PLAY AGAINST \(course.name.uppercased())")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.9)
+                        .foregroundStyle(BrillyPalette.goldAmber)
+                    Text("Top defenses, counter-attacks & refutations playing as \(counterSideName).")
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+
+                // Counter line selector pills
+                HStack(spacing: 8) {
+                    ForEach(Array(counters.enumerated()), id: \.element.id) { idx, c in
+                        let isSel = idx == safeIdx
+                        Button {
+                            selectedCounterIndex = idx
+                            counterStep = min(6, c.moves.count)
+                            store.triggerHaptic(.move)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.badge.uppercased())
+                                    .font(.system(size: 9, weight: .black))
+                                    .foregroundStyle(isSel ? BrillyPalette.voidBg.opacity(0.85) : BrillyPalette.goldAmber)
+                                Text(c.title)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(isSel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(isSel ? BrillyPalette.goldAmber : Color.white.opacity(0.06))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .strokeBorder(isSel ? BrillyPalette.goldAmber : Color.white.opacity(0.09), lineWidth: 1)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                InteractiveChessBoardView(
+                    board: replay.board,
+                    orientation: counterSide,
+                    theme: store.effectiveBoardTheme,
+                    surfaceStyle: store.surfaceStyle,
+                    interactive: false,
+                    lastMove: replay.lastMove
+                )
+
+                // Step controls
+                HStack(spacing: 10) {
+                    Button {
+                        counterStep = 0
+                        store.triggerHaptic(.move)
+                    } label: {
+                        Image(systemName: "backward.end.fill")
+                            .frame(width: 40, height: 38)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.inkSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(clampedStep == 0)
+                    .opacity(clampedStep == 0 ? 0.4 : 1)
+
+                    Button {
+                        counterStep = max(0, clampedStep - 1)
+                        store.triggerHaptic(.move)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(clampedStep == 0)
+                    .opacity(clampedStep == 0 ? 0.4 : 1)
+
+                    Text("\(clampedStep)/\(active.moves.count)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .frame(minWidth: 44)
+
+                    Button {
+                        counterStep = min(active.moves.count, clampedStep + 1)
+                        store.triggerHaptic(.move)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(clampedStep >= active.moves.count)
+                    .opacity(clampedStep >= active.moves.count ? 0.4 : 1)
+                }
+
+                // Key Idea Coaching Card + Tappable Move Chips
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "shield.checkered")
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                        Text(active.title)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                    }
+                    Text(active.keyIdea)
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(active.moves.enumerated()), id: \.offset) { idx, san in
+                                let moveLabel = idx % 2 == 0 ? "\(idx / 2 + 1).\(san)" : san
+                                let isActive = (idx + 1) == clampedStep
+                                Button {
+                                    counterStep = idx + 1
+                                    store.triggerHaptic(.move)
+                                } label: {
+                                    Text(moveLabel)
+                                        .font(.caption2.monospaced().weight(isActive ? .black : .semibold))
+                                        .foregroundStyle(isActive ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            Capsule().fill(isActive ? BrillyPalette.goldAmber : Color.white.opacity(0.08))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.goldAmber)
+            }
+        }
+        .onAppear {
+            if counterStep == 0, let first = counters.first {
+                counterStep = min(6, first.moves.count)
+            }
+        }
+    }
+
+    private func replayPrefix(moves: [String], count: Int) -> (board: ChessBoard, lastMove: (from: Square, to: Square)?) {
+        var b = ChessBoard()
+        var last: (from: Square, to: Square)? = nil
+        for san in moves.prefix(count) {
+            if let applied = try? b.apply(san: san) {
+                last = (applied.move.from, applied.move.to)
+            } else {
+                break
+            }
+        }
+        return (b, last)
     }
 
     // MARK: - 2. Guided Walkthrough + Visual Repertoire Move Tree

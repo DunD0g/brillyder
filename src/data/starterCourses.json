@@ -419,6 +419,52 @@
           }
         ]
       }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-london-c5-qb6",
+        "title": "Early ...c5 & ...Qb6 b2 Raid",
+        "badge": "Top Counter-Attack",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "Nf6",
+          "e3",
+          "c5",
+          "c3",
+          "Nc6",
+          "Nd2",
+          "Qb6",
+          "Qb3",
+          "c4",
+          "Qc2",
+          "Bf5"
+        ],
+        "keyIdea": "Hit White's dark-squared bishop's abandonment of b2 immediately with ...c5 and ...Qb6, grabbing space on the queenside."
+      },
+      {
+        "id": "cnt-london-bd6-trade",
+        "title": "Immediate ...Bd6 Bishop Trade",
+        "badge": "Solid Equalizer",
+        "moves": [
+          "d4",
+          "d5",
+          "Bf4",
+          "Nf6",
+          "e3",
+          "e6",
+          "Nf3",
+          "Bd6",
+          "Bg3",
+          "O-O",
+          "Bd3",
+          "c5",
+          "c3",
+          "Nc6"
+        ],
+        "keyIdea": "Challenge the pride of the London (the f4 bishop) early with ...Bd6, then break with ...c5 for a comfortable game."
+      }
     ]
   },
   {
@@ -718,6 +764,50 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-modern-austrian",
+        "title": "Austrian 3-Pawn Center (e4-d4-f4)",
+        "badge": "Sharpest Attack",
+        "moves": [
+          "e4",
+          "g6",
+          "d4",
+          "Bg7",
+          "Nc3",
+          "d6",
+          "f4",
+          "Nf6",
+          "Nf3",
+          "O-O",
+          "Bd3",
+          "Nc6",
+          "O-O"
+        ],
+        "keyIdea": "Punish Black's passive move-order by seizing the entire center with d4, e4, and f4, aiming for an e5 breakthrough."
+      },
+      {
+        "id": "cnt-modern-150",
+        "title": "150 Attack (Be3 + Qd2 + Bh6)",
+        "badge": "Club Crusher",
+        "moves": [
+          "e4",
+          "g6",
+          "d4",
+          "Bg7",
+          "Nc3",
+          "d6",
+          "Be3",
+          "a6",
+          "Qd2",
+          "b5",
+          "f3",
+          "Nd7",
+          "h4"
+        ],
+        "keyIdea": "Set up a simple Be3 + Qd2 battery to trade off Black's g7 dragon bishop and launch h4-h5 on the kingside."
       }
     ]
   },
@@ -1052,6 +1142,50 @@
           }
         ]
       }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-antilondon-c3-h3",
+        "title": "White's Solid c3 + h3 Pyramid",
+        "badge": "Main Defense",
+        "moves": [
+          "d4",
+          "Nf6",
+          "Bf4",
+          "c5",
+          "e3",
+          "Qb6",
+          "Nc3",
+          "a6",
+          "Rb1",
+          "d6",
+          "Nf3",
+          "g6",
+          "Be2"
+        ],
+        "keyIdea": "When Black raids b2 with ...Qb6, White defends cleanly with Nc3/Rb1 or Na4 and fights for central control."
+      },
+      {
+        "id": "cnt-antilondon-d5",
+        "title": "Space-Grabbing d5 Push",
+        "badge": "Aggressive Counter",
+        "moves": [
+          "d4",
+          "Nf6",
+          "Bf4",
+          "c5",
+          "d5",
+          "Qb6",
+          "Nc3",
+          "Qxb2",
+          "Bd2",
+          "Qb6",
+          "e4",
+          "d6",
+          "f4"
+        ],
+        "keyIdea": "Push 3.d5! to claim a Benoni-style space advantage; if Black greedily grabs b2, White gets a ferocious lead in development."
+      }
     ]
   },
   {
@@ -1252,6 +1386,52 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-jobava-a6-e6",
+        "title": "Anti-Nb5 Shield (...a6 + ...c5)",
+        "badge": "Top Refutation",
+        "moves": [
+          "d4",
+          "d5",
+          "Nc3",
+          "Nf6",
+          "Bf4",
+          "a6",
+          "e3",
+          "c5",
+          "dxc5",
+          "Nc6",
+          "Nf3",
+          "Bg4",
+          "Be2",
+          "e6"
+        ],
+        "keyIdea": "Play 3...a6! to kill White's Nb5-c7 fork threats cold, then strike the center with ...c5 and ...Nc6."
+      },
+      {
+        "id": "cnt-jobava-bf5",
+        "title": "Symmetrical ...Bf5 + ...e6",
+        "badge": "Solid Equalizer",
+        "moves": [
+          "d4",
+          "d5",
+          "Nc3",
+          "Nf6",
+          "Bf4",
+          "Bf5",
+          "f3",
+          "e6",
+          "g4",
+          "Bg6",
+          "h4",
+          "h6",
+          "e3",
+          "Bd6"
+        ],
+        "keyIdea": "Develop the c8 bishop early with ...Bf5 and create luft with ...h6 so White's g4-h4 storm bounces off."
       }
     ]
   },
@@ -1521,6 +1701,52 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-italian-two-knights",
+        "title": "Two Knights Counter-Attack (3...Nf6)",
+        "badge": "Sharp Counter",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bc4",
+          "Nf6",
+          "Ng5",
+          "d5",
+          "exd5",
+          "Na5",
+          "Bb5+",
+          "c6",
+          "dxc6",
+          "bxc6"
+        ],
+        "keyIdea": "Meet 3.Bc4 with 3...Nf6!; against 4.Ng5, sacrifice a pawn with 4...d5 5.exd5 Na5! for blazing piece activity."
+      },
+      {
+        "id": "cnt-italian-giuoco-solid",
+        "title": "Solid Giuoco Piano (...Bc5 + ...a6 + ...Ba7)",
+        "badge": "Main Defense",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bc4",
+          "Bc5",
+          "c3",
+          "Nf6",
+          "d3",
+          "d6",
+          "O-O",
+          "a6",
+          "Bb3",
+          "Ba7"
+        ],
+        "keyIdea": "Tuck the c5 bishop safely on a7 so White's d4 push never wins a tempo, then fight evenly in the center."
       }
     ]
   },
@@ -1799,6 +2025,52 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-qg-qgd",
+        "title": "Queen's Gambit Declined (2...e6)",
+        "badge": "Main Defense",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "Bg5",
+          "Be7",
+          "e3",
+          "O-O",
+          "Nf3",
+          "h6",
+          "Bh4",
+          "b6"
+        ],
+        "keyIdea": "Hold d5 like granite with ...e6 and ...Nf6, break the pin with ...Be7 + ...h6, and equalize with ...b6 and ...c5."
+      },
+      {
+        "id": "cnt-qg-qga",
+        "title": "Queen's Gambit Accepted (2...dxc4)",
+        "badge": "Active Counter",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "Nf3",
+          "Nf6",
+          "e3",
+          "e6",
+          "Bxc4",
+          "c5",
+          "O-O",
+          "a6",
+          "Qe2",
+          "b5"
+        ],
+        "keyIdea": "Capture c4 to pull White's bishop off the f1-a6 diagonal, then counter-strike immediately with ...c5 and ...a6/...b5."
       }
     ]
   },
@@ -2092,6 +2364,52 @@
           }
         ]
       }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-accdrag-maroczy",
+        "title": "Maroczy Bind (5.c4)",
+        "badge": "Top Refutation",
+        "moves": [
+          "e4",
+          "c5",
+          "Nf3",
+          "Nc6",
+          "d4",
+          "cxd4",
+          "Nxd4",
+          "g6",
+          "c4",
+          "Bg7",
+          "Be3",
+          "Nf6",
+          "Nc3",
+          "O-O",
+          "Be2"
+        ],
+        "keyIdea": "Clamp down on d5 forever with 5.c4! — the Maroczy Bind robs Black of the ...d5 break and gives White a lasting space grip."
+      },
+      {
+        "id": "cnt-accdrag-rossolimo",
+        "title": "Rossolimo Sideline (3.Bb5)",
+        "badge": "Practical Weapon",
+        "moves": [
+          "e4",
+          "c5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "g6",
+          "Bxc6",
+          "bxc6",
+          "O-O",
+          "Bg7",
+          "Re1",
+          "Nf6",
+          "e5"
+        ],
+        "keyIdea": "Avoid Black's Dragon theory completely by pinning c6 on move 3 and playing for a clean positional squeeze."
+      }
     ]
   },
   {
@@ -2370,6 +2688,50 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-french-tarrasch",
+        "title": "Tarrasch System (3.Nd2)",
+        "badge": "Main Attack",
+        "moves": [
+          "e4",
+          "e6",
+          "d4",
+          "d5",
+          "Nd2",
+          "c5",
+          "exd5",
+          "Qxd5",
+          "Ngf3",
+          "cxd4",
+          "Bc4",
+          "Qd6",
+          "O-O"
+        ],
+        "keyIdea": "Avoid the Winawer ...Bb4 pin with 3.Nd2, keep flexible c3 support, and punish Black's exposed queen after ...c5."
+      },
+      {
+        "id": "cnt-french-advance-c3",
+        "title": "Advance Space Clamp (3.e5 + c3)",
+        "badge": "Club Favorite",
+        "moves": [
+          "e4",
+          "e6",
+          "d4",
+          "d5",
+          "e5",
+          "c5",
+          "c3",
+          "Nc6",
+          "Nf3",
+          "Qb6",
+          "a3",
+          "c4",
+          "Nbd2"
+        ],
+        "keyIdea": "Lock in a kingside space edge with 3.e5, reinforce d4 with c3, and build a kingside attack while Black's c8 bishop sits trapped."
       }
     ]
   },
@@ -2683,6 +3045,52 @@
           }
         ]
       }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-alien-decline-be6",
+        "title": "Cool-Headed Acceptance + ...Be6",
+        "badge": "Top Refutation",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Nf6",
+          "Ng5",
+          "h6",
+          "Nxf7",
+          "Kxf7",
+          "Nf3",
+          "Be6",
+          "Bd3",
+          "Kg8"
+        ],
+        "keyIdea": "Accept the knight on f7, cover e5 with ...Be6, tuck your king safely on g8, and enjoy being a clean piece up!"
+      },
+      {
+        "id": "cnt-alien-avoid-bf5",
+        "title": "Sidestep Early with 4...Bf5",
+        "badge": "Zero-Risk Defense",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Bf5",
+          "Ng3",
+          "Bg6",
+          "Nf3",
+          "Nd7"
+        ],
+        "keyIdea": "Play the Classical 4...Bf5 instead of 4...Nf6 — the Alien Gambit 5.Ng5 is completely impossible against Bf5."
+      }
     ]
   },
   {
@@ -2949,6 +3357,50 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-vienna-d5-refute",
+        "title": "Central Counter-Strike (3...d5!)",
+        "badge": "Top Refutation",
+        "moves": [
+          "e4",
+          "e5",
+          "Nc3",
+          "Nf6",
+          "f4",
+          "d5",
+          "fxe5",
+          "Nxe4",
+          "Nf3",
+          "Be7",
+          "d4",
+          "O-O",
+          "Bd3",
+          "f5"
+        ],
+        "keyIdea": "NEVER take 3...exf4? — immediately strike the center with 3...d5! to equalize effortlessly and keep an active knight on e4."
+      },
+      {
+        "id": "cnt-vienna-nc6-solid",
+        "title": "Declined with 2...Nc6",
+        "badge": "Solid Defense",
+        "moves": [
+          "e4",
+          "e5",
+          "Nc3",
+          "Nc6",
+          "Bc4",
+          "Nf6",
+          "d3",
+          "Bb4",
+          "Nf3",
+          "d6",
+          "O-O",
+          "O-O"
+        ],
+        "keyIdea": "Meet 2.Nc3 with 2...Nc6 so White's f4 gambit loses its sting against your rock-solid central control."
       }
     ]
   },
@@ -3236,6 +3688,50 @@
           }
         ]
       }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-stafford-nc3-f3",
+        "title": "The f3 + d4 Refutation Wall",
+        "badge": "Top Refutation",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nf6",
+          "Nxe5",
+          "Nc6",
+          "Nxc6",
+          "dxc6",
+          "d3",
+          "Bc5",
+          "Be2",
+          "h5",
+          "c3"
+        ],
+        "keyIdea": "Play 5.d3! and 6.Be2! (never Bg5? or Bc4? into ...Ng4 tricks!), calmly shutting down every Stafford trap a clean pawn up."
+      },
+      {
+        "id": "cnt-stafford-nc3-solid",
+        "title": "Nc3 + Be3 Anti-Trap Setup",
+        "badge": "Safe Refutation",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nf6",
+          "Nxe5",
+          "Nc6",
+          "Nxc6",
+          "dxc6",
+          "Nc3",
+          "Bc5",
+          "h3",
+          "O-O",
+          "d3"
+        ],
+        "keyIdea": "Play h3 early to forbid ...Ng4 completely, castle safely, and convert your extra central pawn in the endgame."
+      }
     ]
   },
   {
@@ -3501,6 +3997,974 @@
             ]
           }
         ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-englund-nc3-bf4",
+        "title": "Refuting the Queen Raid (5.Nc3!)",
+        "badge": "Top Refutation",
+        "moves": [
+          "d4",
+          "e5",
+          "dxe5",
+          "Nc6",
+          "Nf3",
+          "Qe7",
+          "Bf4",
+          "Qb4+",
+          "Bd2",
+          "Qxb2",
+          "Nc3",
+          "Bb4",
+          "Rb1",
+          "Qa3",
+          "Nd5"
+        ],
+        "keyIdea": "Do NOT fall for 6.Qd2? Bb4! — instead play 6.Bd2! Qxb2 7.Nc3! and trap/harass Black's queen with Rb1 and Nd5 for a winning attack."
+      },
+      {
+        "id": "cnt-englund-qd5-simple",
+        "title": "Clean Development (4.Qd5 / 5.e4)",
+        "badge": "Practical Crusher",
+        "moves": [
+          "d4",
+          "e5",
+          "dxe5",
+          "Nc6",
+          "Nf3",
+          "Qe7",
+          "Nc3",
+          "Nxe5",
+          "e4",
+          "Nf6",
+          "Be2",
+          "d6",
+          "O-O"
+        ],
+        "keyIdea": "Skip all the ...Qb4+ b2 complications by playing 4.Nc3! — even if Black regains the pawn, White has a massive lead in development."
+      }
+    ]
+  },
+  {
+    "id": "ruy-lopez-core",
+    "name": "Ruy Lopez",
+    "codename": "Spanish Cruiser",
+    "side": "white",
+    "difficulty": "Intermediate",
+    "tagline": "The classical king of 1.e4 openings — pressure e5, castle fast, and dominate the center with c3 + d4.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "e5",
+        "Nf3",
+        "Nc6",
+        "Bb5",
+        "a6",
+        "Ba4",
+        "Nf6",
+        "O-O",
+        "Be7",
+        "Re1",
+        "b5",
+        "Bb3",
+        "d6",
+        "c3",
+        "O-O"
+      ],
+      "arrows": [
+        {
+          "from": "c3",
+          "to": "d4",
+          "color": "plan"
+        },
+        {
+          "from": "b1",
+          "to": "d2",
+          "color": "plan"
+        },
+        {
+          "from": "b3",
+          "to": "f7",
+          "color": "threat"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d4",
+          "color": "outpost"
+        },
+        {
+          "square": "e5",
+          "color": "threat"
+        }
+      ],
+      "corePlans": [
+        "Build a rock-solid center with c3 and d4 while Re1 defends e4.",
+        "Reroute the queenside knight via Nbd2-f1-g3 (the classic Ruy Lopez maneuver) to attack the kingside.",
+        "Keep the Spanish bishop alive on b3/c2 aiming straight at f7."
+      ],
+      "goldenRules": [
+        "Do not rush Bxc6 unless you want the structural Exchange endgame — keeping the light-squared bishop fuels your kingside attack.",
+        "Play h3 before d4 if Black threatens ...Bg4 pinning your f3 knight."
+      ]
+    },
+    "lines": [
+      {
+        "id": "ruy-morphy-closed",
+        "title": "Closed Morphy Defense (c3 + d4)",
+        "subtitle": "The timeless main line — castle, fortify e4, and launch d4.",
+        "eco": "C84",
+        "frequencyNote": "Most common club & master response",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "a6",
+          "Ba4",
+          "Nf6",
+          "O-O",
+          "Be7",
+          "Re1",
+          "b5",
+          "Bb3",
+          "d6",
+          "c3",
+          "O-O",
+          "h3",
+          "Na5",
+          "Bc2",
+          "c5",
+          "d4"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "plan": "Bb5 pressures the c6 defender of e5 and prepares rapid kingside castling.",
+            "isCritical": true
+          },
+          {
+            "ply": 10,
+            "plan": "Re1 overprotects e4 so White now genuinely threatens Bxc6 followed by Nxe5."
+          },
+          {
+            "ply": 14,
+            "plan": "c3 carves out the c2 retreat for the Spanish bishop and prepares d4.",
+            "isCritical": true
+          },
+          {
+            "ply": 20,
+            "plan": "d4 strikes the center with full support — White enjoys space and a classic kingside plan."
+          }
+        ]
+      },
+      {
+        "id": "ruy-berlin-anti",
+        "title": "Anti-Berlin (4.d3)",
+        "subtitle": "Sidestep the dry Berlin endgame and keep a rich middlegame fight.",
+        "eco": "C65",
+        "frequencyNote": "Popular against 3...Nf6",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "Nf6",
+          "d3",
+          "Bc5",
+          "c3",
+          "O-O",
+          "O-O",
+          "d6",
+          "Re1",
+          "a6",
+          "Ba4",
+          "Ba7",
+          "h3"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "d3 calmly defends e4, keeping queens on the board and avoiding the Berlin Wall endgame.",
+            "isCritical": true
+          },
+          {
+            "ply": 8,
+            "plan": "c3 prepares d4 later and gives the b5 bishop a safe home."
+          },
+          {
+            "ply": 16,
+            "plan": "h3 prevents ...Bg4 and readies Nbd2-f1-g3."
+          }
+        ]
+      },
+      {
+        "id": "ruy-exchange",
+        "title": "Exchange Variation (4.Bxc6)",
+        "subtitle": "Damage Black's pawn structure early and play for a clean king-and-pawn edge.",
+        "eco": "C68",
+        "frequencyNote": "Practical weapon vs 3...a6",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "a6",
+          "Bxc6",
+          "dxc6",
+          "O-O",
+          "f6",
+          "d4",
+          "exd4",
+          "Nxd4",
+          "c5",
+          "Nb3",
+          "Qxd1",
+          "Rxd1"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "Bxc6 doubles Black's c-pawns; White's 4-vs-3 kingside pawn majority wins almost every pure pawn endgame.",
+            "isCritical": true
+          },
+          {
+            "ply": 10,
+            "plan": "d4 opens the center immediately while Black's king is still uncastled."
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-ruy-berlin",
+        "title": "Berlin Defense (3...Nf6)",
+        "badge": "Grandmaster Wall",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "Nf6",
+          "O-O",
+          "Nxe4",
+          "d4",
+          "Nd6",
+          "Bxc6",
+          "dxc6",
+          "dxe5",
+          "Nf5",
+          "Qxd8+",
+          "Kxd8"
+        ],
+        "keyIdea": "Trade queens early into the legendary Berlin Wall — Black's bishop pair and rock-solid structure neutralize White's attack."
+      },
+      {
+        "id": "cnt-ruy-marshall",
+        "title": "Open Spanish Counter-Attack (5...Nxe4)",
+        "badge": "Active Counter",
+        "moves": [
+          "e4",
+          "e5",
+          "Nf3",
+          "Nc6",
+          "Bb5",
+          "a6",
+          "Ba4",
+          "Nf6",
+          "O-O",
+          "Nxe4",
+          "d4",
+          "b5",
+          "Bb3",
+          "d5",
+          "dxe5",
+          "Be6"
+        ],
+        "keyIdea": "Grab e4 on move 5 instead of defending passively — Black seizes active piece play on the queenside and open center."
+      }
+    ]
+  },
+  {
+    "id": "caro-kann-core",
+    "name": "Caro-Kann Defense",
+    "codename": "Titanium Bastion",
+    "side": "black",
+    "difficulty": "Beginner",
+    "tagline": "Ultra-solid yet counter-punching defense to 1.e4 — develop the c8 bishop outside the pawn chain and strike with ...c5.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "e4",
+        "c6",
+        "d4",
+        "d5",
+        "Nc3",
+        "dxe4",
+        "Nxe4",
+        "Bf5",
+        "Ng3",
+        "Bg6",
+        "h4",
+        "h6",
+        "Nf3",
+        "Nd7"
+      ],
+      "arrows": [
+        {
+          "from": "c8",
+          "to": "f5",
+          "color": "plan"
+        },
+        {
+          "from": "c6",
+          "to": "c5",
+          "color": "plan"
+        },
+        {
+          "from": "e7",
+          "to": "e6",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "f5",
+          "color": "outpost"
+        },
+        {
+          "square": "d5",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "Activate your light-squared bishop (Bf5 or Bg4) BEFORE locking the center with ...e6.",
+        "Undermine White's space advantage with timely ...c5 breaks.",
+        "Trade into endgames where your clean pawn structure shines."
+      ],
+      "goldenRules": [
+        "After 3.e5 Bf5, remember ...h6 or ...h5 to give your bishop an escape square on h7.",
+        "In the Classical 4...Bf5, play ...Nd7 before ...Ngf6 to avoid doubled f-pawns."
+      ]
+    },
+    "lines": [
+      {
+        "id": "caro-classical",
+        "title": "Classical Main Line (4...Bf5)",
+        "subtitle": "Activate the light-squared bishop cleanly and build an unbreakable fortress.",
+        "eco": "B18",
+        "frequencyNote": "Gold standard vs 3.Nc3",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "Nc3",
+          "dxe4",
+          "Nxe4",
+          "Bf5",
+          "Ng3",
+          "Bg6",
+          "h4",
+          "h6",
+          "Nf3",
+          "Nd7",
+          "h5",
+          "Bh7",
+          "Bd3",
+          "Bxd3",
+          "Qxd3",
+          "e6"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "Bf5 claims the h7-b1 diagonal before closing the e6 door.",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "h6 creates the vital h7 sanctuary for the bishop against h5.",
+            "isCritical": true
+          },
+          {
+            "ply": 13,
+            "plan": "Nd7 develops harmoniously and guards f6."
+          }
+        ]
+      },
+      {
+        "id": "caro-advance-bf5",
+        "title": "Advance Variation (3...Bf5 + ...c5)",
+        "subtitle": "Get the bishop out, then blow up White's d4-e5 pawn chain with ...c5.",
+        "eco": "B12",
+        "frequencyNote": "Most frequent club line",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "e5",
+          "Bf5",
+          "Nf3",
+          "e6",
+          "Be2",
+          "c5",
+          "Be3",
+          "cxd4",
+          "Nxd4",
+          "Ne7",
+          "O-O",
+          "Nbc6"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "plan": "Bf5 solves Black's bad-bishop problem immediately.",
+            "isCritical": true
+          },
+          {
+            "ply": 9,
+            "plan": "...c5 attacks the base of White's d4-e5 chain at once.",
+            "isCritical": true
+          }
+        ]
+      },
+      {
+        "id": "caro-exchange",
+        "title": "Exchange Variation (3.exd5 cxd5)",
+        "subtitle": "Enjoy the open c-file and launch a textbook queenside minority attack.",
+        "eco": "B13",
+        "frequencyNote": "Common quiet White choice",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "exd5",
+          "cxd5",
+          "Bd3",
+          "Nc6",
+          "c3",
+          "Nf6",
+          "Bf4",
+          "Bg4",
+          "Qb3",
+          "Qd7",
+          "Nd2",
+          "e6"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "Nc6 immediately eyes d4 and develops rapidly."
+          },
+          {
+            "ply": 11,
+            "plan": "Bg4 activates the bishop outside the pawn chain before playing ...e6.",
+            "isCritical": true
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-caro-tal",
+        "title": "Tal Variation (3.e5 Bf5 4.h4!)",
+        "badge": "Sharpest Attack",
+        "moves": [
+          "e4",
+          "c6",
+          "d4",
+          "d5",
+          "e5",
+          "Bf5",
+          "h4",
+          "h5",
+          "Bg5",
+          "Qb6",
+          "Bd3",
+          "Bxd3",
+          "Qxd3",
+          "e6"
+        ],
+        "keyIdea": "Hit Black's f5 bishop immediately with 4.h4! to provoke a weakening ...h5 or ...h6 and seize dark-square control."
+      },
+      {
+        "id": "cnt-caro-two-knights",
+        "title": "Two Knights Attack (2.Nc3 + 3.Nf3)",
+        "badge": "Club Weapon",
+        "moves": [
+          "e4",
+          "c6",
+          "Nc3",
+          "d5",
+          "Nf3",
+          "Bg4",
+          "h3",
+          "Bxf3",
+          "Qxf3",
+          "e6",
+          "d4",
+          "Nf6",
+          "Bd3"
+        ],
+        "keyIdea": "Sidestep main Caro-Kann theory, grab the bishop pair after ...Bg4 h3 Bxf3 Qxf3, and launch a fast kingside initiative."
+      }
+    ]
+  },
+  {
+    "id": "queens-gambit-declined-core",
+    "name": "Queen's Gambit Declined (QGD)",
+    "codename": "Orthodox Fortress",
+    "side": "black",
+    "difficulty": "Beginner",
+    "tagline": "The ultimate classical defense to 1.d4 — hold d5 with ...e6, castle safely, and equalize cleanly with ...c5 or ...e5.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "d5",
+        "c4",
+        "e6",
+        "Nc3",
+        "Nf6",
+        "Bg5",
+        "Be7",
+        "e3",
+        "O-O",
+        "Nf3",
+        "h6",
+        "Bh4",
+        "b6"
+      ],
+      "arrows": [
+        {
+          "from": "c7",
+          "to": "c5",
+          "color": "plan"
+        },
+        {
+          "from": "b7",
+          "to": "b6",
+          "color": "plan"
+        },
+        {
+          "from": "c8",
+          "to": "b7",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "d5",
+          "color": "outpost"
+        },
+        {
+          "square": "b7",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "Anchor your d5 stronghold with ...e6 and ...Nf6 so White never gets a free e4 steamroller.",
+        "Break the Bg5 pin early with ...Be7, ...O-O, and ...h6.",
+        "Free the c8 bishop via ...b6 + ...Bb7 (Tartakower) or ...dxc4 followed by ...c5."
+      ],
+      "goldenRules": [
+        "Never panic about the c8 bishop — once you play ...c5 or ...b6 + ...Bb7 it becomes your best piece.",
+        "Against the Exchange QGD (cxd5 exd5), remember ...c6 + ...Bf5/Be7 + ...Nd7 before castling."
+      ]
+    },
+    "lines": [
+      {
+        "id": "qgd-tartakower",
+        "title": "Tartakower Defense (...h6 & ...b6)",
+        "subtitle": "World Champion favorite — fianchetto the c8 bishop and strike with ...c5.",
+        "eco": "D58",
+        "frequencyNote": "Top mainline vs 4.Bg5",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "Bg5",
+          "Be7",
+          "e3",
+          "O-O",
+          "Nf3",
+          "h6",
+          "Bh4",
+          "b6",
+          "cxd5",
+          "Nxd5",
+          "Bxe7",
+          "Qxe7",
+          "Nxd5",
+          "exd5"
+        ],
+        "annotations": [
+          {
+            "ply": 3,
+            "plan": "e6 reinforces d5 solidly and opens the f8-a3 diagonal for ...Be7.",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "h6 questions the g5 bishop and gives the Black king luft."
+          },
+          {
+            "ply": 13,
+            "plan": "b6 prepares ...Bb7 and ...c5, fully liberating Black's queenside.",
+            "isCritical": true
+          }
+        ]
+      },
+      {
+        "id": "qgd-exchange",
+        "title": "Exchange Variation Defense (4.cxd5 exd5)",
+        "subtitle": "Meet White's minority attack with active piece play on the e-file.",
+        "eco": "D35",
+        "frequencyNote": "Most common club try vs QGD",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "cxd5",
+          "exd5",
+          "Bg5",
+          "Be7",
+          "e3",
+          "c6",
+          "Bd3",
+          "Nbd7",
+          "Qc2",
+          "O-O",
+          "Nf3",
+          "Re8"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "exd5 instantly opens the c8-h3 diagonal for your light-squared bishop!",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "c6 cements d5 and prepares ...Nbd7-f8-e6 or ...Re8."
+          }
+        ]
+      },
+      {
+        "id": "qgd-ragozin",
+        "title": "Ragozin Counter-Pin (4...Bb4)",
+        "subtitle": "Dynamic modern QGD — pin c3 immediately and fight for active piece play.",
+        "eco": "D38",
+        "frequencyNote": "Super-GM sharp weapon",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "Nf3",
+          "Bb4",
+          "Bg5",
+          "h6",
+          "Bh4",
+          "dxc4",
+          "e3",
+          "b5",
+          "a4",
+          "c6"
+        ],
+        "annotations": [
+          {
+            "ply": 7,
+            "plan": "Bb4 pins the c3 knight and threatens ...dxc4 with active counterplay.",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "dxc4 grabs the pawn only once White's bishop is committed to h4."
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-qgd-exchange-minority",
+        "title": "Exchange QGD Minority Attack (b4-b5)",
+        "badge": "Top Strategic Weapon",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "cxd5",
+          "exd5",
+          "Bg5",
+          "Be7",
+          "e3",
+          "c6",
+          "Qc2",
+          "Nbd7",
+          "Bd3",
+          "O-O",
+          "Nge2",
+          "Re8",
+          "O-O"
+        ],
+        "keyIdea": "Clarify the center early with cxd5, then push Rb1 + b4-b5 to shatter Black's c6-d5 pawns and create a weak backward c6 pawn."
+      },
+      {
+        "id": "cnt-qgd-catalan",
+        "title": "Catalan Squeeze (g3 + Bg2)",
+        "badge": "Modern Grandmaster Try",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nf3",
+          "Nf6",
+          "g3",
+          "Be7",
+          "Bg2",
+          "O-O",
+          "O-O",
+          "dxc4",
+          "Qc2",
+          "a6",
+          "Qxc4"
+        ],
+        "keyIdea": "Fianchetto on g2 to exert relentless long-diagonal pressure across Black's entire queenside."
+      }
+    ]
+  },
+  {
+    "id": "queens-gambit-accepted-core",
+    "name": "Queen's Gambit Accepted (QGA)",
+    "codename": "Quantum Snatch",
+    "side": "black",
+    "difficulty": "Intermediate",
+    "tagline": "Take the c4 pawn, give it back on your terms, and strike White's center with ...c5 and rapid piece development.",
+    "mothershipSetup": {
+      "previewMoves": [
+        "d4",
+        "d5",
+        "c4",
+        "dxc4",
+        "Nf3",
+        "Nf6",
+        "e3",
+        "e6",
+        "Bxc4",
+        "c5",
+        "O-O",
+        "a6"
+      ],
+      "arrows": [
+        {
+          "from": "c7",
+          "to": "c5",
+          "color": "plan"
+        },
+        {
+          "from": "a7",
+          "to": "a6",
+          "color": "plan"
+        },
+        {
+          "from": "b7",
+          "to": "b5",
+          "color": "plan"
+        }
+      ],
+      "highlights": [
+        {
+          "square": "c5",
+          "color": "outpost"
+        },
+        {
+          "square": "b7",
+          "color": "plan"
+        }
+      ],
+      "corePlans": [
+        "Do NOT try to cling to the c4 pawn with ...b5? — use White's time recovering it to seize active development.",
+        "Strike the center immediately with ...c5 and gain queenside space with ...a6 + ...b5 + ...Bb7.",
+        "Enjoy completely open diagonals for both bishops with zero cramped QGD pieces."
+      ],
+      "goldenRules": [
+        "If White plays 3.e4, immediately hit back with 3...e5! or 3...Nf6 — never let White keep a free d4+e4 center.",
+        "Watch out for the classic trap 3.e3 b5? 4.a4 c6 5.axb5 cxb5 6.Qf3! winning the a8 rook."
+      ]
+    },
+    "lines": [
+      {
+        "id": "qga-mainline-c5",
+        "title": "Classical Main Line (3.Nf3 Nf6 4.e3 e6 5.Bxc4 c5)",
+        "subtitle": "Clean, active equality with fast queenside expansion (...a6, ...b5, ...Bb7).",
+        "eco": "D27",
+        "frequencyNote": "Main theoretical battleground",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "Nf3",
+          "Nf6",
+          "e3",
+          "e6",
+          "Bxc4",
+          "c5",
+          "O-O",
+          "a6",
+          "Qe2",
+          "b5",
+          "Bb3",
+          "Bb7"
+        ],
+        "annotations": [
+          {
+            "ply": 3,
+            "plan": "dxc4 surrenders the d5 point temporarily to open lines and hit White with ...c5.",
+            "isCritical": true
+          },
+          {
+            "ply": 9,
+            "plan": "...c5 challenges d4 immediately while White's bishop just spent a tempo recapturing.",
+            "isCritical": true
+          },
+          {
+            "ply": 13,
+            "plan": "...b5 gains tempo on the c4 bishop and prepares ...Bb7."
+          }
+        ]
+      },
+      {
+        "id": "qga-central-e4",
+        "title": "Countering 3.e4 with 3...e5!",
+        "subtitle": "Punish White's greedy 3.e4 center immediately by blowing open the d-file.",
+        "eco": "D20",
+        "frequencyNote": "Most aggressive White try",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "e4",
+          "e5",
+          "Nf3",
+          "exd4",
+          "Bxc4",
+          "Nc6",
+          "O-O",
+          "Be6",
+          "Bxe6",
+          "fxe6"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "plan": "3...e5! directly undermines White's d4 pawn — if 4.dxe5 Qxd1+ 5.Kxd1 Black is completely fine.",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "Be6 neutralizes White's dangerous c4 bishop cleanly."
+          }
+        ]
+      },
+      {
+        "id": "qga-quick-e3",
+        "title": "Countering 3.e3 with 3...e5!",
+        "subtitle": "Instantly free your c8 bishop and seize active central play.",
+        "eco": "D20",
+        "frequencyNote": "Common club shortcut",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "e3",
+          "e5",
+          "Bxc4",
+          "exd4",
+          "exd4",
+          "Nf6",
+          "Nf3",
+          "Bb4+",
+          "Nc3",
+          "O-O",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 5,
+            "plan": "3...e5! takes advantage of 3.e3 not controlling e5 — Black equalizes effortlessly.",
+            "isCritical": true
+          },
+          {
+            "ply": 11,
+            "plan": "Bb4+ develops with tempo and prepares rapid castling."
+          }
+        ]
+      }
+    ],
+    "counterGuide": [
+      {
+        "id": "cnt-qga-e4-space",
+        "title": "Central Steamroller (3.e4)",
+        "badge": "Most Aggressive",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "e4",
+          "Nf6",
+          "e5",
+          "Nd5",
+          "Bxc4",
+          "Nb6",
+          "Bb3",
+          "Nc6",
+          "Ne2"
+        ],
+        "keyIdea": "Claim both central squares with 3.e4! immediately — if Black doesn't counter with 3...e5!, White builds a huge space advantage."
+      },
+      {
+        "id": "cnt-qga-nf3-qa4",
+        "title": "Mannheim Queen Check (3.Nf3 Nf6 4.Qa4+)",
+        "badge": "Clean Recovery",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "Nf3",
+          "Nf6",
+          "Qa4+",
+          "Nbd7",
+          "Nc3",
+          "e6",
+          "e4",
+          "c5",
+          "Bxc4"
+        ],
+        "keyIdea": "Recover the c4 pawn cleanly while disrupting Black's queenside development with 4.Qa4+."
       }
     ]
   }
