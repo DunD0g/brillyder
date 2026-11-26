@@ -430,17 +430,30 @@ public struct CockpitSettingsSheet: View {
                             Divider().overlay(Color.white.opacity(0.1))
 
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Default & Batch Engine Depth")
+                                Text("Default Offline Engine Depth")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
 
-                                let batchSelectionBinding = Binding<AnalysisDepthPreset>(
-                                    get: { store.analysisPreset.isSingleGameOnly ? .deep : store.analysisPreset },
-                                    set: { store.analysisPreset = $0 }
+                                let offlinePresets: [AnalysisDepthPreset] = [.fast, .balanced, .deep, .ultra]
+                                let offlineSelectionBinding = Binding<AnalysisDepthPreset>(
+                                    get: {
+                                        let eff = store.effectiveAnalysisPreset
+                                        return eff == .cloudUltra ? .ultra : eff
+                                    },
+                                    set: { chosen in
+                                        if chosen == .ultra && !store.hasProAccess {
+                                            localProFeature = "Ultra Offline NNUE (~3300+ Elo)"
+                                            showingLocalProSheet = true
+                                            return
+                                        }
+                                        store.analysisPreset = chosen
+                                        store.triggerHaptic(.move)
+                                    }
                                 )
-                                Picker("Depth", selection: batchSelectionBinding) {
-                                    ForEach(AnalysisDepthPreset.batchPresets) { p in
-                                        Text(p.title).tag(p)
+                                Picker("Depth", selection: offlineSelectionBinding) {
+                                    ForEach(offlinePresets) { p in
+                                        let label = (p == .ultra && !store.hasProAccess) ? "Ultra 🔒" : p.title
+                                        Text(label).tag(p)
                                     }
                                 }
                                 .pickerStyle(.segmented)
@@ -484,7 +497,7 @@ public struct CockpitSettingsSheet: View {
                                         }
                                     }
 
-                                    Text("Cloud SF queries Lichess's free Stockfish 16 cloud cache when online and automatically falls back to Ultra NNUE (~3300+ Elo) on-device when offline. Ultra & Cloud SF are Pro single-game modes — switch anytime via the depth pill next to Analyze.")
+                                    Text("All 4 defaults above run 100% offline with zero mobile data (Ultra uses Deep for multi-game batches to stay fast). Optional Cloud SF queries Lichess's public Stockfish 16 cloud cache when online — switch anytime via the depth pill next to Analyze.")
                                         .font(.system(size: 10))
                                         .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
                                         .padding(.top, 2)
