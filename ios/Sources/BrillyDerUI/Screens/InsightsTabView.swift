@@ -81,52 +81,99 @@ public struct InsightsTabView: View {
                         .padding(26)
                         .brillySurface(store.surfaceStyle, cornerRadius: 24)
                     } else {
-                        // MARK: - 1. Hero Accuracy Ring + W/D/L
-                        HStack(spacing: 18) {
-                            ZStack {
-                                Circle()
-                                    .stroke(Color.white.opacity(0.10), lineWidth: 10)
-                                Circle()
-                                    .trim(from: 0, to: CGFloat(ChessMath.clamp(snap.avgAccuracy / 100.0, min: 0, max: 1)))
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ),
-                                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                                    )
-                                    .rotationEffect(.degrees(-90))
-                                VStack(spacing: 2) {
-                                    Text("\(String(format: "%.1f", snap.avgAccuracy))%")
-                                        .font(.title3.monospacedDigit().weight(.bold))
-                                        .foregroundStyle(BrillyPalette.inkPrimary)
-                                    Text("Avg Acc")
-                                        .font(.caption2)
-                                        .foregroundStyle(BrillyPalette.inkSecondary)
+                        // MARK: - 1. Hero Accuracy Ring + W/D/L + Current Elo
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 18) {
+                                ZStack {
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.10), lineWidth: 10)
+                                    Circle()
+                                        .trim(from: 0, to: CGFloat(ChessMath.clamp(snap.avgAccuracy / 100.0, min: 0, max: 1)))
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                                        )
+                                        .rotationEffect(.degrees(-90))
+                                    VStack(spacing: 2) {
+                                        Text("\(String(format: "%.1f", snap.avgAccuracy))%")
+                                            .font(.title3.monospacedDigit().weight(.bold))
+                                            .foregroundStyle(BrillyPalette.inkPrimary)
+                                        Text("Avg Acc")
+                                            .font(.caption2)
+                                            .foregroundStyle(BrillyPalette.inkSecondary)
+                                    }
                                 }
-                            }
-                            .frame(width: 96, height: 96)
+                                .frame(width: 96, height: 96)
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("\(snap.analyzedCount) Analyzed Game\(snap.analyzedCount == 1 ? "" : "s")")
-                                    .font(.headline)
-                                    .foregroundStyle(BrillyPalette.inkPrimary)
-                                HStack(spacing: 10) {
-                                    recordPill("W", snap.wins, Color(hex: 0x22C55E))
-                                    recordPill("D", snap.draws, BrillyPalette.inkSecondary)
-                                    recordPill("L", snap.losses, BrillyPalette.blunderRose)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("\(snap.analyzedCount) Analyzed Game\(snap.analyzedCount == 1 ? "" : "s")")
+                                        .font(.headline)
+                                        .foregroundStyle(BrillyPalette.inkPrimary)
+                                    HStack(spacing: 10) {
+                                        recordPill("W", snap.wins, Color(hex: 0x22C55E))
+                                        recordPill("D", snap.draws, BrillyPalette.inkSecondary)
+                                        recordPill("L", snap.losses, BrillyPalette.blunderRose)
+                                    }
+                                    HStack(spacing: 12) {
+                                        Label("\(snap.totalBrilliants) !!", systemImage: "sparkles")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.brillyTeal)
+                                        Label("\(snap.totalBlunders) ??", systemImage: "exclamationmark.triangle.fill")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.blunderRose)
+                                    }
                                 }
-                                HStack(spacing: 12) {
-                                    Label("\(snap.totalBrilliants) !!", systemImage: "sparkles")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(BrillyPalette.brillyTeal)
-                                    Label("\(snap.totalBlunders) ??", systemImage: "exclamationmark.triangle.fill")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                Spacer(minLength: 0)
+                            }
+
+                            if !snap.currentRatings.isEmpty || snap.avgPerformanceElo != nil {
+                                Divider().overlay(Color.white.opacity(0.10))
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(snap.currentRatings, id: \.speed) { item in
+                                            HStack(spacing: 5) {
+                                                Text(item.speed)
+                                                    .font(.caption2.weight(.semibold))
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                                Text("\(item.rating)")
+                                                    .font(.caption.monospacedDigit().weight(.black))
+                                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                Capsule()
+                                                    .fill(Color.white.opacity(0.07))
+                                                    .overlay(Capsule().strokeBorder(BrillyPalette.brillyTeal.opacity(0.28), lineWidth: 0.8))
+                                            )
+                                        }
+                                        if let perf = snap.avgPerformanceElo {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "chart.line.uptrend.xyaxis")
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                                Text("Perf")
+                                                    .font(.caption2.weight(.semibold))
+                                                    .foregroundStyle(BrillyPalette.inkSecondary)
+                                                Text("~\(perf)")
+                                                    .font(.caption.monospacedDigit().weight(.black))
+                                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                Capsule()
+                                                    .fill(BrillyPalette.goldAmber.opacity(0.12))
+                                                    .overlay(Capsule().strokeBorder(BrillyPalette.goldAmber.opacity(0.32), lineWidth: 0.8))
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                            Spacer(minLength: 0)
                         }
                         .padding(18)
                         .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)

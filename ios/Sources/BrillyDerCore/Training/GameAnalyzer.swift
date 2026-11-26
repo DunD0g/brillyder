@@ -12,6 +12,38 @@ public struct InsightsSnapshot: Sendable {
     public let totalBrilliants: Int
     public let totalBlunders: Int
     public let topOpenings: [(name: String, games: Int, winRate: Double, avgAccuracy: Double)]
+    public let currentRatings: [(speed: String, rating: Int)]
+    public let avgPerformanceElo: Int?
+
+    public init(
+        analyzedCount: Int,
+        avgAccuracy: Double,
+        wins: Int,
+        draws: Int,
+        losses: Int,
+        openingAccuracy: Double,
+        middlegameAccuracy: Double,
+        endgameAccuracy: Double,
+        totalBrilliants: Int,
+        totalBlunders: Int,
+        topOpenings: [(name: String, games: Int, winRate: Double, avgAccuracy: Double)],
+        currentRatings: [(speed: String, rating: Int)] = [],
+        avgPerformanceElo: Int? = nil
+    ) {
+        self.analyzedCount = analyzedCount
+        self.avgAccuracy = avgAccuracy
+        self.wins = wins
+        self.draws = draws
+        self.losses = losses
+        self.openingAccuracy = openingAccuracy
+        self.middlegameAccuracy = middlegameAccuracy
+        self.endgameAccuracy = endgameAccuracy
+        self.totalBrilliants = totalBrilliants
+        self.totalBlunders = totalBlunders
+        self.topOpenings = topOpenings
+        self.currentRatings = currentRatings
+        self.avgPerformanceElo = avgPerformanceElo
+    }
 }
 
 public enum GameAnalyzer {
@@ -401,12 +433,28 @@ public enum GameAnalyzer {
         var brilliants = 0
         var blunders = 0
         var openingMap: [String: (games: Int, wins: Int, accSum: Double)] = [:]
+        var latestBySpeed: [String: (createdAt: Int64, rating: Int)] = [:]
+        var perfElos: [Int] = []
 
         for (ag, color) in validGames {
             let summary = color == .white ? ag.whiteSummary : ag.blackSummary
             accSum += summary.accuracy
             brilliants += summary.count(for: .brilliant)
             blunders += summary.count(for: .blunder)
+            if summary.estimatedElo > 0 {
+                perfElos.append(summary.estimatedElo)
+            }
+            if let rating = (color == .white ? ag.game.white.rating : ag.game.black.rating), rating > 0 {
+                let speedKey = ag.game.speed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let label = speedKey.isEmpty ? "Rated" : speedKey.capitalized
+                if let existing = latestBySpeed[label] {
+                    if ag.game.createdAt > existing.createdAt {
+                        latestBySpeed[label] = (ag.game.createdAt, rating)
+                    }
+                } else {
+                    latestBySpeed[label] = (ag.game.createdAt, rating)
+                }
+            }
 
             let res = ag.game.userResult(handles: handles)
             if res == "W" { wins += 1 }
@@ -449,6 +497,18 @@ public enum GameAnalyzer {
         }
         .prefix(5)
 
+        let currentRatings = latestBySpeed
+            .sorted { lhs, rhs in
+                if lhs.value.createdAt != rhs.value.createdAt { return lhs.value.createdAt > rhs.value.createdAt }
+                return lhs.key < rhs.key
+            }
+            .prefix(4)
+            .map { (speed: $0.key, rating: $0.value.rating) }
+
+        let avgPerfElo: Int? = perfElos.isEmpty
+            ? nil
+            : Int((Double(perfElos.reduce(0, +)) / Double(perfElos.count)).rounded())
+
         return InsightsSnapshot(
             analyzedCount: validGames.count,
             avgAccuracy: ((accSum / Double(validGames.count)) * 10.0).rounded() / 10.0,
@@ -460,7 +520,9 @@ public enum GameAnalyzer {
             endgameAccuracy: mean(endgameAccs),
             totalBrilliants: brilliants,
             totalBlunders: blunders,
-            topOpenings: Array(topOpenings)
+            topOpenings: Array(topOpenings),
+            currentRatings: Array(currentRatings),
+            avgPerformanceElo: avgPerfElo
         )
     }
 

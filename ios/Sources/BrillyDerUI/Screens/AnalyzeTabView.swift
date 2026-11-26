@@ -112,7 +112,8 @@ public struct AnalyzeTabView: View {
         .task(id: isAutoPlaying) {
             guard isAutoPlaying else { return }
             while !Task.isCancelled && isAutoPlaying {
-                guard let ag = store.activeAnalyzedGame, !retryMode, !botActive else {
+                guard !store.isAnalyzing, store.selectedTab == .analyze,
+                      let ag = store.activeAnalyzedGame, !retryMode, !botActive else {
                     isAutoPlaying = false
                     break
                 }
@@ -127,7 +128,8 @@ public struct AnalyzeTabView: View {
                 let holdExtraMs: Int = (autoPlaySpeed == 1 && (currentCls == .brilliant || currentCls == .blunder)) ? 1300 : 0
                 try? await Task.sleep(for: .milliseconds(baseMs + holdExtraMs))
                 guard !Task.isCancelled && isAutoPlaying else { break }
-                guard let liveAg = store.activeAnalyzedGame, !retryMode, !botActive else {
+                guard !store.isAnalyzing, store.selectedTab == .analyze,
+                      let liveAg = store.activeAnalyzedGame, !retryMode, !botActive else {
                     isAutoPlaying = false
                     break
                 }
@@ -141,6 +143,16 @@ public struct AnalyzeTabView: View {
                     isAutoPlaying = false
                     break
                 }
+            }
+        }
+        .onChange(of: store.isAnalyzing) { _, analyzing in
+            if analyzing {
+                cancelLiveTasks()
+            }
+        }
+        .onChange(of: store.selectedTab) { _, tab in
+            if tab != .analyze {
+                isAutoPlaying = false
             }
         }
         .sheet(item: $opponentProfileTarget) { target in
@@ -709,6 +721,7 @@ public struct AnalyzeTabView: View {
                     Menu {
                         ForEach(AnalysisDepthPreset.batchPresets) { preset in
                             Button {
+                                cancelLiveTasks()
                                 store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
                                 store.triggerHaptic(.move)
                             } label: {
@@ -721,6 +734,7 @@ public struct AnalyzeTabView: View {
                         Divider()
                         ForEach([AnalysisDepthPreset.ultra, .cloudUltra]) { preset in
                             Button {
+                                cancelLiveTasks()
                                 store.reanalyzeActiveGame(preset: preset, currentPly: clampedPly)
                                 store.triggerHaptic(.move)
                             } label: {

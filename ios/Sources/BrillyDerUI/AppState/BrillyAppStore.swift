@@ -2016,10 +2016,6 @@ public final class BrillyAppStore {
     private func startBatchLiveActivity(preset: AnalysisDepthPreset, totalGames: Int) {
         #if canImport(ActivityKit) && os(iOS)
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        batchLiveActivityId = nil
-        Task.detached {
-            await Self.liveActivityQueue.endAllOrphans(except: nil)
-        }
         let attrs = BrillyBatchActivityAttributes(
             presetTitle: preset.title,
             presetElo: preset.eloEstimate,
@@ -2034,9 +2030,14 @@ public final class BrillyAppStore {
             progress: 0.02,
             status: "analyzing"
         )
-        let content = ActivityContent(state: initialState, staleDate: Date().addingTimeInterval(120))
+        let content = ActivityContent(state: initialState, staleDate: Date().addingTimeInterval(300))
         if let created = try? Activity.request(attributes: attrs, content: content, pushType: nil) {
-            batchLiveActivityId = created.id
+            let keepId = created.id
+            batchLiveActivityId = keepId
+            // Clean up any older/orphaned activities while strictly preserving the newly created one
+            Task.detached {
+                await Self.liveActivityQueue.endAllOrphans(except: keepId)
+            }
         }
         #endif
     }
@@ -2063,7 +2064,7 @@ public final class BrillyAppStore {
                 progress: min(1.0, max(0.0, progress)),
                 status: status
             )
-            let stale = Date().addingTimeInterval(120)
+            let stale = Date().addingTimeInterval(300)
             Task.detached {
                 await Self.liveActivityQueue.update(id: id, seq: seq, state: state, staleDate: stale)
             }
