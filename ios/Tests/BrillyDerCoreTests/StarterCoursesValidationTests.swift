@@ -15,8 +15,18 @@ struct StarterCoursesValidationTests {
         #expect(ids.contains("englund-gambit-core"))
         #expect(ids.contains("ruy-lopez-core"))
         #expect(ids.contains("caro-kann-core"))
+        #expect(ids.contains("queens-gambit-core"))
         #expect(ids.contains("queens-gambit-declined-core"))
         #expect(ids.contains("queens-gambit-accepted-core"))
+        if let qgWhite = courses.first(where: { $0.id == "queens-gambit-core" }) {
+            let lineIds = Set(qgWhite.lines.map(\.id))
+            #expect(lineIds.contains("qga-c6-qf3-refutation"))
+            #expect(lineIds.contains("qga-center-seizure"))
+            #expect(lineIds.contains("qga-classical-e3-nf3"))
+            #expect(lineIds.contains("qgd-exchange-minority"))
+            #expect(lineIds.contains("qgd-classical-bg5"))
+            #expect(lineIds.contains("qgd-slav-a4-stop"))
+        }
 
         var totalPliesValidated = 0
         var totalTrapsValidated = 0

@@ -984,6 +984,29 @@ private struct CourseDetailSheet: View {
 
     private var drillView: some View {
         VStack(spacing: 12) {
+            if course.lines.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(course.lines.enumerated()), id: \.element.id) { idx, ln in
+                            let sel = idx == selectedLineIndex
+                            Button {
+                                selectedLineIndex = idx
+                                prepareDrill()
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Text("\(ln.eco) · \(ln.title)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
             if drillCardIds.isEmpty {
                 Text("No drill cards available for this line.")
                     .foregroundStyle(BrillyPalette.inkSecondary)

@@ -1752,11 +1752,11 @@
   },
   {
     "id": "queens-gambit-core",
-    "name": "Queen's Gambit",
+    "name": "Queen's Gambit (QGD & QGA)",
     "codename": "Iron Citadel",
     "side": "white",
     "difficulty": "Intermediate",
-    "tagline": "Classical 1.d4 + 2.c4 central dominance, clean piece activity, and queenside minority attacks.",
+    "tagline": "Complete White 1.d4 + 2.c4 repertoire covering QGD, QGA, Slav & the famous ...b5/...c6 6.Qf3! refutation.",
     "mothershipSetup": {
       "previewMoves": [
         "d4",
@@ -1808,69 +1808,74 @@
       ],
       "corePlans": [
         "Attack Black's d5 anchor immediately with 2. c4 to deflect it from the center.",
-        "In the Exchange QGD, pin with Bg5 before e3, castle, and launch the b2-b4-b5 minority attack.",
-        "If Black takes 2...dxc4, claim the whole center with 3. e4 and recapture c4 cleanly."
+        "Against QGA (2...dxc4), punish greedy 3. e3 b5? 4. a4 c6? with 5. axb5 cxb5 6. Qf3!! skewering the a8 rook.",
+        "Against QGD (2...e6), play either the Exchange Minority Attack (4. cxd5 + 5. Bg5) or the Classical 4. Bg5 squeeze."
       ],
       "goldenRules": [
-        "Develop Bg5 BEFORE playing e3 in the Exchange QGD.",
-        "Never fear 2...dxc4—Black cannot safely hold the c4 pawn against e4 or e3+a4.",
-        "Against the Slav (...c6 ...dxc4), play 5. a4 to stop ...b5 cold."
+        "Develop Bg5 BEFORE playing e3 in the QGD Exchange so your dark-squared bishop never gets trapped.",
+        "Never fear 2...dxc4 — if Black clings to c4 with ...b5 and ...c6, 4. a4 + 5. axb5 + 6. Qf3!! wins a piece or rook.",
+        "Against the 2...c6 Slav (...dxc4), play 5. a4 immediately to stop ...b5 cold."
       ]
     },
     "lines": [
       {
-        "id": "qgd-exchange-minority",
-        "title": "QGD Exchange: Pin & Minority Attack",
-        "subtitle": "Structured, easy-to-play middlegame plans against 2...e6",
-        "eco": "D35",
-        "frequencyNote": "One of the highest-scoring practical White systems",
+        "id": "qga-c6-qf3-refutation",
+        "title": "QGA ...c6 Refutation: 3. e3 b5? 4. a4 c6? 6. Qf3!",
+        "subtitle": "Punish greedy QGA players trying to cling to c4 — win a full piece or the a8 rook",
+        "eco": "D20",
+        "frequencyNote": "Essential refutation every 1. d4 player wins dozens of games with",
         "moves": [
           "d4",
           "d5",
           "c4",
-          "e6",
-          "Nc3",
-          "Nf6",
-          "cxd5",
-          "exd5",
-          "Bg5",
-          "Be7",
+          "dxc4",
           "e3",
+          "b5",
+          "a4",
           "c6",
-          "Bd3",
-          "Nbd7",
-          "Qc2",
-          "O-O",
-          "Nf3",
-          "Re8",
-          "O-O"
+          "axb5",
+          "cxb5",
+          "Qf3",
+          "Nc6",
+          "Qxc6+",
+          "Bd7",
+          "Qf3",
+          "Nf6",
+          "Nc3",
+          "e6",
+          "Nge2"
         ],
         "annotations": [
           {
-            "ply": 8,
+            "ply": 4,
             "isCritical": true,
-            "plan": "Pin the f6 knight with Bg5 BEFORE playing e3! Your dark-squared bishop stays active outside the pawn chain.",
-            "cosmicCue": "Deploy the bishop outside before closing the blast doors.",
+            "plan": "Play 3. e3 to prepare Bxc4 cleanly while opening the d1-h5 diagonal — setting a lethal trap if Black tries to hold c4 with 3...b5?.",
+            "cosmicCue": "Bait the greed sensor: leave c4 dangling while your queen locks onto a8.",
             "arrows": [
               {
-                "from": "c1",
-                "to": "g5",
+                "from": "e2",
+                "to": "e3",
                 "color": "best"
+              },
+              {
+                "from": "f1",
+                "to": "c4",
+                "color": "plan"
               }
             ],
             "wrongMoveTraps": [
               {
-                "playedSan": "e3",
+                "playedSan": "Qa4+",
                 "punishmentLine": [
-                  "Be7",
-                  "Bd3",
-                  "O-O"
+                  "Nc6",
+                  "Qxc4",
+                  "Qxd4"
                 ],
-                "reason": "Playing e3 first entombs your c1 bishop—always put Bg5 on the board before e3!",
+                "reason": "Early Qa4+ exposes your queen and drops the d4 pawn right away after ...Nc6 Qxc4 Qxd4!",
                 "arrows": [
                   {
-                    "from": "c1",
-                    "to": "e3",
+                    "from": "d8",
+                    "to": "d4",
                     "color": "threat"
                   }
                 ]
@@ -1878,13 +1883,150 @@
             ]
           },
           {
-            "ply": 14,
-            "plan": "Put Qc2 on the b1-h7 diagonal to eye h7 and discourage Black's ...Bf5.",
+            "ply": 6,
+            "isCritical": true,
+            "plan": "Strike immediately with 4. a4! You undermine the b5 defender of c4. Note that 4...a6? also loses to 5. axb5 because Black's a6 pawn is pinned to the a8 rook!",
+            "cosmicCue": "Fire a4 at the support strut — the entire queenside collapses.",
             "arrows": [
               {
-                "from": "c2",
-                "to": "h7",
+                "from": "a2",
+                "to": "a4",
+                "color": "best"
+              },
+              {
+                "from": "a4",
+                "to": "b5",
                 "color": "plan"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "b5",
+                "color": "threat"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Bxc4",
+                "punishmentLine": [
+                  "bxc4",
+                  "Qa4+",
+                  "Qd7"
+                ],
+                "reason": "Capturing c4 while b5 defends it drops a full bishop! Always undermine b5 with 4. a4 first.",
+                "arrows": [
+                  {
+                    "from": "b5",
+                    "to": "c4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Black played 4...c6? to reinforce b5 — rip open the long diagonal with 5. axb5! Now after 5...cxb5, the a8 rook has zero protection.",
+            "cosmicCue": "Clear the laser corridor from h1 straight into a8.",
+            "arrows": [
+              {
+                "from": "a4",
+                "to": "b5",
+                "color": "best"
+              },
+              {
+                "from": "f3",
+                "to": "a8",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Nc3",
+                "punishmentLine": [
+                  "b4",
+                  "Ne4",
+                  "Qd5"
+                ],
+                "reason": "Developing quietly with 5. Nc3? lets Black push ...b4 with tempo and keep the extra pawn — trade immediately with 5. axb5!",
+                "arrows": [
+                  {
+                    "from": "b5",
+                    "to": "b4",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 10,
+            "isCritical": true,
+            "plan": "6. Qf3!! — THE FAMOUS ...c6 REFUTATION! You skewer the trapped a8 rook down the wide-open diagonal. Black must drop a full knight (6...Nc6 7. Qxc6+) or lose the rook (6...Nd7 7. Qxa8 / 6...Bb7 7. Qxb7).",
+            "cosmicCue": "Direct tractor-beam hit on a8! Black drops a clean piece by force.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "f3",
+                "color": "best"
+              },
+              {
+                "from": "f3",
+                "to": "a8",
+                "color": "outpost"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "a8",
+                "color": "threat"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "b3",
+                "punishmentLine": [
+                  "Bb7",
+                  "bxc4",
+                  "bxc4"
+                ],
+                "reason": "Playing 6. b3? misses the winning 6. Qf3!! skewer and gives Black time to plug the diagonal with ...Bb7!",
+                "arrows": [
+                  {
+                    "from": "c8",
+                    "to": "b7",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Snap off the knight with check! 7. Qxc6+ leaves you up a clean piece with total control.",
+            "arrows": [
+              {
+                "from": "f3",
+                "to": "c6",
+                "color": "best"
+              },
+              {
+                "from": "c6",
+                "to": "e8",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Retreat cleanly to f3 up a full knight, keeping pressure on the queenside while you develop Nc3, Nge2, and castle.",
+            "arrows": [
+              {
+                "from": "c6",
+                "to": "f3",
+                "color": "best"
               }
             ]
           }
@@ -1892,7 +2034,7 @@
       },
       {
         "id": "qga-center-seizure",
-        "title": "Queen's Gambit Accepted: 3. e4 Blitz",
+        "title": "QGA 3. e4 Blitz: Seize the Full Center",
         "subtitle": "Punish 2...dxc4 by taking full central control",
         "eco": "D20",
         "frequencyNote": "Very common at 1000–1600 Elo",
@@ -1965,9 +2107,310 @@
         ]
       },
       {
+        "id": "qga-classical-e3-nf3",
+        "title": "QGA Classical: 3. Nf3 & 7. Qe2 Main Line",
+        "subtitle": "Sound tournament setup against principled QGA opponents (...Nf6, ...e6, ...c5)",
+        "eco": "D27",
+        "frequencyNote": "Main QGA battleground against 1400+ players who know ...c5",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "dxc4",
+          "Nf3",
+          "Nf6",
+          "e3",
+          "e6",
+          "Bxc4",
+          "c5",
+          "O-O",
+          "a6",
+          "Qe2",
+          "b5",
+          "Bb3",
+          "Bb7",
+          "Rd1",
+          "Nbd7",
+          "Nc3"
+        ],
+        "annotations": [
+          {
+            "ply": 4,
+            "plan": "Play 3. Nf3 first to stop Black's 3...e5! counter-strike before recapturing c4 with e3 + Bxc4.",
+            "arrows": [
+              {
+                "from": "g1",
+                "to": "f3",
+                "color": "best"
+              },
+              {
+                "from": "f3",
+                "to": "e5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Play 7. Qe2! This clears d1 for your rook, dodges an early queen trade, and sets up Rd1 x-raying Black's queen.",
+            "cosmicCue": "Slide Qe2 off the d-file so your rook can lock onto Black's queen.",
+            "arrows": [
+              {
+                "from": "d1",
+                "to": "e2",
+                "color": "best"
+              },
+              {
+                "from": "f1",
+                "to": "d1",
+                "color": "plan"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "dxc5",
+                "punishmentLine": [
+                  "Qxd1",
+                  "Rxd1",
+                  "Bxc5"
+                ],
+                "reason": "Trading on c5 too early swaps queens and develops Black's bishop for free — keep the tension with 7. Qe2!",
+                "arrows": [
+                  {
+                    "from": "d8",
+                    "to": "d1",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 16,
+            "isCritical": true,
+            "plan": "Centralize with 9. Rd1! Your rook x-rays Black's d8 queen so upcoming e4 or d5 breaks pack serious tactical punch.",
+            "arrows": [
+              {
+                "from": "f1",
+                "to": "d1",
+                "color": "best"
+              },
+              {
+                "from": "d1",
+                "to": "d8",
+                "color": "outpost"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "qgd-exchange-minority",
+        "title": "QGD Exchange: 5. Bg5 Pin & Minority Attack",
+        "subtitle": "Structured, easy-to-play Carlsbad middlegame plans against 2...e6",
+        "eco": "D35",
+        "frequencyNote": "One of the highest-scoring practical White systems",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "cxd5",
+          "exd5",
+          "Bg5",
+          "Be7",
+          "e3",
+          "c6",
+          "Bd3",
+          "Nbd7",
+          "Qc2",
+          "O-O",
+          "Nf3",
+          "Re8",
+          "O-O"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "Capture 4. cxd5 to lock in the Carlsbad pawn structure — this opens your c-file and sets up the classic b2-b4-b5 minority attack.",
+            "arrows": [
+              {
+                "from": "c4",
+                "to": "d5",
+                "color": "best"
+              },
+              {
+                "from": "b2",
+                "to": "b5",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 8,
+            "isCritical": true,
+            "plan": "Pin the f6 knight with Bg5 BEFORE playing e3! Your dark-squared bishop stays active outside the pawn chain.",
+            "cosmicCue": "Deploy the bishop outside before closing the blast doors.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "g5",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "e3",
+                "punishmentLine": [
+                  "Be7",
+                  "Bd3",
+                  "O-O"
+                ],
+                "reason": "Playing e3 first entombs your c1 bishop—always put Bg5 on the board before e3!",
+                "arrows": [
+                  {
+                    "from": "c1",
+                    "to": "e3",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "plan": "Put Qc2 on the b1-h7 diagonal to eye h7 and discourage Black's ...Bf5.",
+            "arrows": [
+              {
+                "from": "c2",
+                "to": "h7",
+                "color": "plan"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "qgd-classical-bg5",
+        "title": "QGD Classical: 4. Bg5 Main Line & c-File Squeeze",
+        "subtitle": "Keep central tension against 2...e6 and punish Black's ...b6 with cxd5 + Rc1",
+        "eco": "D55",
+        "frequencyNote": "World Championship QGD main line for White",
+        "moves": [
+          "d4",
+          "d5",
+          "c4",
+          "e6",
+          "Nc3",
+          "Nf6",
+          "Bg5",
+          "Be7",
+          "e3",
+          "O-O",
+          "Nf3",
+          "h6",
+          "Bh4",
+          "b6",
+          "cxd5",
+          "Nxd5",
+          "Bxe7",
+          "Qxe7",
+          "Nxd5",
+          "exd5",
+          "Rc1"
+        ],
+        "annotations": [
+          {
+            "ply": 6,
+            "plan": "Pin the defender of d5 immediately with 4. Bg5! Keep the c4-d5 tension alive while developing smoothly.",
+            "arrows": [
+              {
+                "from": "c1",
+                "to": "g5",
+                "color": "best"
+              }
+            ]
+          },
+          {
+            "ply": 12,
+            "isCritical": true,
+            "plan": "Retreat 7. Bh4! Preserve the pin on the f6 knight — never surrender your bishop pair without a concrete reason.",
+            "cosmicCue": "Hold the magnetic pin on h4 — make Black weaken their kingside.",
+            "arrows": [
+              {
+                "from": "g5",
+                "to": "h4",
+                "color": "best"
+              }
+            ],
+            "wrongMoveTraps": [
+              {
+                "playedSan": "Bxf6",
+                "punishmentLine": [
+                  "Bxf6",
+                  "cxd5",
+                  "exd5"
+                ],
+                "reason": "Giving up Bxf6 for nothing hands Black the bishop pair and solves their cramped position — keep the pin with 7. Bh4!",
+                "arrows": [
+                  {
+                    "from": "e7",
+                    "to": "f6",
+                    "color": "threat"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "ply": 14,
+            "isCritical": true,
+            "plan": "Strike 8. cxd5 right after Black plays ...b6! This forces hanging or backward queenside pawns and opens the c-file for your rook.",
+            "arrows": [
+              {
+                "from": "c4",
+                "to": "d5",
+                "color": "best"
+              },
+              {
+                "from": "a1",
+                "to": "c1",
+                "color": "plan"
+              }
+            ]
+          },
+          {
+            "ply": 20,
+            "isCritical": true,
+            "plan": "Seize the half-open c-file immediately with 11. Rc1! Black's c7 and d5 pawns are long-term targets for Be2, O-O, and Qa4.",
+            "arrows": [
+              {
+                "from": "a1",
+                "to": "c1",
+                "color": "best"
+              },
+              {
+                "from": "c1",
+                "to": "c7",
+                "color": "outpost"
+              }
+            ],
+            "highlights": [
+              {
+                "square": "c7",
+                "color": "threat"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "id": "qgd-slav-a4-stop",
-        "title": "Slav Defense: Stop ...b5 with 5. a4",
-        "subtitle": "Prevent Black from clinging to the c4 pawn",
+        "title": "Slav Defense (2...c6): Stop ...b5 with 5. a4",
+        "subtitle": "Prevent Black from clinging to the c4 pawn in the 2...c6 Slav",
         "eco": "D15",
         "frequencyNote": "Key anti-Slav move order every d4 player needs",
         "moves": [
@@ -2070,7 +2513,7 @@
           "Qe2",
           "b5"
         ],
-        "keyIdea": "Capture c4 to pull White's bishop off the f1-a6 diagonal, then counter-strike immediately with ...c5 and ...a6/...b5."
+        "keyIdea": "Capture c4 to pull White's bishop off the f1-a6 diagonal, then counter-strike immediately with ...c5 and ...a6/...b5 — never fall for 3...b5 4. a4 c6? 6. Qf3!."
       }
     ]
   },
