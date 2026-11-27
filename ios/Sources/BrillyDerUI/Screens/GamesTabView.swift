@@ -6,6 +6,8 @@ import UIKit
 
 public struct GamesTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var filterNS
     @State private var searchText: String = ""
     @State private var resultFilter: String = "All" // All | W | D | L | Unanalyzed
     @State private var showingPgnSheet: Bool = false
@@ -234,14 +236,25 @@ public struct GamesTabView: View {
                             ForEach(["All", "Imported", "Saved", "Unanalyzed", "W", "D", "L"], id: \.self) { f in
                                 let sel = resultFilter == f
                                 Button {
-                                    resultFilter = f
+                                    withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
+                                        resultFilter = f
+                                    }
+                                    store.triggerHaptic(.move)
                                 } label: {
                                     Text(f == "W" ? "Wins" : (f == "D" ? "Draws" : (f == "L" ? "Losses" : f)))
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
-                                        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                        .background {
+                                            if sel {
+                                                Capsule()
+                                                    .fill(BrillyPalette.brillyTeal)
+                                                    .matchedGeometryEffect(id: "gamesFilterActive", in: filterNS)
+                                            } else {
+                                                Capsule().fill(Color.white.opacity(0.08))
+                                            }
+                                        }
                                         .contentShape(Capsule())
                                 }
                                 .buttonStyle(.plain)
@@ -312,6 +325,8 @@ public struct GamesTabView: View {
                     Spacer()
                     Text("\(Int((store.batchProgress * 100).rounded()))%")
                         .font(.caption.monospacedDigit().weight(.black))
+                        .contentTransition(.numericText())
+                        .animation(BrillyMotion.resolve(BrillyMotion.numeric, reduceMotion: reduceMotion), value: Int((store.batchProgress * 100).rounded()))
                         .foregroundStyle(BrillyPalette.brillyTeal)
                     Button {
                         store.cancelBatchAnalysis()

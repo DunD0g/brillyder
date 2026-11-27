@@ -83,6 +83,11 @@ public struct CelebrationEvent: Equatable, Identifiable, Sendable {
 /// supporting the Ghibli Thumbs-Up Buddy (`Brilly/Der`), glowing Diamond (`Standard`),
 /// and Cosmic Alien UFO (`Alien UFO`) themes.
 public struct AlienCelebrationBanner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var medallionScale: CGFloat = 0.76
+    @State private var burstProgress: CGFloat = 0.0
+    @State private var shakeOffset: CGFloat = 0.0
+
     public let event: CelebrationEvent
     public let surfaceStyle: SurfaceStyle
     public let onDismiss: () -> Void
@@ -107,25 +112,42 @@ public struct AlienCelebrationBanner: View {
                     .allowsHitTesting(false)
 
                 HStack(spacing: 12) {
-                    switch event.calloutStyle {
-                    case .brillyDer:
-                        BrillyGhibliBuddyView(mood: isBril ? .brilliant : .blunder, size: 62, emojiPack: event.emojiPack)
-                    case .cosmicAlien:
-                        BrillyAlienUFOView(mood: isBril ? .brilliant : .blunder, size: 66, showBeam: true)
-                    case .standard:
-                        ZStack {
-                            Circle()
-                                .fill(accent.opacity(0.22))
-                                .frame(width: 48, height: 48)
-                            if isBril {
-                                BrillyGemIcon(size: 26, color: BrillyPalette.brillyTeal)
-                            } else {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.blunderRose)
+                    ZStack {
+                        // Crisp 1-shot cyan/teal/gold star sparkle burst on !! Brilliant moves
+                        if isBril && !reduceMotion && burstProgress > 0 && burstProgress < 1.0 {
+                            ForEach(0..<8, id: \.self) { idx in
+                                let angle = Double(idx) * (.pi / 4.0)
+                                let dist = 24.0 + Double(burstProgress) * 26.0
+                                Circle()
+                                    .fill(idx.isMultiple(of: 2) ? BrillyPalette.brillyTeal : BrillyPalette.goldAmber)
+                                    .frame(width: idx.isMultiple(of: 2) ? 5 : 4, height: idx.isMultiple(of: 2) ? 5 : 4)
+                                    .offset(x: CGFloat(cos(angle) * dist), y: CGFloat(sin(angle) * dist))
+                                    .opacity(Double(max(0, 1.0 - burstProgress)))
+                            }
+                            .allowsHitTesting(false)
+                        }
+
+                        switch event.calloutStyle {
+                        case .brillyDer:
+                            BrillyGhibliBuddyView(mood: isBril ? .brilliant : .blunder, size: 62, emojiPack: event.emojiPack)
+                        case .cosmicAlien:
+                            BrillyAlienUFOView(mood: isBril ? .brilliant : .blunder, size: 66, showBeam: true)
+                        case .standard:
+                            ZStack {
+                                Circle()
+                                    .fill(accent.opacity(0.22))
+                                    .frame(width: 48, height: 48)
+                                if isBril {
+                                    BrillyGemIcon(size: 26, color: BrillyPalette.brillyTeal)
+                                } else {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.title3.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.blunderRose)
+                                }
                             }
                         }
                     }
+                    .scaleEffect(medallionScale)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
@@ -167,8 +189,37 @@ public struct AlienCelebrationBanner: View {
                     .strokeBorder(accent.opacity(0.45), lineWidth: 1.2)
             )
             .shadow(color: accent.opacity(0.36), radius: 16, y: 5)
+            .offset(x: shakeOffset)
         }
         .buttonStyle(.plain)
         .transition(.move(edge: .top).combined(with: .scale(scale: 0.94)).combined(with: .opacity))
+        .task(id: event.id) {
+            guard !reduceMotion else {
+                medallionScale = 1.0
+                burstProgress = 1.0
+                shakeOffset = 0
+                return
+            }
+            medallionScale = 0.74
+            withAnimation(BrillyMotion.badgePop) {
+                medallionScale = 1.0
+            }
+            if isBril {
+                burstProgress = 0.01
+                withAnimation(.easeOut(duration: 0.72)) {
+                    burstProgress = 1.0
+                }
+            } else {
+                // Crisp comic micro-shake on ?? Blunder banners
+                let steps: [CGFloat] = [5, -4, 2.5, -1.5, 0]
+                for step in steps {
+                    guard !Task.isCancelled else { break }
+                    withAnimation(.easeInOut(duration: 0.055)) {
+                        shakeOffset = step
+                    }
+                    try? await Task.sleep(for: .milliseconds(55))
+                }
+            }
+        }
     }
 }

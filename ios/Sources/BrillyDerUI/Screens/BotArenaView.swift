@@ -722,6 +722,7 @@ public struct BotArenaView: View {
                 Image(systemName: profile.sfSymbol)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(botTint(profile))
+                    .symbolEffect(.pulse, isActive: isSideTurn && isThinking)
             } else {
                 Image(systemName: "person.fill")
                     .font(.caption.weight(.bold))
@@ -751,6 +752,8 @@ public struct BotArenaView: View {
             if adv > 0 {
                 Text("+\(adv)")
                     .font(.caption2.monospacedDigit().weight(.black))
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.18), value: adv)
                     .foregroundStyle(BrillyPalette.inkPrimary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)

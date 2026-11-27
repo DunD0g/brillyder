@@ -3,6 +3,9 @@ import BrillyDerCore
 
 public struct TrainTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var trainModeNS
+    @Namespace private var durationNS
     @State private var showingDailySession = false
     @State private var showingGravityCheck = false
     @State private var showingDailyOpeningsPicker = false
@@ -93,7 +96,7 @@ public struct TrainTabView: View {
                                     store.openProPaywall(feature: feat)
                                     return
                                 }
-                                withAnimation(.snappy) {
+                                withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
                                     store.selectedTrainMode = mode
                                 }
                                 store.triggerHaptic(.move)
@@ -112,7 +115,16 @@ public struct TrainTabView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 8)
-                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .background {
+                                    if sel {
+                                        Capsule()
+                                            .fill(BrillyPalette.brillyTeal)
+                                            .matchedGeometryEffect(id: "trainModeActivePill", in: trainModeNS)
+                                    } else {
+                                        Capsule().fill(Color.white.opacity(0.08))
+                                    }
+                                }
+                                .contentShape(Capsule())
                             }
                             .buttonStyle(.plain)
                         }
@@ -201,7 +213,7 @@ public struct TrainTabView: View {
                             store.openProPaywall(feature: "\(dur.rawValue)-Minute Orbit Coach")
                             return
                         }
-                        withAnimation(.snappy) {
+                        withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
                             store.dailyDuration = dur
                         }
                     } label: {
@@ -216,9 +228,16 @@ public struct TrainTabView: View {
                         .foregroundStyle(selected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(
-                            Capsule().fill(selected ? BrillyPalette.brillyTeal : Color.white.opacity(0.08))
-                        )
+                        .background {
+                            if selected {
+                                Capsule()
+                                    .fill(BrillyPalette.brillyTeal)
+                                    .matchedGeometryEffect(id: "durationActivePill", in: durationNS)
+                            } else {
+                                Capsule().fill(Color.white.opacity(0.08))
+                            }
+                        }
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -470,6 +489,8 @@ public struct TrainTabView: View {
             Text(value)
                 .font(.title3.monospacedDigit().weight(.bold))
                 .foregroundStyle(tint)
+                .contentTransition(.numericText())
+                .animation(BrillyMotion.resolve(BrillyMotion.numeric, reduceMotion: reduceMotion), value: value)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(BrillyPalette.inkSecondary)
@@ -1006,7 +1027,10 @@ private struct GravityCheckSheet: View {
                                 Spacer()
                                 Label("\(remainingSec)s", systemImage: "timer")
                                     .font(.caption.monospacedDigit().weight(.black))
+                                    .contentTransition(.numericText(countsDown: true))
+                                    .animation(.snappy(duration: 0.2), value: remainingSec)
                                     .foregroundStyle(remainingSec <= 10 ? BrillyPalette.blunderRose : BrillyPalette.goldAmber)
+                                    .symbolEffect(.pulse, isActive: remainingSec <= 10)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
                                     .background(Capsule().fill(Color.white.opacity(0.08)))

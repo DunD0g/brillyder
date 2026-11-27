@@ -1363,6 +1363,7 @@ public struct AnalyzeTabView: View {
                     }
                     .padding(14)
                     .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.color(for: ap.classification))
+                    .animation(BrillyMotion.cardSwap, value: clampedPly)
                 }
 
                 // 6. Utility Action Row: Play Bot | Copy FEN | Copy PGN | Lazy Share Card

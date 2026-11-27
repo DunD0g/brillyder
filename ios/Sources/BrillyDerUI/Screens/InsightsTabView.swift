@@ -3,8 +3,10 @@ import BrillyDerCore
 
 public struct InsightsTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedTrendIndex: Int? = nil
     @State private var showingPerfExplainer: Bool = false
+    @State private var chartsRevealed: Bool = false
 
     public var body: some View {
         let snap = store.insights
@@ -95,7 +97,7 @@ public struct InsightsTabView: View {
                                     Circle()
                                         .stroke(Color.white.opacity(0.10), lineWidth: 10)
                                     Circle()
-                                        .trim(from: 0, to: CGFloat(ChessMath.clamp(snap.avgAccuracy / 100.0, min: 0, max: 1)))
+                                        .trim(from: 0, to: chartsRevealed ? CGFloat(ChessMath.clamp(snap.avgAccuracy / 100.0, min: 0, max: 1)) : 0)
                                         .stroke(
                                             LinearGradient(
                                                 colors: [BrillyPalette.brillyTeal, BrillyPalette.warpPurple],
@@ -105,9 +107,14 @@ public struct InsightsTabView: View {
                                             style: StrokeStyle(lineWidth: 10, lineCap: .round)
                                         )
                                         .rotationEffect(.degrees(-90))
+                                        .shadow(color: BrillyPalette.brillyTeal.opacity(0.32), radius: 5)
+                                        .animation(BrillyMotion.resolve(BrillyMotion.ringSweep, reduceMotion: reduceMotion), value: chartsRevealed)
+                                        .animation(BrillyMotion.resolve(BrillyMotion.ringSweep, reduceMotion: reduceMotion), value: snap.avgAccuracy)
                                     VStack(spacing: 2) {
                                         Text("\(String(format: "%.1f", snap.avgAccuracy))%")
                                             .font(.title3.monospacedDigit().weight(.bold))
+                                            .contentTransition(.numericText())
+                                            .animation(BrillyMotion.resolve(BrillyMotion.numeric, reduceMotion: reduceMotion), value: snap.avgAccuracy)
                                             .foregroundStyle(BrillyPalette.inkPrimary)
                                         Text("Avg Acc")
                                             .font(.caption2)
@@ -115,10 +122,22 @@ public struct InsightsTabView: View {
                                     }
                                 }
                                 .frame(width: 96, height: 96)
+                                .onAppear {
+                                    if !chartsRevealed {
+                                        if reduceMotion {
+                                            chartsRevealed = true
+                                        } else {
+                                            withAnimation(BrillyMotion.ringSweep) {
+                                                chartsRevealed = true
+                                            }
+                                        }
+                                    }
+                                }
 
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("\(snap.analyzedCount) Analyzed Game\(snap.analyzedCount == 1 ? "" : "s")")
                                         .font(.headline)
+                                        .contentTransition(.numericText())
                                         .foregroundStyle(BrillyPalette.inkPrimary)
                                     HStack(spacing: 10) {
                                         recordPill("W", snap.wins, Color(hex: 0x22C55E))
@@ -128,9 +147,11 @@ public struct InsightsTabView: View {
                                     HStack(spacing: 12) {
                                         Label("\(snap.totalBrilliants) !!", systemImage: "sparkles")
                                             .font(.caption.weight(.bold))
+                                            .contentTransition(.numericText())
                                             .foregroundStyle(BrillyPalette.brillyTeal)
                                         Label("\(snap.totalBlunders) ??", systemImage: "exclamationmark.triangle.fill")
                                             .font(.caption.weight(.bold))
+                                            .contentTransition(.numericText())
                                             .foregroundStyle(BrillyPalette.blunderRose)
                                     }
                                 }
@@ -606,7 +627,8 @@ public struct InsightsTabView: View {
     }
 
     private func phaseBar(label: String, pct: Double, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let clamped = ChessMath.clamp(pct, min: 0, max: 100) / 100.0
+        return VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label)
                     .font(.caption.weight(.semibold))
@@ -614,10 +636,28 @@ public struct InsightsTabView: View {
                 Spacer()
                 Text("\(String(format: "%.1f", pct))%")
                     .font(.caption.monospacedDigit().weight(.bold))
+                    .contentTransition(.numericText())
                     .foregroundStyle(BrillyPalette.inkPrimary)
             }
-            ProgressView(value: ChessMath.clamp(pct, min: 0, max: 100), total: 100)
-                .tint(tint)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.09))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [tint.opacity(0.85), tint],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: chartsRevealed ? max(6, geo.size.width * CGFloat(clamped)) : 0)
+                        .shadow(color: tint.opacity(0.35), radius: 4)
+                        .animation(BrillyMotion.resolve(BrillyMotion.ringSweep, reduceMotion: reduceMotion), value: chartsRevealed)
+                        .animation(BrillyMotion.resolve(BrillyMotion.ringSweep, reduceMotion: reduceMotion), value: clamped)
+                }
+            }
+            .frame(height: 7)
         }
     }
 }

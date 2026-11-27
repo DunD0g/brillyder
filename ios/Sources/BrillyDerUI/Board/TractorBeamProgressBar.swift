@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Glowing Cosmic / Liquid Glass Tractor-Beam progress bar replacing stock thin ProgressView.
 public struct TractorBeamProgressBar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmerPhase: CGFloat = -0.35
     let progress: Double
     let height: CGFloat
 
@@ -12,6 +14,7 @@ public struct TractorBeamProgressBar: View {
 
     public var body: some View {
         let clamped = max(0.0, min(1.0, progress.isFinite ? progress : 0))
+        let isActivelyScanning = clamped > 0.01 && clamped < 0.995
 
         GeometryReader { geo in
             let fillWidth = clamped <= 0.001
@@ -40,6 +43,19 @@ public struct TractorBeamProgressBar: View {
                             )
                         )
                         .frame(width: fillWidth)
+                        .overlay {
+                            if isActivelyScanning && !reduceMotion {
+                                LinearGradient(
+                                    colors: [.clear, Color.white.opacity(0.38), .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: max(28, fillWidth * 0.36))
+                                .offset(x: shimmerPhase * fillWidth)
+                                .clipShape(Capsule())
+                                .allowsHitTesting(false)
+                            }
+                        }
                         .overlay(alignment: .trailing) {
                             Circle()
                                 .fill(Color.white.opacity(0.92))
@@ -53,6 +69,12 @@ public struct TractorBeamProgressBar: View {
             }
         }
         .frame(height: height)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 1.45).repeatForever(autoreverses: false)) {
+                shimmerPhase = 0.85
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Analysis progress")
         .accessibilityValue("\(Int((clamped * 100).rounded())) percent")

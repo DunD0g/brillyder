@@ -216,6 +216,8 @@ public struct BrillyDerRootView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(store.copy(cosmic: "Batch Scan · \(pct)%", classic: "Batch Analyzing · \(pct)%"))
                             .font(.caption.monospacedDigit().weight(.bold))
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.2), value: pct)
                             .foregroundStyle(BrillyPalette.brillyTeal)
                         Text(store.batchCurrentLabel)
                             .font(.caption2)
@@ -288,6 +290,7 @@ public struct BrillyDerRootView: View {
                             .foregroundStyle(BrillyPalette.goldAmber)
                         Text("\(store.dailyStreakDays)d")
                             .font(.caption.monospacedDigit().weight(.black))
+                            .contentTransition(.numericText())
                             .foregroundStyle(BrillyPalette.goldAmber)
                     }
                 }
@@ -306,6 +309,8 @@ public struct BrillyDerRootView: View {
                         .foregroundStyle(BrillyPalette.brillyTeal)
                     Text("\(store.vaultCollection.headlineBrilliantCount)")
                         .font(.caption.monospacedDigit().weight(.black))
+                        .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.22), value: store.vaultCollection.headlineBrilliantCount)
                         .foregroundStyle(BrillyPalette.inkPrimary)
                 }
             }

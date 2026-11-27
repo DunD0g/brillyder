@@ -4,6 +4,7 @@ import BrillyDerCore
 /// Sleek animated evaluation bar showing White vs Black advantage with numeric readout.
 public struct EvalBarView: View {
     @ScaledMetric(relativeTo: .caption) private var barHeight: CGFloat = 24
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let score: EngineScore
     let orientation: PieceColor
 
@@ -25,11 +26,13 @@ public struct EvalBarView: View {
                         .frame(width: geo.size.width * leftFraction)
                     rightColor
                 }
-                .animation(.spring(duration: 0.35), value: leftFraction)
+                .animation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.28, dampingFraction: 0.86), value: leftFraction)
 
                 HStack {
                     Text(score.display)
                         .font(.caption.monospacedDigit().weight(.bold))
+                        .contentTransition(.numericText())
+                        .animation(BrillyMotion.resolve(BrillyMotion.numeric, reduceMotion: reduceMotion), value: score.display)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .foregroundStyle(score.cpWhite >= 0 ? Color(hex: 0x0F172A) : Color(hex: 0xF8FAFC))

@@ -13,6 +13,8 @@ public enum VaultTab: String, CaseIterable, Identifiable, Sendable {
 public struct BrillyVaultSheet: View {
     @Environment(BrillyAppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var vaultTabNS
 
     @State private var selectedTab: VaultTab
     @State private var activeShareCard: BrillyShareCardPayload? = nil
@@ -37,6 +39,8 @@ public struct BrillyVaultSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(vault.headlineBrilliantCount) Brilliant Move\(vault.headlineBrilliantCount == 1 ? "" : "s")")
                                 .font(.headline.weight(.bold))
+                                .contentTransition(.numericText())
+                                .animation(BrillyMotion.resolve(BrillyMotion.numeric, reduceMotion: reduceMotion), value: vault.headlineBrilliantCount)
                                 .foregroundStyle(BrillyPalette.inkPrimary)
                             Text("Headline count tracks strictly your !! moves · \(vault.clutchSaves.count) clutch · \(store.bookmarks.count) saved")
                                 .font(.caption2)
@@ -54,14 +58,25 @@ public struct BrillyVaultSheet: View {
                             ForEach(VaultTab.allCases) { tab in
                                 let sel = selectedTab == tab
                                 Button {
-                                    selectedTab = tab
+                                    withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
+                                        selectedTab = tab
+                                    }
+                                    store.triggerHaptic(.move)
                                 } label: {
                                     Text(tab.rawValue)
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 7)
-                                        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                        .background {
+                                            if sel {
+                                                Capsule()
+                                                    .fill(BrillyPalette.brillyTeal)
+                                                    .matchedGeometryEffect(id: "vaultActiveTab", in: vaultTabNS)
+                                            } else {
+                                                Capsule().fill(Color.white.opacity(0.08))
+                                            }
+                                        }
                                         .contentShape(Capsule())
                                 }
                                 .buttonStyle(.plain)

@@ -229,6 +229,26 @@ public extension View {
     }
 }
 
+/// Centralized 120Hz Crisp & Snappy motion curves for BrillyDer, with automatic iOS Reduce Motion degradation.
+public enum BrillyMotion {
+    /// Silky, fast piece glide across squares (~155ms) — never slows rapid stepping or play.
+    public static let pieceGlide: Animation = .spring(response: 0.16, dampingFraction: 0.88)
+    /// Crisp spring-pop for move classification badges (`!!`, `!`, `★`, `??`) and medallions.
+    public static let badgePop: Animation = .spring(response: 0.24, dampingFraction: 0.68)
+    /// Fluid sliding capsule highlight for `matchedGeometryEffect` segmented pill bars.
+    public static let pillSlide: Animation = .spring(response: 0.24, dampingFraction: 0.84)
+    /// Clean rolling digits & eval bar updates.
+    public static let numeric: Animation = .snappy(duration: 0.20)
+    /// Smooth sweep for Insights Accuracy Ring & Phase bars.
+    public static let ringSweep: Animation = .easeOut(duration: 0.62)
+    /// Subtle cross-fade for coaching cards and status banners.
+    public static let cardSwap: Animation = .easeOut(duration: 0.16)
+
+    public static func resolve(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? .easeOut(duration: 0.10) : animation
+    }
+}
+
 /// Crisp native tactile scale-down press style (`scaleEffect(0.98)`) for navigation pills and primary controls.
 public struct BrillyPressScaleStyle: ButtonStyle {
     public init() {}

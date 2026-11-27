@@ -32,9 +32,19 @@ public struct InteractiveChessBoardView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.brillyShowCoordinates) private var showBoardCoordinates
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedSquare: Square? = nil
     @GestureState private var dragState = BoardDragState()
     @State private var pendingPromotion: (from: Square, to: Square, color: PieceColor)? = nil
+
+    // 120Hz piece glide, badge spring-pop, !! sparkle burst & check pulse
+    @State private var slidingPiece: (piece: Piece, from: Square, to: Square)? = nil
+    @State private var slideProgress: CGFloat = 1.0
+    @State private var slideTask: Task<Void, Never>? = nil
+    @State private var skipNextSlide: Bool = false
+    @State private var badgeScale: CGFloat = 1.0
+    @State private var brilliantBurstProgress: CGFloat = 1.0
+    @State private var checkPulsePhase: Bool = false
 
     public init(
         board: ChessBoard,
@@ -111,6 +121,18 @@ public struct InteractiveChessBoardView: View {
                         .strokeBorder(Color.white.opacity(surfaceStyle == .liquidGlass ? 0.22 : 0.12), lineWidth: 1)
                 )
 
+                // 1b. Smooth 120Hz Piece Glide Overlay (runs on tap-to-move, Bot Arena, Auto-Play & Analyze stepping)
+                if let sp = slidingPiece, slideProgress < 1.0, sqSize >= 20 {
+                    let pFrom = centerPoint(for: sp.from, sqSize: sqSize)
+                    let pTo = centerPoint(for: sp.to, sqSize: sqSize)
+                    let curX = pFrom.x + (pTo.x - pFrom.x) * slideProgress
+                    let curY = pFrom.y + (pTo.y - pFrom.y) * slideProgress
+                    ChessPieceView(piece: sp.piece, squareSize: sqSize)
+                        .shadow(color: .black.opacity(0.22 * (1.0 - slideProgress)), radius: 4, y: 2)
+                        .position(x: curX, y: curY)
+                        .allowsHitTesting(false)
+                }
+
                 // 2. Single-layer Vector Coaching Arrows (no alpha overlap seam between shaft & head)
                 if !arrows.isEmpty {
                     Canvas { ctx, size in
@@ -125,6 +147,7 @@ public struct InteractiveChessBoardView: View {
                     }
                     .frame(width: side, height: side)
                     .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
 
                 // 3. Move Classification Badge (safely inside upper-right corner — never clipped on rank 8)
@@ -132,6 +155,20 @@ public struct InteractiveChessBoardView: View {
                     let pt = topRightCorner(for: badge.square, sqSize: sqSize)
                     let badgeSize = max(18, sqSize * 0.36)
                     let fg = BrillyPalette.badgeForeground(for: badge.classification)
+
+                    // Subtle 1-shot radial teal halo burst on !! Brilliant moves
+                    if badge.classification == .brilliant && !reduceMotion && brilliantBurstProgress < 1.0 {
+                        let sqCenter = centerPoint(for: badge.square, sqSize: sqSize)
+                        Circle()
+                            .strokeBorder(BrillyPalette.brillyTeal.opacity(max(0, 0.85 * (1.0 - brilliantBurstProgress))), lineWidth: 2.5)
+                            .frame(
+                                width: sqSize * (0.65 + brilliantBurstProgress * 0.95),
+                                height: sqSize * (0.65 + brilliantBurstProgress * 0.95)
+                            )
+                            .position(sqCenter)
+                            .allowsHitTesting(false)
+                    }
+
                     ZStack {
                         Circle()
                             .fill(BrillyPalette.color(for: badge.classification))
@@ -151,7 +188,12 @@ public struct InteractiveChessBoardView: View {
                     }
                     .frame(width: badgeSize, height: badgeSize)
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.65), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.5), radius: 2.5, y: 1)
+                    .shadow(
+                        color: badge.classification == .brilliant ? BrillyPalette.brillyTeal.opacity(0.65) : .black.opacity(0.5),
+                        radius: badge.classification == .brilliant ? 5 : 2.5,
+                        y: 1
+                    )
+                    .scaleEffect(badgeScale)
                     .position(x: pt.x - badgeSize * 0.52, y: pt.y + badgeSize * 0.52)
                     .allowsHitTesting(false)
                 }
@@ -217,6 +259,7 @@ public struct InteractiveChessBoardView: View {
                             // Hit-test at the lifted piece's visual center so drops feel spot-on under thumbs
                             let dropPoint = CGPoint(x: value.location.x, y: value.location.y - sqSize * 0.25)
                             if let toSq = squareAt(point: dropPoint, sqSize: sqSize), toSq != fromSq {
+                                skipNextSlide = true
                                 attemptMove(from: fromSq, to: toSq)
                             } else {
                                 selectedSquare = fromSq
@@ -237,6 +280,10 @@ public struct InteractiveChessBoardView: View {
         .onChange(of: board.fen) { _, _ in
             selectedSquare = nil
             pendingPromotion = nil
+            triggerPieceGlideIfEligible()
+        }
+        .onChange(of: moveBadge) { _, newBadge in
+            triggerBadgePop(for: newBadge)
         }
         .onChange(of: interactive) { _, isNowInteractive in
             if !isNowInteractive {
@@ -247,6 +294,69 @@ public struct InteractiveChessBoardView: View {
         .onChange(of: orientation) { _, _ in
             selectedSquare = nil
             pendingPromotion = nil
+            slideTask?.cancel()
+            slidingPiece = nil
+            slideProgress = 1.0
+        }
+        .onAppear {
+            if !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true)) {
+                    checkPulsePhase = true
+                }
+            }
+        }
+        .onDisappear {
+            slideTask?.cancel()
+            slideTask = nil
+        }
+    }
+
+    private func triggerPieceGlideIfEligible() {
+        slideTask?.cancel()
+        slideTask = nil
+        if skipNextSlide {
+            skipNextSlide = false
+            slidingPiece = nil
+            slideProgress = 1.0
+            return
+        }
+        guard !reduceMotion,
+              let lm = lastMove,
+              lm.from != lm.to,
+              let movedPiece = board[lm.to] else {
+            slidingPiece = nil
+            slideProgress = 1.0
+            return
+        }
+        slidingPiece = (movedPiece, lm.from, lm.to)
+        slideProgress = 0.0
+        withAnimation(BrillyMotion.pieceGlide) {
+            slideProgress = 1.0
+        }
+        slideTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(185))
+            guard !Task.isCancelled else { return }
+            slidingPiece = nil
+        }
+    }
+
+    private func triggerBadgePop(for badge: MoveBadgeOverlay?) {
+        guard let badge, !reduceMotion else {
+            badgeScale = 1.0
+            brilliantBurstProgress = 1.0
+            return
+        }
+        badgeScale = 0.45
+        withAnimation(BrillyMotion.badgePop) {
+            badgeScale = 1.0
+        }
+        if badge.classification == .brilliant {
+            brilliantBurstProgress = 0.0
+            withAnimation(.easeOut(duration: 0.48)) {
+                brilliantBurstProgress = 1.0
+            }
+        } else {
+            brilliantBurstProgress = 1.0
         }
     }
 
@@ -270,6 +380,7 @@ public struct InteractiveChessBoardView: View {
         let isLegalDest = legalTargets.contains(sq)
         let piece = board[sq]
         let isHiddenByDrag = dragState.fromSquare == sq
+        let isHiddenBySlide = slidingPiece?.to == sq && slideProgress < 1.0 && sqSize >= 20
         let showCoords = showBoardCoordinates && sqSize >= 22
         let plySeed = max(0, (board.fullmoveNumber - 1) * 2 + (board.turn == .black ? 1 : 0))
         let colors = theme.squareColors(plySeed: plySeed)
@@ -293,6 +404,7 @@ public struct InteractiveChessBoardView: View {
                     startRadius: sqSize * 0.08,
                     endRadius: sqSize * 0.56
                 )
+                .opacity(reduceMotion ? 1.0 : (checkPulsePhase ? 1.0 : 0.70))
             }
 
             if showCoords && col == 0 {
@@ -324,7 +436,7 @@ public struct InteractiveChessBoardView: View {
                 }
             }
 
-            if let piece, !isHiddenByDrag {
+            if let piece, !isHiddenByDrag, !isHiddenBySlide {
                 ChessPieceView(piece: piece, squareSize: sqSize)
             }
         }

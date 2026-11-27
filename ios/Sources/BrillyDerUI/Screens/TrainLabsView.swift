@@ -3,6 +3,9 @@ import BrillyDerCore
 
 public struct TrainLabsView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var endgameCatNS
+    @Namespace private var escapeThemeNS
 
     enum LabKind: String, CaseIterable {
         case endgame = "Endgames"
@@ -131,14 +134,25 @@ public struct TrainLabsView: View {
     private func catChip(_ label: String, cat: EndgameCategory?) -> some View {
         let sel = selectedCategory == cat
         return Button {
-            selectedCategory = cat
+            withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
+                selectedCategory = cat
+            }
+            store.triggerHaptic(.move)
         } label: {
             Text(label)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                .background {
+                    if sel {
+                        Capsule()
+                            .fill(BrillyPalette.brillyTeal)
+                            .matchedGeometryEffect(id: "endgameCatActive", in: endgameCatNS)
+                    } else {
+                        Capsule().fill(Color.white.opacity(0.08))
+                    }
+                }
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -239,14 +253,25 @@ public struct TrainLabsView: View {
     private func escapeThemeChip(_ label: String, theme: EscapeTheme?) -> some View {
         let sel = selectedEscapeTheme == theme
         return Button {
-            selectedEscapeTheme = theme
+            withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
+                selectedEscapeTheme = theme
+            }
+            store.triggerHaptic(.move)
         } label: {
             Text(label)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Capsule().fill(sel ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
+                .background {
+                    if sel {
+                        Capsule()
+                            .fill(BrillyPalette.goldAmber)
+                            .matchedGeometryEffect(id: "escapeThemeActive", in: escapeThemeNS)
+                    } else {
+                        Capsule().fill(Color.white.opacity(0.08))
+                    }
+                }
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -539,6 +564,8 @@ private struct BoardVisionPanel: View {
                 if isRunning {
                     Text("\(timeRemaining)s")
                         .font(.title2.monospacedDigit().weight(.black))
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy(duration: 0.2), value: timeRemaining)
                         .foregroundStyle(timeRemaining <= 10 ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                 }
             }
@@ -555,14 +582,20 @@ private struct BoardVisionPanel: View {
                 Text(isRunning ? targetSquare.algebraic.uppercased() : "--")
                     .font(.system(size: 30, weight: .black, design: .rounded))
                     .foregroundStyle(flashColor ?? BrillyPalette.brillyTeal)
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.16), value: targetSquare)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("Score \(score)")
                         .font(.headline.monospacedDigit().weight(.bold))
+                        .contentTransition(.numericText())
+                        .animation(.snappy(duration: 0.18), value: score)
                         .foregroundStyle(BrillyPalette.inkPrimary)
                     if mistakes > 0 {
                         Text("\(mistakes) miss")
                             .font(.caption2.monospacedDigit().weight(.semibold))
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.18), value: mistakes)
                             .foregroundStyle(BrillyPalette.blunderRose)
                     }
                 }
@@ -797,10 +830,14 @@ private struct PuzzleRushPanel: View {
                 Spacer()
                 Text("Score \(score)")
                     .font(.headline.monospacedDigit().weight(.black))
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.18), value: score)
                     .foregroundStyle(BrillyPalette.inkPrimary)
                 if mode == .blitz && running {
                     Text("\(timeLeft / 60):\(String(format: "%02d", timeLeft % 60))")
                         .font(.headline.monospacedDigit().weight(.bold))
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy(duration: 0.2), value: timeLeft)
                         .foregroundStyle(timeLeft <= 20 ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                         .padding(.leading, 8)
                 }

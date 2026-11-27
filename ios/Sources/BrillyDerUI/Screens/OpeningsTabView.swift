@@ -3,6 +3,8 @@ import BrillyDerCore
 
 public struct OpeningsTabView: View {
     @Environment(BrillyAppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var categoryNS
     @State private var sideFilter: RepertoireSide = .white
     @State private var categoryFilter: OpeningCategoryFilter = .all
     @State private var sortOption: OpeningSortOption = .grouped
@@ -315,7 +317,7 @@ public struct OpeningsTabView: View {
                                 ForEach(visibleFilterChips) { chip in
                                     let active = categoryFilter == chip
                                     Button {
-                                        withAnimation(.snappy(duration: 0.2)) {
+                                        withAnimation(BrillyMotion.resolve(BrillyMotion.pillSlide, reduceMotion: reduceMotion)) {
                                             categoryFilter = chip
                                         }
                                         store.triggerHaptic(.move)
@@ -325,13 +327,18 @@ public struct OpeningsTabView: View {
                                             .foregroundStyle(active ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
                                             .padding(.horizontal, 12)
                                             .padding(.vertical, 6)
-                                            .background(
-                                                Capsule()
-                                                    .fill(active ? BrillyPalette.brillyTeal : Color.white.opacity(0.07))
-                                                    .overlay(
-                                                        Capsule().strokeBorder(active ? BrillyPalette.brillyTeal : Color.white.opacity(0.09), lineWidth: 0.8)
-                                                    )
-                                            )
+                                            .background {
+                                                if active {
+                                                    Capsule()
+                                                        .fill(BrillyPalette.brillyTeal)
+                                                        .matchedGeometryEffect(id: "openingCatActive", in: categoryNS)
+                                                } else {
+                                                    Capsule()
+                                                        .fill(Color.white.opacity(0.07))
+                                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.09), lineWidth: 0.8))
+                                                }
+                                            }
+                                            .contentShape(Capsule())
                                     }
                                     .buttonStyle(.plain)
                                 }
