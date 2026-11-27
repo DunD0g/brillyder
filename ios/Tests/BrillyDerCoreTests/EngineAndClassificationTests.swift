@@ -519,4 +519,121 @@ struct EngineAndClassificationTests {
         #expect(upgradedV6.plies.first?.classification == .brilliant)
         #expect(upgradedV6.whiteSummary.count(for: .brilliant) == 1)
     }
+
+    @Test("BotArenaEngine supports 11 tiers (400..3500 Hybrid), per-bot opening books, guide mode, and valid PGN export")
+    func botArenaEngineAndOpeningBooks() async throws {
+        // 1. All 11 bot profiles have strictly ascending Elos and clean Free vs Pro gating
+        let allBots = BotProfile.allCases
+        #expect(allBots.count == 11)
+        for i in 1..<allBots.count {
+            #expect(allBots[i].elo > allBots[i - 1].elo)
+        }
+        #expect(BotProfile.cadet400.isUnlocked(hasProAccess: false))
+        #expect(BotProfile.deep.isUnlocked(hasProAccess: false))
+        #expect(!BotProfile.ultra.isUnlocked(hasProAccess: false))
+        #expect(!BotProfile.hybrid.isUnlocked(hasProAccess: false))
+        #expect(BotProfile.ultra.isUnlocked(hasProAccess: true))
+        #expect(BotProfile.hybrid.isUnlocked(hasProAccess: true))
+
+        // 2. Per-bot opening book resolution from starterCourses.json
+        let courses = try CourseRepository.loadStarterCourses()
+        let whiteQG = try #require(courses.first(where: { $0.side == .white && $0.name.localizedCaseInsensitiveContains("Queen's Gambit") }))
+        let blackQG = try #require(courses.first(where: { $0.side == .black && $0.name.localizedCaseInsensitiveContains("Queen's Gambit") }))
+
+        var board = ChessBoard()
+        var sanHistory: [String] = []
+        let nnue = RenegadeEngine()
+        let swift = BrillyNativeEngine()
+
+        // Ply 1: White Queen's Gambit book plays 1. d4
+        let move1 = try #require(await BotArenaEngine.chooseMove(
+            board: board,
+            sanHistory: sanHistory,
+            profile: .deep,
+            openingSelection: .course(courseId: whiteQG.id, lineId: nil),
+            opponentOpeningSelection: .course(courseId: blackQG.id, lineId: nil),
+            courses: courses,
+            nnueEngine: nnue,
+            swiftEngine: swift
+        ))
+        #expect(move1.san == "d4")
+        if case .openingBook = move1.source { } else { Issue.record("Expected openingBook source on 1. d4") }
+        _ = try board.apply(move1.move)
+        sanHistory.append(move1.san)
+
+        // Ply 2: Black Queen's Gambit book replies 1... d5
+        let move2 = try #require(await BotArenaEngine.chooseMove(
+            board: board,
+            sanHistory: sanHistory,
+            profile: .ultra,
+            openingSelection: .course(courseId: blackQG.id, lineId: nil),
+            opponentOpeningSelection: .course(courseId: whiteQG.id, lineId: nil),
+            courses: courses,
+            nnueEngine: nnue,
+            swiftEngine: swift
+        ))
+        #expect(move2.san == "d5")
+        _ = try board.apply(move2.move)
+        sanHistory.append(move2.san)
+
+        // Ply 3: Weak bot (Cadet ~400) & Fast NNUE both produce 100% legal out-of-book moves
+        let cadetMove = try #require(await BotArenaEngine.chooseMove(
+            board: board,
+            sanHistory: sanHistory,
+            profile: .cadet400,
+            openingSelection: .freePlay,
+            opponentOpeningSelection: .freePlay,
+            guideOpponentOpening: false,
+            courses: courses,
+            nnueEngine: nnue,
+            swiftEngine: swift
+        ))
+        #expect(board.legalMoves().contains(cadetMove.move))
+        _ = try board.apply(cadetMove.move)
+        sanHistory.append(cadetMove.san)
+
+        let fastMove = try #require(await BotArenaEngine.chooseMove(
+            board: board,
+            sanHistory: sanHistory,
+            profile: .fast,
+            openingSelection: .freePlay,
+            opponentOpeningSelection: .freePlay,
+            guideOpponentOpening: false,
+            courses: courses,
+            nnueEngine: nnue,
+            swiftEngine: swift
+        ))
+        #expect(board.legalMoves().contains(fastMove.move))
+        _ = try board.apply(fastMove.move)
+        sanHistory.append(fastMove.san)
+
+        // 3. Guide mode: Free Play White follows Black's Caro-Kann setup on move 1 (1. e4)
+        if let caro = courses.first(where: { $0.side == .black && $0.name.localizedCaseInsensitiveContains("Caro") }) {
+            let guided = BotOpeningBookResolver.nextBookMove(
+                board: ChessBoard(),
+                sanHistory: [],
+                selection: .freePlay,
+                courses: courses,
+                opponentSelection: .course(courseId: caro.id, lineId: nil),
+                guideOpponentOpening: true
+            )
+            #expect(guided?.san == "e4")
+        }
+
+        // 4. PGN GameRecord export parses cleanly and keeps userColor nil for Bot vs Bot
+        let record = BotArenaEngine.buildGameRecord(
+            sanMoves: sanHistory,
+            whiteName: BotProfile.deep.displayName,
+            whiteElo: BotProfile.deep.elo,
+            blackName: BotProfile.ultra.displayName,
+            blackElo: BotProfile.ultra.elo,
+            resultString: "*",
+            userColor: nil,
+            openingHintName: "Queen's Gambit"
+        )
+        #expect(record.userColor == nil)
+        #expect(!record.rated)
+        let parsed = try PGNParser.parse(record.pgn)
+        #expect(parsed.moves.count == sanHistory.count)
+    }
 }

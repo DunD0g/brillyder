@@ -6,6 +6,8 @@ public struct TrainTabView: View {
     @State private var showingDailySession = false
     @State private var showingGravityCheck = false
     @State private var showingDailyOpeningsPicker = false
+    @State private var showingBotArena = false
+    @State private var botArenaInitialMode: BotArenaView.ArenaMode = .botVsBot
 
     public var body: some View {
         let plan = store.dailyWorkoutPlan
@@ -149,6 +151,10 @@ public struct TrainTabView: View {
         }
         .sheet(isPresented: $showingDailyOpeningsPicker) {
             DailyOpeningsPickerSheet()
+                .environment(store)
+        }
+        .sheet(isPresented: $showingBotArena) {
+            BotArenaSheet(initialMode: botArenaInitialMode)
                 .environment(store)
         }
     }
@@ -319,6 +325,63 @@ public struct TrainTabView: View {
         }
         .padding(16)
         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
+
+        // MARK: - 2b. Bot Arena (Play vs Bot & Bot vs Bot with Per-Bot Openings)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(BrillyPalette.brillyTeal.opacity(0.20))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "cpu.fill")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(BrillyPalette.brillyTeal)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.copy(cosmic: "Bot Arena · 400 to 3500 Elo", classic: "Bot Arena · Play & Simulate"))
+                        .font(.headline)
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                    Text("Spar any bot (Cadet to Hybrid SF16) or pit two bots head-to-head with custom openings.")
+                        .font(.caption)
+                        .foregroundStyle(BrillyPalette.inkSecondary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    botArenaInitialMode = .playVsBot
+                    showingBotArena = true
+                    store.triggerHaptic(.move)
+                } label: {
+                    Label("Play vs Bot", systemImage: "person.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(BrillyPressScaleStyle())
+
+                Button {
+                    botArenaInitialMode = .botVsBot
+                    showingBotArena = true
+                    store.triggerHaptic(.move)
+                } label: {
+                    Label("Bot vs Bot", systemImage: "bolt.horizontal.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(BrillyPressScaleStyle())
+            }
+        }
+        .padding(16)
+        .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.brillyTeal, interactive: true)
 
         // MARK: - 3. Quick Status Row (Tappable navigation cards)
         HStack(spacing: 12) {

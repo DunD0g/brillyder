@@ -9,6 +9,7 @@ public struct TrainLabsView: View {
         case escape = "Escape"
         case vision = "Vision"
         case rush = "Rush"
+        case arena = "Bots"
     }
 
     @State private var activeLab: LabKind = .endgame
@@ -35,6 +36,8 @@ public struct TrainLabsView: View {
                 BoardVisionPanel()
             case .rush:
                 PuzzleRushPanel()
+            case .arena:
+                BotArenaView(initialMode: .botVsBot)
             }
         }
         .onAppear { applyPreferredEndgame() }

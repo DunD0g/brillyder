@@ -2484,6 +2484,14 @@ public final class BrillyAppStore {
         return move
     }
 
+    /// Inserts a completed/paused Bot Arena match into the game list and launches full Game Review in Analyze.
+    public func openBotArenaGameInAnalyze(_ record: GameRecord) {
+        if !recentGames.contains(where: { $0.id == record.id }) {
+            recentGames.insert(record, at: 0)
+        }
+        startAnalysis(for: record, isManualSelection: true, switchToAnalyze: true)
+    }
+
     // MARK: - FSRS, Courses, Woodpecker, Endgame & Bookmarks
 
     public func recordOpeningAttempt(cardId: String, attempt: OpeningAttemptInput) -> OpeningReviewResult? {
