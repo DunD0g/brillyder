@@ -228,14 +228,17 @@ public struct BrillyDerRootView: View {
 
             Spacer(minLength: 4)
 
-            Button("Stop") {
+            Button {
                 store.cancelBatchAnalysis()
+            } label: {
+                Text("Stop")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(BrillyPalette.blunderRose)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
+                    .contentShape(Capsule())
             }
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(BrillyPalette.blunderRose)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)

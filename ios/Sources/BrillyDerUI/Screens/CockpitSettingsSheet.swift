@@ -41,6 +41,8 @@ public struct CockpitSettingsSheet: View {
     @State private var showingTermsSheet = false
     @State private var showingLicensesSheet = false
     @State private var previewMoveTick: Int = 0
+    @State private var editingLichessHandle = false
+    @State private var editingChessComHandle = false
 
     private static let previewBoard: ChessBoard = (try? ChessBoard(fen: "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 5")) ?? ChessBoard()
 
@@ -329,48 +331,92 @@ public struct CockpitSettingsSheet: View {
                 Text("Lichess Username")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkSecondary)
-                HStack(spacing: 8) {
-                    TextField("Enter Lichess handle", text: $bindableStore.lichessUsername)
-                        .textFieldStyle(.plain)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.done)
-                        #endif
-                        .onSubmit {
-                            store.lockHandle(for: .lichess)
-                            accountStatusMessage = "Lichess handle saved"
-                            store.triggerHaptic(.success)
+                let cleanLichess = store.lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                if store.effectiveCreatorNameMask != .off && !cleanLichess.isEmpty && !editingLichessHandle {
+                    let masked = store.maskedProfileUsername(cleanLichess)
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Text(masked.text)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .lineLimit(1)
+                                .blur(radius: masked.isBlurred ? 5 : 0)
+                            Spacer(minLength: 4)
+                            Image(systemName: masked.isBlurred ? "eye.slash.fill" : "theatermasks.fill")
+                                .font(.caption2)
+                                .foregroundStyle(BrillyPalette.goldAmber.opacity(0.8))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
-                        .foregroundStyle(BrillyPalette.inkPrimary)
 
-                    Button("Save") {
-                        store.lockHandle(for: .lichess)
-                        accountStatusMessage = "Lichess handle saved"
-                        store.triggerHaptic(.success)
-                    }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(BrillyPalette.voidBg)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
-                    .buttonStyle(.plain)
-
-                    if !store.lichessUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Clear") {
-                            store.clearHandle(for: .lichess)
-                            accountStatusMessage = "Lichess handle cleared"
+                        Button {
+                            editingLichessHandle = true
                             store.triggerHaptic(.move)
+                        } label: {
+                            Text("Edit")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.12)))
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.blunderRose)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
                         .buttonStyle(.plain)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        TextField("Enter Lichess handle", text: $bindableStore.lichessUsername)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            #endif
+                            .onSubmit {
+                                store.lockHandle(for: .lichess)
+                                editingLichessHandle = false
+                                accountStatusMessage = "Lichess handle saved"
+                                store.triggerHaptic(.success)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+
+                        Button {
+                            store.lockHandle(for: .lichess)
+                            editingLichessHandle = false
+                            accountStatusMessage = "Lichess handle saved"
+                            store.triggerHaptic(.success)
+                        } label: {
+                            Text("Save")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+
+                        if !cleanLichess.isEmpty {
+                            Button {
+                                store.clearHandle(for: .lichess)
+                                editingLichessHandle = false
+                                accountStatusMessage = "Lichess handle cleared"
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 8)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
+                                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -379,48 +425,92 @@ public struct CockpitSettingsSheet: View {
                 Text("Chess.com Username")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(BrillyPalette.inkSecondary)
-                HStack(spacing: 8) {
-                    TextField("Enter Chess.com handle", text: $bindableStore.chessComUsername)
-                        .textFieldStyle(.plain)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.done)
-                        #endif
-                        .onSubmit {
-                            store.lockHandle(for: .chesscom)
-                            accountStatusMessage = "Chess.com handle saved"
-                            store.triggerHaptic(.success)
+                let cleanChessCom = store.chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                if store.effectiveCreatorNameMask != .off && !cleanChessCom.isEmpty && !editingChessComHandle {
+                    let masked = store.maskedProfileUsername(cleanChessCom)
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Text(masked.text)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .lineLimit(1)
+                                .blur(radius: masked.isBlurred ? 5 : 0)
+                            Spacer(minLength: 4)
+                            Image(systemName: masked.isBlurred ? "eye.slash.fill" : "theatermasks.fill")
+                                .font(.caption2)
+                                .foregroundStyle(BrillyPalette.goldAmber.opacity(0.8))
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
-                        .foregroundStyle(BrillyPalette.inkPrimary)
 
-                    Button("Save") {
-                        store.lockHandle(for: .chesscom)
-                        accountStatusMessage = "Chess.com handle saved"
-                        store.triggerHaptic(.success)
-                    }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(BrillyPalette.voidBg)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
-                    .buttonStyle(.plain)
-
-                    if !store.chessComUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Clear") {
-                            store.clearHandle(for: .chesscom)
-                            accountStatusMessage = "Chess.com handle cleared"
+                        Button {
+                            editingChessComHandle = true
                             store.triggerHaptic(.move)
+                        } label: {
+                            Text("Edit")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.12)))
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.blunderRose)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
                         .buttonStyle(.plain)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        TextField("Enter Chess.com handle", text: $bindableStore.chessComUsername)
+                            .textFieldStyle(.plain)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            #endif
+                            .onSubmit {
+                                store.lockHandle(for: .chesscom)
+                                editingChessComHandle = false
+                                accountStatusMessage = "Chess.com handle saved"
+                                store.triggerHaptic(.success)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+
+                        Button {
+                            store.lockHandle(for: .chesscom)
+                            editingChessComHandle = false
+                            accountStatusMessage = "Chess.com handle saved"
+                            store.triggerHaptic(.success)
+                        } label: {
+                            Text("Save")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+
+                        if !cleanChessCom.isEmpty {
+                            Button {
+                                store.clearHandle(for: .chesscom)
+                                editingChessComHandle = false
+                                accountStatusMessage = "Chess.com handle cleared"
+                                store.triggerHaptic(.move)
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 8)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.blunderRose.opacity(0.14)))
+                                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -1235,21 +1325,24 @@ public struct CockpitSettingsSheet: View {
                                 ("WCC Game 1", "WCC 2026 · GAME 1"),
                                 ("Rapid & Blitz 2026", "WORLD RAPID & BLITZ 2026"),
                             ], id: \.0) { label, value in
-                                Button(label) {
+                                Button {
                                     store.creatorEventRibbonText = value
                                     store.triggerHaptic(.move)
+                                } label: {
+                                    Text(label)
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(store.creatorEventRibbonText == value ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            Capsule().fill(
+                                                store.creatorEventRibbonText == value
+                                                    ? BrillyPalette.goldAmber
+                                                    : Color.white.opacity(0.08)
+                                            )
+                                        )
+                                        .contentShape(Capsule())
                                 }
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(store.creatorEventRibbonText == value ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(
-                                    Capsule().fill(
-                                        store.creatorEventRibbonText == value
-                                            ? BrillyPalette.goldAmber
-                                            : Color.white.opacity(0.08)
-                                    )
-                                )
                                 .buttonStyle(.plain)
                             }
                         }
@@ -1296,9 +1389,22 @@ public struct CockpitSettingsSheet: View {
             .font(.caption)
             .foregroundStyle(BrillyPalette.inkSecondary)
 
-            Text("Crafted independently by Luke Dunwell")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
+            Group {
+                switch store.effectiveCreatorNameMask {
+                case .off:
+                    Text("Crafted independently by Luke Dunwell")
+                case .blurred:
+                    HStack(spacing: 3) {
+                        Text("Crafted independently by")
+                        Text("Luke Dunwell")
+                            .blur(radius: 5)
+                    }
+                case .anonymous, .brillyFun:
+                    Text("Crafted independently by BrillyDer")
+                }
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(BrillyPalette.inkSecondary.opacity(0.85))
 
             Button {
                 dismiss()

@@ -364,15 +364,18 @@ public struct OpeningsTabView: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(BrillyPalette.inkPrimary)
                                 .multilineTextAlignment(.center)
-                            Button(isSearching ? "Clear Search" : "Show All") {
+                            Button {
                                 searchQuery = ""
                                 categoryFilter = .all
+                            } label: {
+                                Text(isSearching ? "Clear Search" : "Show All")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                    .contentShape(Capsule())
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
                             .buttonStyle(.plain)
                         }
                         .frame(maxWidth: .infinity)

@@ -304,15 +304,18 @@ public struct TrainTabView: View {
 
             Spacer()
 
-            Button("Go") {
+            Button {
                 showingGravityCheck = true
+            } label: {
+                Text("Go")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(BrillyPalette.inkPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                    .contentShape(Capsule())
             }
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(BrillyPalette.inkPrimary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
-            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-            .buttonStyle(.plain)
+            .buttonStyle(BrillyPressScaleStyle())
         }
         .padding(16)
         .brillySurface(store.surfaceStyle, cornerRadius: 20, tint: BrillyPalette.warpPurple, interactive: true)
@@ -593,16 +596,19 @@ private struct DailySessionSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(BrillyPalette.inkSecondary)
                             .multilineTextAlignment(.center)
-                        Button("Finish & Log Streak") {
+                        Button {
                             store.markDailySessionCompleted()
                             dismiss()
+                        } label: {
+                            Text("Finish & Log Streak")
+                                .font(.headline)
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .padding(.horizontal, 26)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                .contentShape(Capsule())
                         }
-                        .font(.headline)
-                        .foregroundStyle(BrillyPalette.voidBg)
-                        .padding(.horizontal, 26)
-                        .padding(.vertical, 12)
-                        .background(Capsule().fill(BrillyPalette.brillyTeal))
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrillyPressScaleStyle())
                     }
                     .padding(28)
                     .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
@@ -909,13 +915,18 @@ private struct GravityCheckSheet: View {
                         Text(score == items.count && !items.isEmpty ? "Locked In — Ready to Queue!" : (remainingSec == 0 ? "Time's Up — Nice Warmup!" : "Warmed Up & Sharp!"))
                             .font(.title3.weight(.bold))
                             .foregroundStyle(BrillyPalette.inkPrimary)
-                        Button("Done") { dismiss() }
-                            .font(.headline)
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 12)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
-                            .buttonStyle(.plain)
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Done")
+                                .font(.headline)
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .padding(.horizontal, 28)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
                     }
                     .padding(28)
                     .brillySurface(store.surfaceStyle, cornerRadius: 24)
@@ -966,16 +977,19 @@ private struct GravityCheckSheet: View {
                             .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
                             if awaitingNext {
-                                Button("Continue") {
+                                Button {
                                     advanceTask?.cancel()
                                     moveToNextItem()
+                                } label: {
+                                    Text("Continue")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 11)
+                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                        .contentShape(Capsule())
                                 }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.voidBg)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
-                                .background(Capsule().fill(BrillyPalette.brillyTeal))
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrillyPressScaleStyle())
                             }
                         }
                         .padding(16)
@@ -1218,12 +1232,15 @@ public struct DailyOpeningsPickerSheet: View {
     }
 
     private func quickPresetButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(BrillyPalette.inkPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(Color.white.opacity(0.08)))
-            .buttonStyle(.plain)
+        Button(action: action) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }

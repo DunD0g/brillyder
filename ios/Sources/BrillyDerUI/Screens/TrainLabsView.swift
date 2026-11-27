@@ -127,14 +127,17 @@ public struct TrainLabsView: View {
 
     private func catChip(_ label: String, cat: EndgameCategory?) -> some View {
         let sel = selectedCategory == cat
-        return Button(label) {
+        return Button {
             selectedCategory = cat
+        } label: {
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                .contentShape(Capsule())
         }
-        .font(.caption.weight(.bold))
-        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
         .buttonStyle(.plain)
     }
 
@@ -232,14 +235,17 @@ public struct TrainLabsView: View {
 
     private func escapeThemeChip(_ label: String, theme: EscapeTheme?) -> some View {
         let sel = selectedEscapeTheme == theme
-        return Button(label) {
+        return Button {
             selectedEscapeTheme = theme
+        } label: {
+            Text(label)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(sel ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
+                .contentShape(Capsule())
         }
-        .font(.caption.weight(.bold))
-        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(sel ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
         .buttonStyle(.plain)
     }
 
@@ -342,21 +348,31 @@ private struct EndgameDrillPlaySheet: View {
                         .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
                         HStack(spacing: 10) {
-                            Button("Hint") { showHint = true }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.goldAmber)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                                .buttonStyle(.plain)
+                            Button {
+                                showHint = true
+                            } label: {
+                                Text("Hint")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
 
-                            Button("Reset") { resetDrill() }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                .buttonStyle(.plain)
+                            Button {
+                                resetDrill()
+                            } label: {
+                                Text("Reset")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
                     .padding(16)
@@ -586,43 +602,52 @@ private struct BoardVisionPanel: View {
 
             // Controls
             HStack(spacing: 10) {
-                Button(isRunning ? "Stop" : "Start 60s") {
+                Button {
                     if isRunning {
                         stopGame()
                     } else {
                         startGame()
                     }
+                } label: {
+                    Text(isRunning ? "Stop" : "Start 60s")
+                        .font(.headline)
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(isRunning ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
+                        .contentShape(Capsule())
                 }
-                .font(.headline)
-                .foregroundStyle(BrillyPalette.voidBg)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(isRunning ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
                 .buttonStyle(BrillyPressScaleStyle())
 
-                Button(orientation == .white ? "White" : "Black") {
+                Button {
                     orientation = orientation.opposite
+                } label: {
+                    Text(orientation == .white ? "White" : "Black")
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                        .contentShape(Capsule())
                 }
-                .font(.caption.weight(.bold))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(BrillyPalette.inkPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                .buttonStyle(.plain)
+                .buttonStyle(BrillyPressScaleStyle())
 
-                Button(hideCoords ? "Labels Off" : "Labels On") {
+                Button {
                     hideCoords.toggle()
+                } label: {
+                    Text(hideCoords ? "Labels Off" : "Labels On")
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .foregroundStyle(BrillyPalette.inkPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                        .contentShape(Capsule())
                 }
-                .font(.caption.weight(.bold))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(BrillyPalette.inkPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                .buttonStyle(.plain)
+                .buttonStyle(BrillyPressScaleStyle())
             }
         }
         .task(id: isRunning) {
@@ -812,14 +837,17 @@ private struct PuzzleRushPanel: View {
                     .brillySurface(store.surfaceStyle, cornerRadius: 14)
             }
 
-            Button(running ? "End Run" : "Start \(mode.rawValue)") {
+            Button {
                 if running { finishRun() } else { startRun() }
+            } label: {
+                Text(running ? "End Run" : "Start \(mode.rawValue)")
+                    .font(.headline)
+                    .foregroundStyle(BrillyPalette.voidBg)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(running ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
+                    .contentShape(Capsule())
             }
-            .font(.headline)
-            .foregroundStyle(BrillyPalette.voidBg)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Capsule().fill(running ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal))
             .buttonStyle(BrillyPressScaleStyle())
         }
         .task(id: running) {
@@ -985,25 +1013,33 @@ private struct EscapePuzzlePlaySheet: View {
                                 }
                                 .buttonStyle(BrillyPressScaleStyle())
                             } else {
-                                Button("Hint") {
+                                Button {
                                     showHint = true
                                     store.triggerHaptic(.move)
+                                } label: {
+                                    Text("Hint")
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.goldAmber)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                        .contentShape(Capsule())
                                 }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.goldAmber)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrillyPressScaleStyle())
                             }
 
-                            Button("Reset") { resetPuzzle() }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                .buttonStyle(.plain)
+                            Button {
+                                resetPuzzle()
+                            } label: {
+                                Text("Reset")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
                     .padding(16)

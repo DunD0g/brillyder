@@ -190,14 +190,17 @@ public struct PositionEditorSheet: View {
                                     .padding(9)
                                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
                                     .foregroundStyle(BrillyPalette.inkPrimary)
-                                Button("Load") {
+                                Button {
                                     loadFen(customFenInput)
+                                } label: {
+                                    Text("Load")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 9)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
+                                        .contentShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.voidBg)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 9)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.brillyTeal))
                                 .buttonStyle(.plain)
                             }
 
@@ -279,30 +282,36 @@ public struct PositionEditorSheet: View {
     }
 
     private func castlePill(_ label: String, isOn: Binding<Bool>) -> some View {
-        Button(label) {
+        Button {
             isOn.wrappedValue.toggle()
             store.triggerHaptic(.move)
+        } label: {
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(isOn.wrappedValue ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .background(Capsule().fill(isOn.wrappedValue ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                .contentShape(Capsule())
         }
-        .font(.caption2.weight(.bold))
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
-        .foregroundStyle(isOn.wrappedValue ? BrillyPalette.voidBg : BrillyPalette.inkSecondary)
-        .frame(maxWidth: .infinity, minHeight: 36)
-        .background(Capsule().fill(isOn.wrappedValue ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
         .accessibilityAddTraits(isOn.wrappedValue ? .isSelected : [])
         .buttonStyle(.plain)
     }
 
     private func presetButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title) {
+        Button {
             store.triggerHaptic(.move)
             action()
+        } label: {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrillyPalette.inkPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                .contentShape(Capsule())
         }
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(BrillyPalette.inkPrimary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
         .buttonStyle(.plain)
     }
 

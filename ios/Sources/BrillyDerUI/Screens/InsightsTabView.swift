@@ -41,16 +41,19 @@ public struct InsightsTabView: View {
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                             }
                             Spacer(minLength: 6)
-                            Button("Warmup") {
+                            Button {
                                 store.selectedTrainMode = .daily
                                 store.selectedTab = .train
                                 store.triggerHaptic(.move)
+                            } label: {
+                                Text("Warmup")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                    .contentShape(Capsule())
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
                             .buttonStyle(.plain)
                         }
                         .padding(14)
@@ -69,15 +72,18 @@ public struct InsightsTabView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                 .multilineTextAlignment(.center)
-                            Button("Go to Games") {
+                            Button {
                                 store.selectedTab = .games
+                            } label: {
+                                Text("Go to Games")
+                                    .font(.headline)
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .padding(.horizontal, 22)
+                                    .padding(.vertical, 11)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                    .contentShape(Capsule())
                             }
-                            .font(.headline)
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .padding(.horizontal, 22)
-                            .padding(.vertical, 11)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
-                            .buttonStyle(.plain)
+                            .buttonStyle(BrillyPressScaleStyle())
                         }
                         .padding(26)
                         .brillySurface(store.surfaceStyle, cornerRadius: 24)
@@ -254,14 +260,17 @@ public struct InsightsTabView: View {
                                                 .foregroundStyle(BrillyPalette.inkSecondary)
                                         }
                                         Spacer()
-                                        Button("Train") {
+                                        Button {
                                             store.openMotifTrainer(tag: m.tag)
+                                        } label: {
+                                            Text("Train")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(BrillyPalette.voidBg)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 6)
+                                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                                .contentShape(Capsule())
                                         }
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(BrillyPalette.voidBg)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
                                         .buttonStyle(.plain)
                                     }
                                 }
@@ -948,13 +957,16 @@ private struct PerfEloExplainerSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 6)
-            Button(cta, action: action)
-                .font(.caption2.weight(.black))
-                .foregroundStyle(BrillyPalette.voidBg)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(BrillyPalette.brillyTeal))
-                .buttonStyle(.plain)
+            Button(action: action) {
+                Text(cta)
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(BrillyPalette.voidBg)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))

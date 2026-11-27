@@ -428,15 +428,18 @@ public struct AnalyzeTabView: View {
                 .foregroundStyle(BrillyPalette.inkSecondary)
                 .multilineTextAlignment(.center)
             if let sample = store.recentGames.first {
-                Button("Analyze Showcase Game") {
+                Button {
                     store.startAnalysis(for: sample)
+                } label: {
+                    Text("Analyze Showcase Game")
+                        .font(.headline)
+                        .foregroundStyle(BrillyPalette.voidBg)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                        .contentShape(Capsule())
                 }
-                .font(.headline)
-                .foregroundStyle(BrillyPalette.voidBg)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(BrillyPalette.brillyTeal))
-                .buttonStyle(.plain)
+                .buttonStyle(BrillyPressScaleStyle())
             }
         }
         .padding(26)
@@ -484,7 +487,7 @@ public struct AnalyzeTabView: View {
                     }
 
                     Spacer(minLength: 4)
-                    Button(store.activeAnalyzedGame != nil ? "Back to Game" : "Exit Explore") {
+                    Button {
                         cancelLiveTasks()
                         botActive = false
                         sandboxHistory = []
@@ -492,12 +495,15 @@ public struct AnalyzeTabView: View {
                         sandboxEval = nil
                         botStatusNotice = nil
                         store.activeSandboxFen = nil
+                    } label: {
+                        Text(store.activeAnalyzedGame != nil ? "Back to Game" : "Exit Explore")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.14)))
+                            .contentShape(Capsule())
                     }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(BrillyPalette.blunderRose)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.14)))
                     .buttonStyle(.plain)
                 }
 
@@ -1243,21 +1249,24 @@ public struct AnalyzeTabView: View {
                             }
                             Spacer(minLength: 4)
                             if ap.classification == .blunder || ap.classification == .mistake {
-                                Button(retryMode ? "Exit Retry" : "Retry") {
+                                Button {
                                     cancelLiveTasks()
                                     retryMode.toggle()
                                     botActive = false
                                     retrySolvedBoard = nil
                                     retrySolvedLastMove = nil
                                     retryFeedback = retryMode ? "Find the better move instead of \(ap.san)." : nil
+                                } label: {
+                                    Text(retryMode ? "Exit Retry" : "Retry")
+                                        .font(.caption.weight(.bold))
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .foregroundStyle(BrillyPalette.brillyTeal)
+                                        .padding(.horizontal, 11)
+                                        .padding(.vertical, 6)
+                                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                        .contentShape(Capsule())
                                 }
-                                .font(.caption.weight(.bold))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .foregroundStyle(BrillyPalette.brillyTeal)
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 6)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
                                 .buttonStyle(BrillyPressScaleStyle())
                             }
                         }
@@ -2154,14 +2163,19 @@ private struct GuidedMistakeReviewSheet: View {
                             .foregroundStyle(BrillyPalette.inkSecondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 12)
-                        Button("Done") { dismiss() }
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
-                            .buttonStyle(BrillyPressScaleStyle())
-                            .padding(.top, 6)
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Done")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                        .padding(.top, 6)
                     }
                     .padding(24)
                     .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
@@ -2224,18 +2238,21 @@ private struct GuidedMistakeReviewSheet: View {
                                     }
                                     .buttonStyle(BrillyPressScaleStyle())
                                 } else {
-                                    Button("Reveal Best Move") {
+                                    Button {
                                         revealedCurrent = true
                                         feedbackIsError = false
                                         feedback = "Best was \(ap.bestMoveSan). \(ap.coaching.headline)"
                                         store.triggerHaptic(.move)
+                                    } label: {
+                                        Text("Reveal Best Move")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(BrillyPalette.goldAmber)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 11)
+                                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                            .contentShape(Capsule())
                                     }
-                                    .font(.subheadline.weight(.bold))
-                                    .foregroundStyle(BrillyPalette.goldAmber)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(BrillyPressScaleStyle())
                                 }
                             }
                         }

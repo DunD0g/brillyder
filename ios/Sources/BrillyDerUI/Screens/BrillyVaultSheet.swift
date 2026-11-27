@@ -53,14 +53,17 @@ public struct BrillyVaultSheet: View {
                         HStack(spacing: 8) {
                             ForEach(VaultTab.allCases) { tab in
                                 let sel = selectedTab == tab
-                                Button(tab.rawValue) {
+                                Button {
                                     selectedTab = tab
+                                } label: {
+                                    Text(tab.rawValue)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                        .contentShape(Capsule())
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                                 .buttonStyle(.plain)
                             }
                         }
@@ -444,13 +447,16 @@ public struct BrillyVaultSheet: View {
     }
 
     private func bookmarkTagFilterChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(label, action: action)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(isSelected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(isSelected ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
-            .buttonStyle(.plain)
+        Button(action: action) {
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(isSelected ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(isSelected ? BrillyPalette.goldAmber : Color.white.opacity(0.08)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func bookmarkTagColor(_ tag: String) -> Color {
@@ -580,14 +586,17 @@ private struct BookmarkEditSheet: View {
                                     .padding(10)
                                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
 
-                                Button("+ Add") {
+                                Button {
                                     addCustomTag()
+                                } label: {
+                                    Text("+ Add")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.goldAmber))
+                                        .contentShape(RoundedRectangle(cornerRadius: 10))
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.voidBg)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(BrillyPalette.goldAmber))
                                 .buttonStyle(.plain)
                                 .disabled(customTagDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }

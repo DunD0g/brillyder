@@ -233,14 +233,17 @@ public struct GamesTabView: View {
                         HStack(spacing: 8) {
                             ForEach(["All", "Imported", "Saved", "Unanalyzed", "W", "D", "L"], id: \.self) { f in
                                 let sel = resultFilter == f
-                                Button(f == "W" ? "Wins" : (f == "D" ? "Draws" : (f == "L" ? "Losses" : f))) {
+                                Button {
                                     resultFilter = f
+                                } label: {
+                                    Text(f == "W" ? "Wins" : (f == "D" ? "Draws" : (f == "L" ? "Losses" : f)))
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                        .contentShape(Capsule())
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                                 .buttonStyle(.plain)
                             }
                         }
@@ -255,15 +258,18 @@ public struct GamesTabView: View {
                             Text("Try clearing your search or switching back to All games.")
                                 .font(.caption)
                                 .foregroundStyle(BrillyPalette.inkSecondary)
-                            Button("Reset Filters") {
+                            Button {
                                 searchText = ""
                                 resultFilter = "All"
+                            } label: {
+                                Text("Reset Filters")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.brillyTeal)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                    .contentShape(Capsule())
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.brillyTeal)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
                             .buttonStyle(.plain)
                         }
                         .frame(maxWidth: .infinity)
@@ -307,13 +313,18 @@ public struct GamesTabView: View {
                     Text("\(Int((store.batchProgress * 100).rounded()))%")
                         .font(.caption.monospacedDigit().weight(.black))
                         .foregroundStyle(BrillyPalette.brillyTeal)
-                    Button("Stop") { store.cancelBatchAnalysis() }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrillyPalette.blunderRose)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
-                        .buttonStyle(.plain)
+                    Button {
+                        store.cancelBatchAnalysis()
+                    } label: {
+                        Text("Stop")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(BrillyPalette.blunderRose)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(BrillyPalette.blunderRose.opacity(0.18)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
                 TractorBeamProgressBar(progress: store.batchProgress, height: 10)
                 Text(store.batchCurrentLabel)

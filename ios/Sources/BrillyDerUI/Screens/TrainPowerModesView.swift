@@ -97,29 +97,35 @@ public struct WoodpeckerCyclePanel: View {
                         .brillySurface(store.surfaceStyle, cornerRadius: 14)
 
                     if solvedCurrent || revealedCurrent {
-                        Button("Next Puzzle") {
+                        Button {
                             store.recordWoodpeckerStep(firstTry: solvedCurrent && !wrongOnCurrent, solved: solvedCurrent)
                             loadActivePuzzle()
+                        } label: {
+                            Text("Next Puzzle")
+                                .font(.headline)
+                                .foregroundStyle(BrillyPalette.voidBg)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                .contentShape(Capsule())
                         }
-                        .font(.headline)
-                        .foregroundStyle(BrillyPalette.voidBg)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Capsule().fill(BrillyPalette.brillyTeal))
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrillyPressScaleStyle())
                     } else {
-                        Button("Reveal Solution") {
+                        Button {
                             wrongOnCurrent = true
                             revealedCurrent = true
                             feedback = "Best move was \(puzzle.bestMoveSan). Study the pattern, then tap Next Puzzle."
                             store.triggerHaptic(.move)
+                        } label: {
+                            Text("Reveal Solution")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                .contentShape(Capsule())
                         }
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(BrillyPalette.goldAmber)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                        .buttonStyle(.plain)
+                        .buttonStyle(BrillyPressScaleStyle())
                     }
                 } else {
                     // Graceful recovery if a cycle references a puzzle whose game was deleted or not yet imported
@@ -132,27 +138,33 @@ public struct WoodpeckerCyclePanel: View {
                             .foregroundStyle(BrillyPalette.inkSecondary)
                             .multilineTextAlignment(.center)
                         HStack(spacing: 10) {
-                            Button("Skip Missing") {
+                            Button {
                                 store.recordWoodpeckerStep(firstTry: false, solved: false)
                                 loadActivePuzzle()
+                            } label: {
+                                Text("Skip Missing")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.voidBg)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                    .contentShape(Capsule())
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.voidBg)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(BrillyPalette.brillyTeal))
-                            .buttonStyle(.plain)
+                            .buttonStyle(BrillyPressScaleStyle())
 
-                            Button("Start Fresh Batch") {
+                            Button {
                                 store.woodpeckerCycle = nil
                                 store.persistToDisk()
+                            } label: {
+                                Text("Start Fresh Batch")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.blunderRose)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
+                                    .contentShape(Capsule())
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.blunderRose)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
-                            .buttonStyle(.plain)
+                            .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
                     .padding(16)
@@ -200,16 +212,19 @@ public struct WoodpeckerCyclePanel: View {
                             .foregroundStyle(BrillyPalette.brillyTeal)
                         HStack(spacing: 8) {
                             ForEach(uniqueBatchSizes, id: \.self) { size in
-                                Button("Freeze \(size)") {
+                                Button {
                                     store.startWoodpeckerCycle(batchSize: size)
                                     loadActivePuzzle()
+                                } label: {
+                                    Text("Freeze \(size)")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(BrillyPalette.voidBg)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(Capsule().fill(BrillyPalette.brillyTeal))
+                                        .contentShape(Capsule())
                                 }
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(BrillyPalette.voidBg)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(Capsule().fill(BrillyPalette.brillyTeal))
-                                .buttonStyle(.plain)
+                                .buttonStyle(BrillyPressScaleStyle())
                             }
                         }
                     }
@@ -361,28 +376,36 @@ private struct ConversionPlaySheet: View {
                             .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
                         HStack(spacing: 10) {
-                            Button("Rewind Turn") {
+                            Button {
                                 cancelBot()
                                 if let prev = historyFens.popLast(), let b = try? ChessBoard(fen: prev) {
                                     board = b
                                     status = "Rewound — try a cleaner conversion plan!"
                                 }
+                            } label: {
+                                Text("Rewind Turn")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.goldAmber)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                    .contentShape(Capsule())
                             }
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(BrillyPalette.goldAmber)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                            .buttonStyle(.plain)
+                            .buttonStyle(BrillyPressScaleStyle())
                             .disabled(historyFens.isEmpty)
 
-                            Button("Reset") { reset() }
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(BrillyPalette.inkPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                                .buttonStyle(.plain)
+                            Button {
+                                reset()
+                            } label: {
+                                Text("Reset")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(BrillyPalette.inkPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
                     .padding(16)
@@ -511,16 +534,19 @@ public struct MistakeDeckPanel: View {
                 HStack(spacing: 8) {
                     ForEach(availableTags, id: \.self) { tag in
                         let sel = selectedTag == tag
-                        Button(tag) {
+                        Button {
                             selectedTag = tag
                             index = 0
                             loadCurrent()
+                        } label: {
+                            Text(tag)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
+                                .contentShape(Capsule())
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(sel ? BrillyPalette.voidBg : BrillyPalette.inkPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(sel ? BrillyPalette.brillyTeal : Color.white.opacity(0.08)))
                         .buttonStyle(.plain)
                     }
                 }
@@ -579,35 +605,46 @@ public struct MistakeDeckPanel: View {
                     .brillySurface(store.surfaceStyle, cornerRadius: 14)
 
                 HStack(spacing: 10) {
-                    Button("Hint") { showHint = true }
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(BrillyPalette.goldAmber)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                        .buttonStyle(.plain)
-                        .disabled(solved)
-
-                    Button("Open Game") {
-                        store.openGameAtPly(gameId: p.gameId, ply: p.ply)
+                    Button {
+                        showHint = true
+                    } label: {
+                        Text("Hint")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.goldAmber)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                            .contentShape(Capsule())
                     }
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(BrillyPalette.inkPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrillyPressScaleStyle())
+                    .disabled(solved)
 
-                    Button("Next") {
+                    Button {
+                        store.openGameAtPly(gameId: p.gameId, ply: p.ply)
+                    } label: {
+                        Text("Open Game")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.inkPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(BrillyPressScaleStyle())
+
+                    Button {
                         index = (safeIdx + 1) % filtered.count
                         loadCurrent()
+                    } label: {
+                        Text("Next")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(BrillyPalette.voidBg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(BrillyPalette.brillyTeal))
+                            .contentShape(Capsule())
                     }
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(BrillyPalette.voidBg)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(BrillyPalette.brillyTeal))
-                    .buttonStyle(.plain)
+                    .buttonStyle(BrillyPressScaleStyle())
                 }
             }
         }
