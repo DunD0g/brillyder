@@ -87,8 +87,9 @@ public struct BrillyVaultSheet: View {
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 16)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
                 .padding(.top, 8)
             }
@@ -645,6 +646,7 @@ private struct BookmarkEditSheet: View {
                     }
                     .padding(18)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Rename & Tag")
             #if os(iOS)

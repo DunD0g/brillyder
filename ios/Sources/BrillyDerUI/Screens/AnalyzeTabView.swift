@@ -2030,6 +2030,7 @@ private struct AnalyzeMoveListSheet: View {
                         }
                         .padding(14)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                     .onAppear {
                         if currentPly > 0, currentPly <= ag.plies.count {
                             let moveNum = ag.plies[currentPly - 1].moveNumber
@@ -2256,8 +2257,10 @@ private struct GuidedMistakeReviewSheet: View {
                                 }
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
             }
             .navigationTitle("Review My Mistakes")

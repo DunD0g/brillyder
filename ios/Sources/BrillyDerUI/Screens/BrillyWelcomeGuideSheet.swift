@@ -52,8 +52,9 @@ public struct BrillyWelcomeGuideSheet: View {
                         }
                         .padding(.horizontal, 18)
                         .padding(.top, 10)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 14)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                     .scrollDismissesKeyboard(.interactively)
 
                     // Bottom Navigation Bar

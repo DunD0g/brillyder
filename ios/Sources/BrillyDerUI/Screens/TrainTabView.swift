@@ -16,7 +16,7 @@ public struct TrainTabView: View {
             CosmicVoidBackdrop(style: store.surfaceStyle)
 
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 12) {
                     // Hero Dual-Tone Brilly / Der Brand Header
                     HStack(alignment: .bottom, spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -132,8 +132,8 @@ public struct TrainTabView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 36)
+                .padding(.top, 6)
+                .padding(.bottom, 14)
             }
             .brillySoftScrollEdge()
         }
@@ -162,7 +162,7 @@ public struct TrainTabView: View {
     @ViewBuilder
     private func dailyCoachBody(plan: DailyWorkoutPlan) -> some View {
         // MARK: - 1. Daily-First Coach Hero
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 11) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.copy(cosmic: "DAILY FLIGHT PLAN", classic: "DAILY IMPROVEMENT PLAN"))
@@ -285,8 +285,8 @@ public struct TrainTabView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(18)
-        .brillySurface(store.surfaceStyle, cornerRadius: 24, tint: BrillyPalette.brillyTeal)
+        .padding(14)
+        .brillySurface(store.surfaceStyle, cornerRadius: 22, tint: BrillyPalette.brillyTeal)
 
         // MARK: - 2. 60-Second Gravity Check
         HStack(spacing: 14) {
@@ -813,8 +813,9 @@ private struct DailySessionSheet: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 12)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
             }
             .navigationTitle("Daily Coach")
@@ -1055,8 +1056,10 @@ private struct GravityCheckSheet: View {
                                 .buttonStyle(BrillyPressScaleStyle())
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
             }
             .navigationTitle(store.copy(cosmic: "Gravity Check", classic: "60s Warmup"))
@@ -1217,6 +1220,7 @@ public struct DailyOpeningsPickerSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Daily FSRS Openings")
             #if os(iOS)

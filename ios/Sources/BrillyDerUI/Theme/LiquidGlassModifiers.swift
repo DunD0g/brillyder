@@ -194,12 +194,16 @@ public extension View {
     func brillySoftScrollEdge() -> some View {
         #if os(iOS)
         if #available(iOS 26.0, *) {
-            self.scrollEdgeEffectStyle(.soft, for: .bottom)
+            self
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
         } else {
             self
+                .scrollBounceBehavior(.basedOnSize)
         }
         #else
         self
+            .scrollBounceBehavior(.basedOnSize)
         #endif
     }
 

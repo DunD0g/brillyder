@@ -1241,8 +1241,9 @@ public struct BrillyShareCardSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width

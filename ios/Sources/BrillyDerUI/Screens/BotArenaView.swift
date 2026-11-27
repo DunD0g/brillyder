@@ -23,9 +23,10 @@ public struct BotArenaSheet: View {
                         onOpenInAnalyze: { dismiss() }
                     )
                     .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 32)
+                    .padding(.top, 8)
+                    .padding(.bottom, 14)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle(store.copy(cosmic: "Bot Arena", classic: "Bot Arena"))
             #if os(iOS)
@@ -1531,6 +1532,7 @@ private struct BotProfilePickerSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle(title)
             #if os(iOS)

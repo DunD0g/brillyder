@@ -240,8 +240,9 @@ public struct PositionEditorSheet: View {
                         .disabled(validationError != nil)
                     }
                     .padding(16)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Board / FEN Editor")

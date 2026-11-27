@@ -38,8 +38,9 @@ public struct BrillyProPaywallSheet: View {
                         legalFooterSection
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 20)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Brilly/Der Pro")
             #if os(iOS)
@@ -624,6 +625,7 @@ public struct BrillyTermsSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Terms of Use")
             #if os(iOS)

@@ -94,6 +94,7 @@ public struct CockpitSettingsSheet: View {
                     .padding(16)
                     .padding(.bottom, 24)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .sheet(isPresented: $showingDailyOpeningsPicker) {
                 DailyOpeningsPickerSheet()

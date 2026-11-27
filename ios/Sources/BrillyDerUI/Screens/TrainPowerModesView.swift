@@ -408,8 +408,10 @@ private struct ConversionPlaySheet: View {
                             .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Convert vs \(lead.opponentName)")
             .toolbar {

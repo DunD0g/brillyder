@@ -784,8 +784,10 @@ private struct CourseDetailSheet: View {
                             countersView
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle(course.name)
             .toolbar {

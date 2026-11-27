@@ -378,8 +378,10 @@ private struct EndgameDrillPlaySheet: View {
                             .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle(drill.title)
             .toolbar {
@@ -523,7 +525,7 @@ private struct BoardVisionPanel: View {
     @State private var flashTask: Task<Void, Never>? = nil
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("60s Board Vision")
@@ -540,8 +542,9 @@ private struct BoardVisionPanel: View {
                         .foregroundStyle(timeRemaining <= 10 ? BrillyPalette.blunderRose : BrillyPalette.brillyTeal)
                 }
             }
-            .padding(14)
-            .brillySurface(store.surfaceStyle, cornerRadius: 18)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .brillySurface(store.surfaceStyle, cornerRadius: 16)
 
             // Target Prompt Banner
             HStack {
@@ -550,7 +553,7 @@ private struct BoardVisionPanel: View {
                     .foregroundStyle(BrillyPalette.inkSecondary)
                 Spacer()
                 Text(isRunning ? targetSquare.algebraic.uppercased() : "--")
-                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .font(.system(size: 30, weight: .black, design: .rounded))
                     .foregroundStyle(flashColor ?? BrillyPalette.brillyTeal)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {
@@ -564,9 +567,9 @@ private struct BoardVisionPanel: View {
                     }
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .brillySurface(store.surfaceStyle, cornerRadius: 18, tint: BrillyPalette.warpPurple)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .brillySurface(store.surfaceStyle, cornerRadius: 16, tint: BrillyPalette.warpPurple)
 
             // Tappable 8x8 Coordinate Board
             GeometryReader { geo in
@@ -1045,8 +1048,10 @@ private struct EscapePuzzlePlaySheet: View {
                             .buttonStyle(BrillyPressScaleStyle())
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle(puzzle.title)
             #if os(iOS)

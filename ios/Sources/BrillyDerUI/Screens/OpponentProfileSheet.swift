@@ -240,6 +240,7 @@ public struct OpponentProfileSheet: View {
                     }
                     .padding(16)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Opponent Profile")
             #if os(iOS)
