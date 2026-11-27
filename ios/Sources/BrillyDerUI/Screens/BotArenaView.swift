@@ -935,12 +935,14 @@ public struct BotArenaView: View {
                     .buttonStyle(BrillyPressScaleStyle())
                 }
             } else {
-                // Play vs Bot controls
-                HStack(spacing: 8) {
+                // Play vs Bot controls:
+                // - Before move 1 or after game over: show primary Start Game / Rematch pill.
+                // - Mid-game: hide New Game completely so you never accidentally wipe a game when tapping Takeback!
+                if moveHistory.isEmpty || isGameOver {
                     Button {
                         startNewPlayVsBotGame()
                     } label: {
-                        Label(moveHistory.isEmpty ? "Start Game" : "New Game", systemImage: "play.fill")
+                        Label(isGameOver ? "Rematch" : "Start Game", systemImage: "play.fill")
                             .font(.headline)
                             .foregroundStyle(BrillyPalette.voidBg)
                             .frame(maxWidth: .infinity)
@@ -949,67 +951,106 @@ public struct BotArenaView: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(BrillyPressScaleStyle())
-
-                    Button {
-                        requestHint()
-                    } label: {
-                        Label("Hint", systemImage: "lightbulb.fill")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(BrillyPalette.goldAmber)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(BrillyPressScaleStyle())
-                    .disabled(!isHumanTurn)
-                    .opacity(isHumanTurn ? 1.0 : 0.45)
                 }
 
-                HStack(spacing: 8) {
-                    Button {
-                        takebackPlayMove()
-                    } label: {
-                        Label("Takeback", systemImage: "arrow.uturn.backward")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(BrillyPressScaleStyle())
-                    .disabled(moveHistory.isEmpty || isThinking)
-                    .opacity((moveHistory.isEmpty || isThinking) ? 0.45 : 1.0)
+                if !moveHistory.isEmpty && !isGameOver {
+                    HStack(spacing: 8) {
+                        Button {
+                            takebackPlayMove()
+                        } label: {
+                            Label("Takeback", systemImage: "arrow.uturn.backward")
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.warpPurple)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                        .disabled(isThinking)
+                        .opacity(isThinking ? 0.45 : 1.0)
 
-                    Button {
-                        orientation = orientation.opposite
-                        store.triggerHaptic(.move)
-                    } label: {
-                        Label("Flip", systemImage: "arrow.up.arrow.down")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.inkPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(BrillyPressScaleStyle())
+                        Button {
+                            requestHint()
+                        } label: {
+                            Label("Hint", systemImage: "lightbulb.fill")
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                        .disabled(!isHumanTurn)
+                        .opacity(isHumanTurn ? 1.0 : 0.45)
 
-                    Button {
-                        resignPlayGame()
-                    } label: {
-                        Label("Resign", systemImage: "flag.fill")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(BrillyPalette.blunderRose)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
-                            .contentShape(Capsule())
+                        Button {
+                            orientation = orientation.opposite
+                            store.triggerHaptic(.move)
+                        } label: {
+                            Label("Flip", systemImage: "arrow.up.arrow.down")
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+
+                        Button {
+                            resignPlayGame()
+                        } label: {
+                            Label("Resign", systemImage: "flag.fill")
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .foregroundStyle(BrillyPalette.blunderRose)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.blunderRose)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
                     }
-                    .buttonStyle(BrillyPressScaleStyle())
-                    .disabled(isGameOver || moveHistory.isEmpty)
-                    .opacity((isGameOver || moveHistory.isEmpty) ? 0.45 : 1.0)
+                } else {
+                    HStack(spacing: 8) {
+                        Button {
+                            requestHint()
+                        } label: {
+                            Label("Hint", systemImage: "lightbulb.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.goldAmber)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.goldAmber)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                        .disabled(!isHumanTurn)
+                        .opacity(isHumanTurn ? 1.0 : 0.45)
+
+                        Button {
+                            orientation = orientation.opposite
+                            store.triggerHaptic(.move)
+                        } label: {
+                            Label("Flip", systemImage: "arrow.up.arrow.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(BrillyPalette.inkPrimary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .brillyGlassPill(store.surfaceStyle, tint: BrillyPalette.brillyTeal)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(BrillyPressScaleStyle())
+                    }
                 }
             }
         }
